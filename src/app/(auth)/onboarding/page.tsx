@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
@@ -54,6 +54,25 @@ export default function OnboardingPage() {
   const router = useRouter()
   const [step, setStep] = useState<Step>('name')
   const [isJoinFlow, setIsJoinFlow] = useState(false)
+  const [checking, setChecking] = useState(true)
+
+  // If user is already logged in with a profile, go to dashboard
+  useEffect(() => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (session?.user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('id', session.user.id)
+          .single()
+        if (profile) {
+          router.replace('/dashboard')
+          return
+        }
+      }
+      setChecking(false)
+    }).catch(() => setChecking(false))
+  }, [router])
 
   // Name
   const [name, setName] = useState('')
@@ -191,7 +210,8 @@ export default function OnboardingPage() {
         }
       }
 
-      router.push('/dashboard')
+      // Full page reload to ensure auth store picks up the new session + profile
+      window.location.href = '/dashboard'
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Something went wrong'
       setSignupError(message)
@@ -211,6 +231,14 @@ export default function OnboardingPage() {
     if (idx > 0) {
       setStep(stepsForFlow[idx - 1] as Step)
     }
+  }
+
+  if (checking) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="h-6 w-6 animate-spin text-emerald-600" />
+      </div>
+    )
   }
 
   return (
