@@ -1,186 +1,105 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { PageHeader } from '@/components/layout/page-header'
 import { EmptyState } from '@/components/shared/empty-state'
 import { Button } from '@/components/ui/button'
-import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
+import { RECIPE_CATEGORY_LABELS, EU_ALLERGENS, ALLERGEN_LABELS } from '@/lib/constants'
 import {
   UtensilsCrossed,
-  Plus,
-  MoreHorizontal,
-  Trash2,
-  ArrowUp,
-  ArrowDown,
-  Loader2,
+  ChefHat,
+  Search,
+  Check,
+  AlertTriangle,
 } from 'lucide-react'
+import Link from 'next/link'
 import { toast } from 'sonner'
-
-type MenuItemRow = {
-  id: string
-  recipe_id: string
-  category: string
-  active: boolean
-  display_order: number
-  business_id: string
-  recipe: { id: string; name: string; category: string } | null
-}
-
-const MENU_CATEGORIES = [
-  'starters',
-  'mains',
-  'sides',
-  'desserts',
-  'drinks',
-  'specials',
-  'kids',
-  'other',
-]
 
 export default function MenuPage() {
   const { profile, business } = useAuthStore()
   const queryClient = useQueryClient()
   const isManager = profile?.role === 'owner' || profile?.role === 'manager'
+  const [search, setSearch] = useState('')
 
-  const [showAddDialog, setShowAddDialog] = useState(false)
-  const [selectedRecipeId, setSelectedRecipeId] = useState('')
-  const [selectedCategory, setSelectedCategory] = useState('')
-
-  const { data: menuItems, isLoading } = useQuery({
-    queryKey: ['menu-items', business?.id],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from('menu_items')
-        .select('*, recipe:recipes(id, name, category)')
-        .eq('business_id', business!.id)
-        .order('display_order')
-      return (data ?? []) as unknown as MenuItemRow[]
-    },
-    enabled: !!business?.id,
-  })
-
-  const { data: recipes } = useQuery({
-    queryKey: ['recipes-for-menu', business?.id],
+  const { data: recipes, isLoading } = useQuery({
+    queryKey: ['recipes-menu', business?.id],
     queryFn: async () => {
       const { data } = await supabase
         .from('recipes')
-        .select('id, name, category')
+        .select('*, recipe_ingredients(*, ingredients(name, allergens))')
         .eq('business_id', business!.id)
-        .eq('active', true)
         .order('name')
       return data ?? []
     },
     enabled: !!business?.id,
   })
 
-  const addMutation = useMutation({
-    mutationFn: async () => {
-      const maxOrder = menuItems?.reduce((max, item) => Math.max(max, item.display_order), 0) ?? 0
-      const { error } = await supabase.from('menu_items').insert({
-        recipe_id: selectedRecipeId,
-        category: selectedCategory,
-        display_order: maxOrder + 1,
-        business_id: business!.id,
-      })
-      if (error) throw error
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['menu-items'] })
-      toast.success('Menu item added')
-      setShowAddDialog(false)
-      setSelectedRecipeId('')
-      setSelectedCategory('')
-    },
-    onError: (err) => toast.error(err.message),
-  })
+  const activeRecipes = recipes?.filter((r: any) => r.active) ?? []
 
-  const toggleActiveMutation = useMutation({
+  const filtered = useMemo(() => {
+    if (!search.trim()) return activeRecipes
+    const q = search.toLowerCase()
+    return activeRecipes.filter((r: any) =>
+      r.name.toLowerCase().includes(q) ||
+      r.category?.toLowerCase().includes(q)
+    )
+  }, [activeRecipes, search])
+
+  const grouped = useMemo(() => {
+    const groups: Record<string, any[]> = {}
+    for (const r of filtered) {
+      const cat = r.category ?? 'other'
+      if (!groups[cat]) groups[cat] = []
+      groups[cat].push(r)
+    }
+    return groups
+  }, [filtered])
+
+  const getAllergens = (recipe: any): string[] => {
+    const set = new Set<string>()
+    const ri = recipe.recipe_ingredients as any[] ?? []
+    ri.forEach((item: any) => {
+      const allergens = item.ingredients?.allergens as string[] ?? []
+      allergens.forEach((a: string) => set.add(a))
+    })
+    return Array.from(set)
+  }
+
+  const getDietaryLabels = (recipe: any): string[] => {
+    const allergens = getAllergens(recipe)
+    const labels: string[] = []
+    const hasMeat = allergens.some(a => ['fish', 'crustaceans', 'molluscs'].includes(a))
+    const hasDairy = allergens.includes('milk')
+    const hasEggs = allergens.includes('eggs')
+    const hasGluten = allergens.includes('gluten')
+
+    if (!hasMeat && !hasEggs && !hasDairy) labels.push('Vegan')
+    else if (!hasMeat) labels.push('Vegetarian')
+    if (!hasGluten) labels.push('Gluten-Free')
+    if (!hasDairy) labels.push('Dairy-Free')
+    return labels
+  }
+
+  const toggleActive = useMutation({
     mutationFn: async ({ id, active }: { id: string; active: boolean }) => {
       const { error } = await supabase
-        .from('menu_items')
+        .from('recipes')
         .update({ active })
         .eq('id', id)
       if (error) throw error
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['menu-items'] })
+      queryClient.invalidateQueries({ queryKey: ['recipes-menu'] })
+      toast.success('Recipe updated')
     },
   })
-
-  const reorderMutation = useMutation({
-    mutationFn: async ({ id, direction }: { id: string; direction: 'up' | 'down' }) => {
-      if (!menuItems) return
-      const idx = menuItems.findIndex((item) => item.id === id)
-      if (idx === -1) return
-      const swapIdx = direction === 'up' ? idx - 1 : idx + 1
-      if (swapIdx < 0 || swapIdx >= menuItems.length) return
-
-      const current = menuItems[idx]
-      const swap = menuItems[swapIdx]
-
-      await supabase
-        .from('menu_items')
-        .update({ display_order: swap.display_order })
-        .eq('id', current.id)
-
-      await supabase
-        .from('menu_items')
-        .update({ display_order: current.display_order })
-        .eq('id', swap.id)
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['menu-items'] })
-    },
-  })
-
-  const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from('menu_items').delete().eq('id', id)
-      if (error) throw error
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['menu-items'] })
-      toast.success('Menu item removed')
-    },
-    onError: (err) => toast.error(err.message),
-  })
-
-  // Group by category
-  const grouped = (menuItems ?? []).reduce<Record<string, MenuItemRow[]>>((acc, item) => {
-    const cat = item.category
-    if (!acc[cat]) acc[cat] = []
-    acc[cat].push(item)
-    return acc
-  }, {})
-
-  const existingRecipeIds = new Set(menuItems?.map((m) => m.recipe_id) ?? [])
-  const availableRecipes = recipes?.filter((r) => !existingRecipeIds.has(r.id)) ?? []
 
   if (isLoading) {
     return (
@@ -199,196 +118,162 @@ export default function MenuPage() {
     <div className="space-y-6">
       <PageHeader
         title="Menu"
-        description="Manage menu items linked to your recipes"
-      >
-        {isManager && (
-          <Button
-            onClick={() => setShowAddDialog(true)}
-            size="sm"
-            className="bg-emerald-600 hover:bg-emerald-700"
-          >
-            <Plus className="mr-1.5 h-3.5 w-3.5" />
-            Add Item
-          </Button>
-        )}
-      </PageHeader>
+        description="Active recipes are shown on your menu and allergen matrix"
+      />
 
-      {!menuItems || menuItems.length === 0 ? (
-        <EmptyState
-          icon={UtensilsCrossed}
-          title="No menu items yet"
-          description={`You have ${recipes?.length ?? 0} recipes. Add them to your menu to manage what is served and track allergens.`}
-          action={isManager ? { label: 'Add Menu Item', onClick: () => setShowAddDialog(true) } : undefined}
-        >
-          {isManager && recipes && recipes.length > 0 && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="mt-2"
-              onClick={async () => {
-                for (let i = 0; i < recipes.length; i++) {
-                  const r = recipes[i]
-                  await supabase.from('menu_items').insert({
-                    recipe_id: r.id,
-                    category: r.category ?? 'other',
-                    display_order: i,
-                    business_id: business!.id,
-                  })
-                }
-                queryClient.invalidateQueries({ queryKey: ['menu-items'] })
-                toast.success(`Added ${recipes.length} recipes to menu`)
-              }}
-            >
-              Add all {recipes.length} recipes to menu
-            </Button>
-          )}
-        </EmptyState>
-      ) : (
-        <div className="space-y-6">
-          {Object.entries(grouped).map(([category, items]) => (
-            <div key={category}>
-              <h3 className="mb-2 text-[13px] font-medium capitalize text-muted-foreground">
-                {category} ({items.length})
-              </h3>
-              <div className="rounded-lg border border-border bg-white">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-border">
-                      <th className="px-4 py-2.5 text-left text-[12px] font-medium text-muted-foreground">Name</th>
-                      <th className="px-4 py-2.5 text-left text-[12px] font-medium text-muted-foreground">Recipe Category</th>
-                      <th className="px-4 py-2.5 text-center text-[12px] font-medium text-muted-foreground">Order</th>
-                      <th className="px-4 py-2.5 text-center text-[12px] font-medium text-muted-foreground">Active</th>
-                      {isManager && (
-                        <th className="px-4 py-2.5 text-right text-[12px] font-medium text-muted-foreground">Actions</th>
-                      )}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {items.map((item, idx) => (
-                      <tr key={item.id} className="transition-colors hover:bg-accent/50">
-                        <td className="px-4 py-3 text-[13px] font-medium">
-                          {item.recipe?.name ?? 'Unknown recipe'}
-                        </td>
-                        <td className="px-4 py-3 text-[13px] capitalize text-muted-foreground">
-                          {item.recipe?.category ?? '—'}
-                        </td>
-                        <td className="px-4 py-3 text-center text-[13px] tabular-nums text-muted-foreground">
-                          {item.display_order}
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <Switch
-                            checked={item.active}
-                            onCheckedChange={(checked) =>
-                              toggleActiveMutation.mutate({ id: item.id, active: checked })
-                            }
-                            disabled={!isManager}
-                          />
-                        </td>
-                        {isManager && (
-                          <td className="px-4 py-3">
-                            <div className="flex items-center justify-end gap-1">
-                              <button
-                                onClick={() => reorderMutation.mutate({ id: item.id, direction: 'up' })}
-                                disabled={idx === 0}
-                                className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-30"
-                              >
-                                <ArrowUp className="h-3.5 w-3.5" />
-                              </button>
-                              <button
-                                onClick={() => reorderMutation.mutate({ id: item.id, direction: 'down' })}
-                                disabled={idx === items.length - 1}
-                                className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-30"
-                              >
-                                <ArrowDown className="h-3.5 w-3.5" />
-                              </button>
-                              <DropdownMenu>
-                                <DropdownMenuTrigger>
-                                  <button className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground">
-                                    <MoreHorizontal className="h-3.5 w-3.5" />
-                                  </button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  <DropdownMenuItem
-                                    className="text-red-600"
-                                    onClick={() => deleteMutation.mutate(item.id)}
-                                  >
-                                    <Trash2 className="mr-2 h-3.5 w-3.5" />
-                                    Remove
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </div>
-                          </td>
-                        )}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+      <Tabs defaultValue="recipes">
+        <TabsList>
+          <TabsTrigger value="recipes">Recipes</TabsTrigger>
+          <TabsTrigger value="allergens">Allergens</TabsTrigger>
+        </TabsList>
+
+        {/* Recipes tab */}
+        <TabsContent value="recipes" className="mt-4">
+          {activeRecipes.length === 0 ? (
+            <EmptyState
+              icon={ChefHat}
+              title="No active recipes"
+              description="Activate recipes to show them on your menu. Go to Recipes to create or manage your dishes."
+              action={{ label: 'Go to Recipes', onClick: () => window.location.href = '/recipes' }}
+            />
+          ) : (
+            <div className="space-y-4">
+              <div className="relative w-64">
+                <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search menu..."
+                  className="pl-9 text-[13px]"
+                />
               </div>
-            </div>
-          ))}
-        </div>
-      )}
 
-      {/* Add Menu Item Dialog */}
-      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add Menu Item</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <Label className="text-[13px]">Recipe</Label>
-              <Select value={selectedRecipeId} onValueChange={(v) => setSelectedRecipeId(v ?? "")}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a recipe..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableRecipes.map((recipe) => (
-                    <SelectItem key={recipe.id} value={recipe.id}>
-                      {recipe.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {availableRecipes.length === 0 && (
-                <p className="text-[11px] text-muted-foreground">
-                  All recipes are already on the menu.
-                </p>
-              )}
+              {Object.entries(grouped).map(([category, items]) => (
+                <div key={category}>
+                  <h3 className="mb-2 text-[12px] font-medium uppercase tracking-wide text-muted-foreground">
+                    {RECIPE_CATEGORY_LABELS[category] ?? category} ({items.length})
+                  </h3>
+                  <div className="rounded-lg border border-border bg-white">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-border">
+                          <th className="px-4 py-2 text-left text-[11px] font-medium text-muted-foreground">Name</th>
+                          <th className="px-4 py-2 text-left text-[11px] font-medium text-muted-foreground">Allergens</th>
+                          <th className="px-4 py-2 text-left text-[11px] font-medium text-muted-foreground">Dietary</th>
+                          {isManager && (
+                            <th className="px-4 py-2 text-center text-[11px] font-medium text-muted-foreground">Active</th>
+                          )}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {items.map((recipe: any) => {
+                          const allergens = getAllergens(recipe)
+                          const dietary = getDietaryLabels(recipe)
+                          return (
+                            <tr key={recipe.id} className="transition-colors hover:bg-accent/50">
+                              <td className="px-4 py-2.5">
+                                <Link href={`/recipes/${recipe.id}`} className="text-[13px] font-medium hover:text-emerald-600">
+                                  {recipe.name}
+                                </Link>
+                                {recipe.description && (
+                                  <p className="mt-0.5 text-[11px] text-muted-foreground line-clamp-1">{recipe.description}</p>
+                                )}
+                              </td>
+                              <td className="px-4 py-2.5">
+                                <div className="flex flex-wrap gap-1">
+                                  {allergens.length === 0 ? (
+                                    <span className="text-[11px] text-muted-foreground">None</span>
+                                  ) : (
+                                    allergens.map((a) => (
+                                      <span key={a} className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-red-700 border border-red-200">
+                                        {ALLERGEN_LABELS[a as keyof typeof ALLERGEN_LABELS] ?? a}
+                                      </span>
+                                    ))
+                                  )}
+                                </div>
+                              </td>
+                              <td className="px-4 py-2.5">
+                                <div className="flex flex-wrap gap-1">
+                                  {dietary.map((d) => (
+                                    <span key={d} className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 border border-emerald-200">
+                                      {d}
+                                    </span>
+                                  ))}
+                                </div>
+                              </td>
+                              {isManager && (
+                                <td className="px-4 py-2.5 text-center">
+                                  <Switch
+                                    checked={recipe.active}
+                                    onCheckedChange={(checked) =>
+                                      toggleActive.mutate({ id: recipe.id, active: checked })
+                                    }
+                                  />
+                                </td>
+                              )}
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ))}
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-[13px]">Menu Category</Label>
-              <Select value={selectedCategory} onValueChange={(v) => setSelectedCategory(v ?? "")}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select category..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {MENU_CATEGORIES.map((cat) => (
-                    <SelectItem key={cat} value={cat} className="capitalize">
-                      {cat}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          )}
+        </TabsContent>
+
+        {/* Allergens tab — matrix of active recipes vs 14 EU allergens */}
+        <TabsContent value="allergens" className="mt-4">
+          {activeRecipes.length === 0 ? (
+            <EmptyState
+              icon={AlertTriangle}
+              title="No active recipes"
+              description="Activate recipes to see the allergen matrix."
+            />
+          ) : (
+            <div className="overflow-x-auto rounded-lg border border-border bg-white">
+              <table className="w-full text-[12px]">
+                <thead>
+                  <tr className="border-b border-border">
+                    <th className="sticky left-0 z-10 bg-white px-4 py-2 text-left font-medium text-muted-foreground">
+                      Recipe
+                    </th>
+                    {EU_ALLERGENS.map((a) => (
+                      <th key={a} className="px-2 py-2 text-center font-medium text-muted-foreground" title={ALLERGEN_LABELS[a]}>
+                        {ALLERGEN_LABELS[a].slice(0, 4)}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {activeRecipes.map((recipe: any) => {
+                    const allergens = getAllergens(recipe)
+                    return (
+                      <tr key={recipe.id} className="transition-colors hover:bg-accent/50">
+                        <td className="sticky left-0 z-10 bg-white px-4 py-2 font-medium">
+                          {recipe.name}
+                        </td>
+                        {EU_ALLERGENS.map((a) => (
+                          <td key={a} className="px-2 py-2 text-center">
+                            {allergens.includes(a) ? (
+                              <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-red-100 text-red-600">
+                                <Check className="h-3 w-3" />
+                              </span>
+                            ) : (
+                              <span className="text-gray-200">&mdash;</span>
+                            )}
+                          </td>
+                        ))}
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
             </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setShowAddDialog(false)}>
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              className="bg-emerald-600 hover:bg-emerald-700"
-              disabled={!selectedRecipeId || !selectedCategory || addMutation.isPending}
-              onClick={() => addMutation.mutate()}
-            >
-              {addMutation.isPending && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
-              Add to Menu
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          )}
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }
