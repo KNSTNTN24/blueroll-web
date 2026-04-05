@@ -1,5 +1,4 @@
 'use client'
-
 import { use } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
@@ -13,7 +12,7 @@ import { format } from 'date-fns'
 import { cn } from '@/lib/utils'
 import { useState } from 'react'
 
-export default function ChecklistHistoryPage({ params }: { params: Promise<{ id: string }> }) {
+export default function ClientPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: templateId } = use(params)
   const { business } = useAuthStore()
   const [expandedId, setExpandedId] = useState<string | null>(null)

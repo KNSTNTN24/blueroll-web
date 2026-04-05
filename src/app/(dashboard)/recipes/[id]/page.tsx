@@ -1,5 +1,4 @@
 'use client'
-
 import { use } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
@@ -47,7 +46,7 @@ interface RecipeDetailPageProps {
   params: Promise<{ id: string }>
 }
 
-export default function RecipeDetailPage({ params }: RecipeDetailPageProps) {
+export default function ClientPage({ params }: RecipeDetailPageProps) {
   const { id } = use(params)
   const { profile } = useAuthStore()
   const router = useRouter()

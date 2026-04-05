@@ -1,5 +1,4 @@
 'use client'
-
 import { use } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
@@ -47,7 +46,7 @@ const ACCESS_LABELS: Record<string, string> = {
   owner_only: 'Owner only',
 }
 
-export default function DocumentDetailPage({ params }: DocumentDetailPageProps) {
+export default function ClientPage({ params }: DocumentDetailPageProps) {
   const { id } = use(params)
   const { profile, business } = useAuthStore()
   const router = useRouter()

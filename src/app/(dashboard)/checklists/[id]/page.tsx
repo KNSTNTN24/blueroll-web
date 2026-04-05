@@ -1,5 +1,4 @@
 'use client'
-
 import { use, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
@@ -30,7 +29,7 @@ interface ChecklistDetailPageProps {
   params: Promise<{ id: string }>
 }
 
-export default function ChecklistDetailPage({ params }: ChecklistDetailPageProps) {
+export default function ClientPage({ params }: ChecklistDetailPageProps) {
   const { id: templateId } = use(params)
   const { profile, business } = useAuthStore()
   const router = useRouter()

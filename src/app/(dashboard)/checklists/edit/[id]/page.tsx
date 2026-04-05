@@ -1,5 +1,4 @@
 'use client'
-
 import { use, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -77,7 +76,7 @@ const defaultItem: FormValues['items'][number] = {
   unit: null,
 }
 
-export default function EditChecklistPage({
+export default function ClientPage({
   params,
 }: {
   params: Promise<{ id: string }>
