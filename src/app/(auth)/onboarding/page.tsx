@@ -58,20 +58,36 @@ export default function OnboardingPage() {
 
   // If user is already logged in with a profile, go to dashboard
   useEffect(() => {
+    let done = false
+    const timeout = setTimeout(() => {
+      if (!done) { done = true; setChecking(false) }
+    }, 3000)
+
     supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (done) return
       if (session?.user) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('id')
-          .eq('id', session.user.id)
-          .single()
-        if (profile) {
-          router.replace('/dashboard')
-          return
+        try {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('id', session.user.id)
+            .single()
+          if (profile) {
+            done = true
+            clearTimeout(timeout)
+            window.location.href = '/dashboard'
+            return
+          }
+        } catch {
+          // Profile doesn't exist yet — show onboarding
         }
       }
-      setChecking(false)
-    }).catch(() => setChecking(false))
+      if (!done) { done = true; clearTimeout(timeout); setChecking(false) }
+    }).catch(() => {
+      if (!done) { done = true; clearTimeout(timeout); setChecking(false) }
+    })
+
+    return () => clearTimeout(timeout)
   }, [router])
 
   // Name
