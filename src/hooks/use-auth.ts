@@ -13,19 +13,24 @@ async function loadProfileAndBusiness(userId: string, store: ReturnType<typeof u
       .eq('id', userId)
       .single()
 
+    if (!profile) {
+      store.setProfile(null)
+      store.setBusiness(null)
+      return
+    }
+
+    // Fetch business in parallel with setting profile
     store.setProfile(profile)
 
-    if (profile?.business_id) {
+    if (profile.business_id) {
       const { data: business } = await supabase
         .from('businesses')
         .select('*')
         .eq('id', profile.business_id)
         .single()
-
       store.setBusiness(business)
     }
   } catch {
-    // Profile doesn't exist yet — user needs onboarding
     store.setProfile(null)
     store.setBusiness(null)
   }
@@ -37,10 +42,22 @@ export function useAuth() {
 
   useEffect(() => {
     let mounted = true
+    let initialLoaded = false
 
+    // Timeout — if nothing loads in 2s, stop loading
+    const timeoutId = setTimeout(() => {
+      if (mounted && store.isLoading) {
+        store.setLoading(false)
+      }
+    }, 2000)
+
+    // Listen for auth changes (login/logout events after initial load)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         if (!mounted) return
+        // Skip the initial SIGNED_IN event — handled by getSession below
+        if (!initialLoaded && event === 'INITIAL_SESSION') return
+
         const user = session?.user ?? null
         store.setUser(user)
 
@@ -50,21 +67,14 @@ export function useAuth() {
           store.setProfile(null)
           store.setBusiness(null)
         }
-
         store.setLoading(false)
       }
     )
 
-    // Initial session check with timeout
-    const timeoutId = setTimeout(() => {
-      if (mounted && store.isLoading) {
-        // If still loading after 5s, assume no session
-        store.setLoading(false)
-      }
-    }, 5000)
-
+    // Initial session — fast path
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (!mounted) return
+      initialLoaded = true
       clearTimeout(timeoutId)
 
       const user = session?.user ?? null
@@ -77,6 +87,7 @@ export function useAuth() {
       store.setLoading(false)
     }).catch(() => {
       if (!mounted) return
+      initialLoaded = true
       clearTimeout(timeoutId)
       store.setLoading(false)
     })
