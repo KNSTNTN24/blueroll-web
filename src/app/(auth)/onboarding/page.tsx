@@ -341,7 +341,7 @@ export default function OnboardingPage() {
           <div className="mt-6 space-y-4">
             <Input
               value={inviteCode}
-              onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
+              onChange={(e) => setInviteCode(e.target.value)}
               placeholder="ABC123"
               className="text-center font-mono tracking-widest"
               autoFocus
