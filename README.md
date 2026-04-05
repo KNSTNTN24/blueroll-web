@@ -1,36 +1,112 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Blueroll Web — HACCP Management Platform
 
-## Getting Started
+Desktop-first SaaS web application for food safety and HACCP management, built as a full port of the Blueroll Flutter mobile app. Shares the same Supabase backend — a user created on mobile logs in on web and sees the same data.
 
-First, run the development server:
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Framework | Next.js 15 (App Router) + TypeScript |
+| Styling | Tailwind CSS + shadcn/ui (base-ui) |
+| Backend | Supabase (PostgreSQL + Auth + RLS + Storage + Edge Functions) |
+| Server State | TanStack Query v5 |
+| Client State | Zustand |
+| Forms | React Hook Form + Zod |
+| Charts | Recharts |
+| PDF Export | @react-pdf/renderer |
+| Notifications | Sonner |
+| Icons | Lucide React |
+| Date Utils | date-fns |
+
+## Setup
 
 ```bash
+# 1. Install dependencies
+npm install
+
+# 2. Configure environment
+cp .env.example .env.local
+# Edit .env.local with your Supabase credentials
+
+# 3. Run dev server
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+
+# 4. Open http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Environment Variables
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| Variable | Description |
+|----------|-------------|
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anonymous/public key |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Feature Parity Checklist (vs Mobile)
 
-## Learn More
+| Feature | Status | Notes |
+|---------|--------|-------|
+| **Onboarding** | ✅ | FSA postcode lookup, business selection, rating reveal, pain-points funnel, signup |
+| **Auth** | ✅ | Email/password login, signup with invite code support |
+| **Dashboard** | ✅ | Metrics cards, check-in with mood, tasks list, incidents panel, notifications |
+| **Checklists — List** | ✅ | Today + Library tabs, active toggles, data table |
+| **Checklists — Detail** | ✅ | Fill with all item types (tick, temp, text, yes_no), auto-flagging, sign-off |
+| **Checklists — Manage** | ✅ | Create/edit with all fields, item types, temperature ranges |
+| **Checklists — History** | ✅ | Expandable completion cards with response details |
+| **Recipes — List** | ✅ | Data table with category filter, search, allergen badges |
+| **Recipes — Detail** | ✅ | Full view with ingredients, allergens, dietary labels |
+| **Recipes — New/Edit** | ✅ | Full form with dynamic ingredients and allergen selection |
+| **AI Recipe Import** | ✅ | Three-tab input (text/PDF/photo), Edge Function call, preview and save |
+| **Allergen Matrix** | ✅ | Matrix table with 14 EU allergens, card view, CSV export |
+| **Menu** | ✅ | Table with category grouping, add/edit items |
+| **Reports** | ✅ | Date range picker, template selection, summary stats |
+| **Team** | ✅ | Data table with roles, invite dialog with token generation |
+| **Incidents** | ✅ | Tabbed list, create/edit/resolve dialogs, status badges |
+| **Deliveries** | ✅ | Table with supplier info, new delivery form |
+| **Suppliers** | ✅ | Table with all fields, add/edit/delete dialogs |
+| **Documents** | ✅ | Category filter, search, upload form, detail with access management |
+| **Diary** | ✅ | Date picker, timeline of day's activity |
+| **Notifications** | ✅ | List with type-specific icons, mark read, mark all read |
+| **Settings/Profile** | ✅ | Profile editing, business info, sign out |
+| **Check-in/Check-out** | ✅ | Dashboard-integrated with mood emojis |
 
-To learn more about Next.js, take a look at the following resources:
+## Project Structure
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```
+src/
+├── app/
+│   ├── (auth)/           # Login, onboarding (no sidebar)
+│   ├── (dashboard)/      # All authenticated pages (sidebar + topbar)
+│   │   ├── dashboard/    # Home with metrics, tasks, incidents
+│   │   ├── checklists/   # list, [id], [id]/history, new, edit/[id]
+│   │   ├── recipes/      # list, [id], new, edit/[id], import
+│   │   ├── allergens/    # 14-allergen matrix view
+│   │   ├── menu/         # Menu items management
+│   │   ├── reports/      # Compliance report generation
+│   │   ├── team/         # Staff management + invites
+│   │   ├── incidents/    # Incident/complaint tracking
+│   │   ├── deliveries/   # Delivery logging
+│   │   ├── suppliers/    # Supplier contact book
+│   │   ├── documents/    # Document storage + access control
+│   │   ├── diary/        # Daily activity log
+│   │   ├── notifications/
+│   │   └── settings/     # Profile + business settings
+│   └── layout.tsx
+├── components/
+│   ├── layout/           # Sidebar, Topbar, CommandPalette, PageHeader
+│   ├── shared/           # EmptyState, StatusBadge
+│   └── ui/               # shadcn/ui components
+├── hooks/                # useAuth hook
+├── lib/                  # Supabase client, constants, utilities
+├── stores/               # Zustand auth store
+└── types/                # Database type definitions
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Deployment
 
-## Deploy on Vercel
+Deploys to Vercel:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+vercel --prod
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` in Vercel project settings.
