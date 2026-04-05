@@ -1,12 +1,13 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Loader2 } from 'lucide-react'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -14,6 +15,31 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [checkingSession, setCheckingSession] = useState(true)
+
+  // Check if already logged in
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        supabase
+          .from('profiles')
+          .select('id')
+          .eq('id', session.user.id)
+          .single()
+          .then(({ data: profile }) => {
+            if (profile) {
+              router.replace('/dashboard')
+            } else {
+              setCheckingSession(false)
+            }
+          })
+      } else {
+        setCheckingSession(false)
+      }
+    }).catch(() => {
+      setCheckingSession(false)
+    })
+  }, [router])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -21,8 +47,8 @@ export default function LoginPage() {
     setLoading(true)
 
     try {
-      const { error: authError } = await supabase.auth.signInWithPassword({
-        email,
+      const { data, error: authError } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
         password,
       })
 
@@ -34,13 +60,20 @@ export default function LoginPage() {
         } else {
           setError(authError.message)
         }
+        setLoading(false)
+        return
+      }
+
+      if (!data.user) {
+        setError('Something went wrong. Please try again.')
+        setLoading(false)
         return
       }
 
       const { data: profile } = await supabase
         .from('profiles')
         .select('id')
-        .eq('id', (await supabase.auth.getUser()).data.user!.id)
+        .eq('id', data.user.id)
         .single()
 
       if (profile) {
@@ -50,16 +83,23 @@ export default function LoginPage() {
       }
     } catch {
       setError('Something went wrong. Please try again.')
-    } finally {
       setLoading(false)
     }
   }
 
+  if (checkingSession) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="h-6 w-6 animate-spin text-emerald-600" />
+      </div>
+    )
+  }
+
   return (
     <div>
-      <h1 className="text-xl font-semibold tracking-tight">Welcome back</h1>
+      <h1 className="text-xl font-semibold tracking-tight">Sign in</h1>
       <p className="mt-1.5 text-[13px] text-muted-foreground">
-        Sign in to your Blueroll account
+        Enter your email and password to access your account
       </p>
 
       <form onSubmit={handleSubmit} className="mt-6 space-y-4">
@@ -103,6 +143,7 @@ export default function LoginPage() {
           className="w-full bg-emerald-600 hover:bg-emerald-700"
           disabled={loading}
         >
+          {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           {loading ? 'Signing in...' : 'Sign in'}
         </Button>
       </form>
@@ -113,7 +154,7 @@ export default function LoginPage() {
           href="/onboarding"
           className="font-medium text-emerald-600 hover:text-emerald-700"
         >
-          Get started
+          Create account
         </Link>
       </p>
     </div>

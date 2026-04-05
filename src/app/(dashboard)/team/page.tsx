@@ -163,10 +163,10 @@ export default function TeamPage() {
       return { token }
     },
     onSuccess: (data) => {
-      const link = `${window.location.origin}/join?token=${data.token}`
+      const link = `${window.location.origin}/onboarding`
       setInviteResult({ token: data.token, link })
       queryClient.invalidateQueries({ queryKey: ['team-members'] })
-      toast.success('Invite sent')
+      toast.success('Invite created')
     },
     onError: () => {
       toast.error('Failed to create invite')
@@ -439,22 +439,27 @@ export default function TeamPage() {
                     </p>
                   </div>
                   <p className="mt-1 text-[12px] text-emerald-600">
-                    Share this link with {inviteEmail}
+                    Send this to {inviteEmail}:
                   </p>
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label className="text-[12px] text-muted-foreground">Invite Link</Label>
+                  <Label className="text-[12px] text-muted-foreground">Invite Code</Label>
                   <div className="flex gap-2">
                     <Input
                       readOnly
-                      value={inviteResult.link}
-                      className="text-[12px] tabular-nums"
+                      value={inviteResult.token}
+                      className="font-mono text-center text-[14px] font-semibold tracking-widest"
                     />
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={copyInviteLink}
+                      onClick={() => {
+                        navigator.clipboard.writeText(inviteResult!.token)
+                        setCopied(true)
+                        toast.success('Token copied!')
+                        setTimeout(() => setCopied(false), 2000)
+                      }}
                       className="shrink-0"
                     >
                       {copied ? (
@@ -466,20 +471,21 @@ export default function TeamPage() {
                   </div>
                 </div>
 
-                <div className="space-y-1.5">
-                  <Label className="text-[12px] text-muted-foreground">Invite Code</Label>
-                  <Input
-                    readOnly
-                    value={inviteResult.token}
-                    className="font-mono text-[12px] tabular-nums"
-                  />
+                <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
+                  <p className="mb-2 text-[12px] font-medium text-blue-800">
+                    Instructions for the new team member:
+                  </p>
+                  <ol className="space-y-1 text-[12px] text-blue-700">
+                    <li>1. Open the app or go to <span className="font-medium">{typeof window !== 'undefined' ? window.location.origin : 'app.blueroll.app'}</span></li>
+                    <li>2. Tap &ldquo;Create Account&rdquo; and register</li>
+                    <li>3. Choose &ldquo;Joining a team&rdquo;</li>
+                    <li>4. Paste the invite code above</li>
+                  </ol>
                 </div>
 
                 <Button
                   variant="outline"
-                  onClick={() => {
-                    resetInvite()
-                  }}
+                  onClick={() => resetInvite()}
                   className="w-full text-[13px]"
                 >
                   Invite Another

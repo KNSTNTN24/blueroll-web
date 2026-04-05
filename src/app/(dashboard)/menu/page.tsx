@@ -216,10 +216,33 @@ export default function MenuPage() {
       {!menuItems || menuItems.length === 0 ? (
         <EmptyState
           icon={UtensilsCrossed}
-          title="No menu items"
-          description="Add recipes to your menu to manage what is served and track allergens."
+          title="No menu items yet"
+          description={`You have ${recipes?.length ?? 0} recipes. Add them to your menu to manage what is served and track allergens.`}
           action={isManager ? { label: 'Add Menu Item', onClick: () => setShowAddDialog(true) } : undefined}
-        />
+        >
+          {isManager && recipes && recipes.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-2"
+              onClick={async () => {
+                for (let i = 0; i < recipes.length; i++) {
+                  const r = recipes[i]
+                  await supabase.from('menu_items').insert({
+                    recipe_id: r.id,
+                    category: r.category ?? 'other',
+                    display_order: i,
+                    business_id: business!.id,
+                  })
+                }
+                queryClient.invalidateQueries({ queryKey: ['menu-items'] })
+                toast.success(`Added ${recipes.length} recipes to menu`)
+              }}
+            >
+              Add all {recipes.length} recipes to menu
+            </Button>
+          )}
+        </EmptyState>
       ) : (
         <div className="space-y-6">
           {Object.entries(grouped).map(([category, items]) => (
