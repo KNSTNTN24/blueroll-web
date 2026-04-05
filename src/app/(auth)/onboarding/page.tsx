@@ -251,8 +251,22 @@ export default function OnboardingPage() {
 
   if (checking) {
     return (
-      <div className="flex items-center justify-center py-20">
+      <div className="flex flex-col items-center justify-center py-20 text-center">
         <Loader2 className="h-6 w-6 animate-spin text-emerald-600" />
+        <p className="mt-4 text-[14px] font-medium text-foreground">
+          Setting up your account...
+        </p>
+        <p className="mt-1.5 text-[13px] text-muted-foreground">
+          You&apos;ll be redirected to the dashboard automatically.
+          <br />
+          If the page doesn&apos;t load within a few seconds,{' '}
+          <button
+            onClick={() => window.location.href = '/dashboard'}
+            className="font-medium text-emerald-600 underline hover:text-emerald-700"
+          >
+            click here
+          </button>.
+        </p>
       </div>
     )
   }
