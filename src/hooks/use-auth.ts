@@ -5,34 +5,47 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 
+async function loadProfileAndBusiness(userId: string, store: ReturnType<typeof useAuthStore.getState>) {
+  try {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .single()
+
+    store.setProfile(profile)
+
+    if (profile?.business_id) {
+      const { data: business } = await supabase
+        .from('businesses')
+        .select('*')
+        .eq('id', profile.business_id)
+        .single()
+
+      store.setBusiness(business)
+    }
+  } catch {
+    // Profile doesn't exist yet — user needs onboarding
+    store.setProfile(null)
+    store.setBusiness(null)
+  }
+}
+
 export function useAuth() {
   const store = useAuthStore()
   const router = useRouter()
 
   useEffect(() => {
+    let mounted = true
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        if (!mounted) return
         const user = session?.user ?? null
         store.setUser(user)
 
         if (user) {
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', user.id)
-            .single()
-
-          store.setProfile(profile)
-
-          if (profile) {
-            const { data: business } = await supabase
-              .from('businesses')
-              .select('*')
-              .eq('id', profile.business_id)
-              .single()
-
-            store.setBusiness(business)
-          }
+          await loadProfileAndBusiness(user.id, store)
         } else {
           store.setProfile(null)
           store.setBusiness(null)
@@ -42,34 +55,37 @@ export function useAuth() {
       }
     )
 
+    // Initial session check with timeout
+    const timeoutId = setTimeout(() => {
+      if (mounted && store.isLoading) {
+        // If still loading after 5s, assume no session
+        store.setLoading(false)
+      }
+    }, 5000)
+
     supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (!mounted) return
+      clearTimeout(timeoutId)
+
       const user = session?.user ?? null
       store.setUser(user)
 
       if (user) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', user.id)
-          .single()
-
-        store.setProfile(profile)
-
-        if (profile) {
-          const { data: business } = await supabase
-            .from('businesses')
-            .select('*')
-            .eq('id', profile.business_id)
-            .single()
-
-          store.setBusiness(business)
-        }
+        await loadProfileAndBusiness(user.id, store)
       }
 
       store.setLoading(false)
+    }).catch(() => {
+      if (!mounted) return
+      clearTimeout(timeoutId)
+      store.setLoading(false)
     })
 
-    return () => subscription.unsubscribe()
+    return () => {
+      mounted = false
+      clearTimeout(timeoutId)
+      subscription.unsubscribe()
+    }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const signIn = async (email: string, password: string) => {
@@ -106,24 +122,7 @@ export function useAuth() {
       p_post_code: params.postCode,
     })
     if (error) throw error
-
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', store.user!.id)
-      .single()
-
-    store.setProfile(profile)
-
-    if (profile) {
-      const { data: business } = await supabase
-        .from('businesses')
-        .select('*')
-        .eq('id', profile.business_id)
-        .single()
-
-      store.setBusiness(business)
-    }
+    await loadProfileAndBusiness(store.user!.id, store)
   }
 
   const joinWithInvite = async (token: string, memberName: string) => {
@@ -133,34 +132,12 @@ export function useAuth() {
       member_name: memberName,
     })
     if (error) throw error
-
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', store.user!.id)
-      .single()
-
-    store.setProfile(profile)
-
-    if (profile) {
-      const { data: business } = await supabase
-        .from('businesses')
-        .select('*')
-        .eq('id', profile.business_id)
-        .single()
-
-      store.setBusiness(business)
-    }
+    await loadProfileAndBusiness(store.user!.id, store)
   }
 
   const refreshProfile = async () => {
     if (!store.user) return
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', store.user.id)
-      .single()
-    store.setProfile(profile)
+    await loadProfileAndBusiness(store.user.id, store)
   }
 
   return {
