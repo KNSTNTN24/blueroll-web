@@ -6,18 +6,21 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { PageHeader } from '@/components/layout/page-header'
 import { EmptyState } from '@/components/shared/empty-state'
+import { StatusBadge } from '@/components/shared/status-badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
-import { RECIPE_CATEGORY_LABELS, EU_ALLERGENS, ALLERGEN_LABELS } from '@/lib/constants'
+import { RECIPE_CATEGORY_LABELS, EU_ALLERGENS, ALLERGEN_LABELS, type EUAllergen } from '@/lib/constants'
 import {
-  UtensilsCrossed,
   ChefHat,
   Search,
   Check,
   AlertTriangle,
+  FileDown,
+  Download,
+  Eye,
+  EyeOff,
 } from 'lucide-react'
 import Link from 'next/link'
 import { toast } from 'sonner'
@@ -101,6 +104,39 @@ export default function MenuPage() {
     },
   })
 
+  // ---------------------------------------------------------------------------
+  // Export
+  // ---------------------------------------------------------------------------
+  function exportCSV() {
+    const header = ['Recipe', 'Category', 'Dietary', ...EU_ALLERGENS.map((a) => ALLERGEN_LABELS[a])]
+    const rows = activeRecipes.map((r: any) => {
+      const allergens = getAllergens(r)
+      const dietary = getDietaryLabels(r)
+      return [
+        `"${r.name}"`,
+        r.category,
+        `"${dietary.join(', ')}"`,
+        ...EU_ALLERGENS.map((a) => (allergens.includes(a) ? 'Y' : '')),
+      ]
+    })
+    const csv = [header.join(','), ...rows.map((row) => row.join(','))].join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${business?.name ?? 'menu'}-menu.csv`
+    link.click()
+    URL.revokeObjectURL(url)
+    toast.success('CSV exported')
+  }
+
+  function exportPDF() {
+    window.print()
+  }
+
+  // ---------------------------------------------------------------------------
+  // Loading
+  // ---------------------------------------------------------------------------
   if (isLoading) {
     return (
       <div className="space-y-6">
@@ -119,7 +155,18 @@ export default function MenuPage() {
       <PageHeader
         title="Menu"
         description="Active recipes are shown on your menu and allergen matrix"
-      />
+      >
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={exportCSV} className="text-[12px]">
+            <FileDown className="mr-1.5 h-3.5 w-3.5" />
+            CSV
+          </Button>
+          <Button variant="outline" size="sm" onClick={exportPDF} className="text-[12px]">
+            <Download className="mr-1.5 h-3.5 w-3.5" />
+            PDF
+          </Button>
+        </div>
+      </PageHeader>
 
       <Tabs defaultValue="recipes">
         <TabsList>
@@ -157,11 +204,12 @@ export default function MenuPage() {
                     <table className="w-full">
                       <thead>
                         <tr className="border-b border-border">
-                          <th className="px-4 py-2 text-left text-[11px] font-medium text-muted-foreground">Name</th>
-                          <th className="px-4 py-2 text-left text-[11px] font-medium text-muted-foreground">Allergens</th>
-                          <th className="px-4 py-2 text-left text-[11px] font-medium text-muted-foreground">Dietary</th>
+                          <th className="px-4 py-2.5 text-left text-[12px] font-medium text-muted-foreground">Name</th>
+                          <th className="px-4 py-2.5 text-left text-[12px] font-medium text-muted-foreground">Allergens</th>
+                          <th className="px-4 py-2.5 text-left text-[12px] font-medium text-muted-foreground">Dietary</th>
+                          <th className="px-4 py-2.5 text-left text-[12px] font-medium text-muted-foreground">Status</th>
                           {isManager && (
-                            <th className="px-4 py-2 text-center text-[11px] font-medium text-muted-foreground">Active</th>
+                            <th className="px-4 py-2.5 text-right text-[12px] font-medium text-muted-foreground">Actions</th>
                           )}
                         </tr>
                       </thead>
@@ -171,7 +219,7 @@ export default function MenuPage() {
                           const dietary = getDietaryLabels(recipe)
                           return (
                             <tr key={recipe.id} className="transition-colors hover:bg-accent/50">
-                              <td className="px-4 py-2.5">
+                              <td className="px-4 py-3">
                                 <Link href={`/recipes/${recipe.id}`} className="text-[13px] font-medium hover:text-emerald-600">
                                   {recipe.name}
                                 </Link>
@@ -179,36 +227,62 @@ export default function MenuPage() {
                                   <p className="mt-0.5 text-[11px] text-muted-foreground line-clamp-1">{recipe.description}</p>
                                 )}
                               </td>
-                              <td className="px-4 py-2.5">
+                              <td className="px-4 py-3">
                                 <div className="flex flex-wrap gap-1">
                                   {allergens.length === 0 ? (
                                     <span className="text-[11px] text-muted-foreground">None</span>
                                   ) : (
                                     allergens.map((a) => (
-                                      <span key={a} className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-red-700 border border-red-200">
-                                        {ALLERGEN_LABELS[a as keyof typeof ALLERGEN_LABELS] ?? a}
+                                      <span
+                                        key={a}
+                                        className="inline-flex items-center rounded-full border border-red-200 bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-red-700"
+                                      >
+                                        {ALLERGEN_LABELS[a as EUAllergen] ?? a}
                                       </span>
                                     ))
                                   )}
                                 </div>
                               </td>
-                              <td className="px-4 py-2.5">
+                              <td className="px-4 py-3">
                                 <div className="flex flex-wrap gap-1">
-                                  {dietary.map((d) => (
-                                    <span key={d} className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 border border-emerald-200">
-                                      {d}
-                                    </span>
-                                  ))}
+                                  {dietary.length === 0 ? (
+                                    <span className="text-[11px] text-muted-foreground">--</span>
+                                  ) : (
+                                    dietary.map((d) => (
+                                      <span
+                                        key={d}
+                                        className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700"
+                                      >
+                                        {d}
+                                      </span>
+                                    ))
+                                  )}
                                 </div>
                               </td>
+                              <td className="px-4 py-3">
+                                <StatusBadge
+                                  status={recipe.active ? 'success' : 'neutral'}
+                                  label={recipe.active ? 'Active' : 'Inactive'}
+                                />
+                              </td>
                               {isManager && (
-                                <td className="px-4 py-2.5 text-center">
-                                  <Switch
-                                    checked={recipe.active}
-                                    onCheckedChange={(checked) =>
-                                      toggleActive.mutate({ id: recipe.id, active: checked })
-                                    }
-                                  />
+                                <td className="px-4 py-3 text-right">
+                                  <button
+                                    onClick={() => toggleActive.mutate({ id: recipe.id, active: !recipe.active })}
+                                    className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                                  >
+                                    {recipe.active ? (
+                                      <>
+                                        <EyeOff className="h-3.5 w-3.5" />
+                                        Deactivate
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Eye className="h-3.5 w-3.5" />
+                                        Activate
+                                      </>
+                                    )}
+                                  </button>
                                 </td>
                               )}
                             </tr>
@@ -236,11 +310,15 @@ export default function MenuPage() {
               <table className="w-full text-[12px]">
                 <thead>
                   <tr className="border-b border-border">
-                    <th className="sticky left-0 z-10 bg-white px-4 py-2 text-left font-medium text-muted-foreground">
+                    <th className="sticky left-0 z-10 bg-white px-4 py-2.5 text-left text-[12px] font-medium text-muted-foreground">
                       Recipe
                     </th>
                     {EU_ALLERGENS.map((a) => (
-                      <th key={a} className="px-2 py-2 text-center font-medium text-muted-foreground" title={ALLERGEN_LABELS[a]}>
+                      <th
+                        key={a}
+                        className="px-2 py-2.5 text-center text-[10px] font-medium text-muted-foreground"
+                        title={ALLERGEN_LABELS[a]}
+                      >
                         {ALLERGEN_LABELS[a].slice(0, 4)}
                       </th>
                     ))}
@@ -251,11 +329,11 @@ export default function MenuPage() {
                     const allergens = getAllergens(recipe)
                     return (
                       <tr key={recipe.id} className="transition-colors hover:bg-accent/50">
-                        <td className="sticky left-0 z-10 bg-white px-4 py-2 font-medium">
+                        <td className="sticky left-0 z-10 bg-white px-4 py-2.5 text-[13px] font-medium">
                           {recipe.name}
                         </td>
                         {EU_ALLERGENS.map((a) => (
-                          <td key={a} className="px-2 py-2 text-center">
+                          <td key={a} className="px-2 py-2.5 text-center">
                             {allergens.includes(a) ? (
                               <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-red-100 text-red-600">
                                 <Check className="h-3 w-3" />
