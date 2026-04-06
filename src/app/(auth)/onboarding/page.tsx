@@ -149,20 +149,9 @@ export default function OnboardingPage() {
       if (!mounted) return
 
       if (profile) {
-        // Has profile, check subscription
-        const { data: business } = await supabase
-          .from('businesses')
-          .select('subscription_status')
-          .eq('id', profile.business_id)
-          .single()
-
-        if (!mounted) return
-        const status = business?.subscription_status
-        if (status === 'active' || status === 'trialing') {
-          router.replace('/dashboard')
-        } else {
-          router.replace('/paywall')
-        }
+        // User already has profile — go to dashboard (full reload for clean state)
+        window.location.href = '/dashboard'
+        return
       } else {
         setCheckingSession(false)
       }
@@ -540,12 +529,12 @@ export default function OnboardingPage() {
             </div>
 
             {/* Temporary skip link */}
-            <Link
-              href="/dashboard"
+            <button
+              onClick={() => { window.location.href = '/dashboard' }}
               className="mt-6 inline-block text-sm text-emerald-200 underline hover:text-white"
             >
               Continue to dashboard
-            </Link>
+            </button>
           </div>
         </div>
       </div>
