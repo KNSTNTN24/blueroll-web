@@ -1,153 +1,75 @@
-# Blueroll Web — HACCP Management Platform
+# Blueroll Web v2 — HACCP Management Platform
 
-Desktop-first SaaS web application for food safety and HACCP management, built as a full port of the Blueroll Flutter mobile app. Shares the same Supabase backend — a user created on mobile logs in on web and sees the same data.
+Desktop-first SaaS web application for food safety and HACCP management. Full port of the Blueroll Flutter mobile app with new features. Shares the same Supabase backend — data syncs between mobile and web.
 
 - **Production**: https://app.blueroll.app
-- **Repository**: https://github.com/KNSTNTN24/blueroll-web
+- **Repository**: https://github.com/KNSTNTN24/blueroll-web (branch: `v2`)
 - **Mobile repo**: https://github.com/KNSTNTN24/haccp-mobile
-- **Landing**: https://blueroll.app (GitHub Pages from mariaiontseva/blueroll-landing)
+- **Landing**: https://blueroll.app (GitHub Pages, mariaiontseva/blueroll-landing)
 - **Supabase project**: `rszrggreuarvodcqeqrj`
-
-## Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| Framework | Next.js 15 (App Router) + TypeScript |
-| Styling | Tailwind CSS + shadcn/ui (base-ui) |
-| Backend | Supabase (PostgreSQL + Auth + RLS + Storage + Edge Functions) |
-| Server State | TanStack Query v5 |
-| Client State | Zustand |
-| Forms | React Hook Form + Zod |
-| Charts | Recharts |
-| PDF Export | @react-pdf/renderer |
-| Notifications | Sonner |
-| Icons | Lucide React |
-| Date Utils | date-fns |
-| Hosting | Vercel |
-| Domain | app.blueroll.app (CNAME → cname.vercel-dns.com) |
 
 ## Setup
 
 ```bash
-# 1. Install dependencies
 npm install
-
-# 2. Configure environment
-cp .env.example .env.local
-# Edit .env.local with your Supabase credentials
-
-# 3. Run dev server
-npm run dev
-
-# 4. Open http://localhost:3000
+cp .env.example .env.local   # add SUPABASE_URL + ANON_KEY
+npm run dev                   # http://localhost:3000
 ```
 
 ## Environment Variables
 
 | Variable | Description |
 |----------|-------------|
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anonymous/public key |
+| `NEXT_PUBLIC_SUPABASE_URL` | `https://rszrggreuarvodcqeqrj.supabase.co` |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key |
 
-Both are set in Vercel project settings for production.
+## Tech Stack
 
-## Architecture
+Next.js 15 · TypeScript · Tailwind CSS · shadcn/ui · Supabase · TanStack Query · Zustand · React Hook Form + Zod · Sonner · Lucide · date-fns
 
-### Auth Flow
-- New user → `/onboarding` → name → choice (new business / join team) → postcode search or invite code → pain points → signup → dashboard
-- Existing user → `/login` → email/password → dashboard
-- Join team flow: invite code generated in Team page (case-sensitive, 32 chars) → new user enters during onboarding
-- After signup: `setup_business` RPC (new) or `join_with_invite` RPC (join) → full page reload to `/dashboard`
-- Default HACCP checklists (5 templates) seeded automatically for new businesses
+## Features (17)
 
-### Menu Logic
-- **Active recipe = menu item**. No separate `menu_items` table for display.
-- Menu page shows two tabs: Recipes (active recipes grouped by category) and Allergens (14 EU allergen matrix)
-- Toggle active/inactive from Menu or Recipes pages — same effect
-- CSV and PDF export available from both Menu and Allergens pages
+| # | Feature | Status |
+|---|---------|--------|
+| 1 | Auth (login, signup, invite join) | ✅ |
+| 2 | Onboarding (FSA lookup, 7-step new / 5-step join, paywall) | ✅ |
+| 3 | Dashboard (metrics, check-in, tasks, incidents, notifications) | ✅ |
+| 4 | Checklists (list, fill, history, create/edit, 6 default templates) | ✅ |
+| 5 | Recipes (CRUD, allergens, dietary, freezing/defrosting fields) | ✅ |
+| 6 | AI Recipe Import (text/PDF/photo → Claude API) | ✅ |
+| 7 | Menu (active recipes = menu, Recipes + Allergens tabs, CSV/PDF export) | ✅ |
+| 8 | Allergen Matrix (14 EU allergens, card + matrix views, CSV/PDF export) | ✅ |
+| 9 | Reports (date range, template filter, compliance %, PDF) | ✅ |
+| 10 | Team (members, roles, invite with token + instructions) | ✅ |
+| 11 | Incidents (complaint/incident, create/resolve, notifications) | ✅ |
+| 12 | Deliveries (log with temp, supplier, photos) | ✅ |
+| 13 | Suppliers (CRUD, delivery days) | ✅ |
+| 14 | Documents (upload to Storage, categories, expiry tracking) | ✅ |
+| 15 | Diary (daily timeline of checklists + incidents) | ✅ |
+| 16 | Notifications (10 auto types, mark read) | ✅ |
+| 17 | HACCP Pack (5 sections, 26 methods, auto-fill, 4-week review, XP, PDF export) | ✅ |
 
-### Domain Setup
-- Landing `blueroll.app` → GitHub Pages (mariaiontseva/blueroll-landing, branch `gh-pages`)
-- Web app `app.blueroll.app` → Vercel (CNAME record `app` → `cname.vercel-dns.com`)
-- DNS managed at GoDaddy (ns33/ns34.domaincontrol.com)
+## New in v2 (vs v1)
 
-## Feature Parity Checklist (vs Mobile)
+- HACCP Pack with live auto-fill from recipes/checklists/suppliers/documents
+- Paywall with Stripe integration (test stub active)
+- Subscription gating (disabled until Stripe fully configured)
+- 6 default checklist templates (including 4-Weekly HACCP Review)
+- Recipe fields: freezing_instructions, defrosting_instructions
+- 10 notification types (added HACCP review overdue)
+- Spec-first architecture: 4 design documents in docs/
 
-| Feature | Status | Notes |
-|---------|--------|-------|
-| **Onboarding** | ✅ | FSA postcode lookup, business selection, rating reveal, pain-points funnel, signup. Matches mobile flow order. |
-| **Auth** | ✅ | Email/password login, signup with invite code support |
-| **Dashboard** | ✅ | Metrics cards, check-in with mood, tasks list, incidents panel, notifications |
-| **Checklists — List** | ✅ | Today + Library tabs, active toggles, data table |
-| **Checklists — Detail** | ✅ | Fill with all item types (tick, temp, text, yes_no), auto-flagging, sign-off |
-| **Checklists — Manage** | ✅ | Create/edit with all fields, item types, temperature ranges |
-| **Checklists — History** | ✅ | Expandable completion cards with response details |
-| **Default Checklists** | ✅ | 5 UK HACCP templates seeded on new business creation |
-| **Recipes — List** | ✅ | Data table with category filter, search, allergen badges |
-| **Recipes — Detail** | ✅ | Full view with ingredients, allergens, dietary labels |
-| **Recipes — New/Edit** | ✅ | Full form with dynamic ingredients and allergen selection |
-| **AI Recipe Import** | ✅ | Three-tab input (text/PDF/photo), Edge Function call, preview and save |
-| **Menu** | ✅ | Two tabs (Recipes + Allergens) matching mobile. Active recipes = menu. |
-| **Allergen Matrix** | ✅ | Matrix table with 14 EU allergens, card view, CSV/PDF export |
-| **Reports** | ✅ | Date range picker, template selection, summary stats |
-| **Team** | ✅ | Data table with roles, invite with token + instructions matching mobile |
-| **Incidents** | ✅ | Tabbed list, create/edit/resolve dialogs, status badges |
-| **Deliveries** | ✅ | Table with supplier info, new delivery form |
-| **Suppliers** | ✅ | Table with all fields, add/edit/delete dialogs |
-| **Documents** | ✅ | Category filter, search, upload form, detail with access management |
-| **Diary** | ✅ | Date picker, timeline of day's activity |
-| **Notifications** | ✅ | List with type-specific icons, mark read, mark all read |
-| **Settings/Profile** | ✅ | Profile editing, business info, sign out |
-| **Check-in/Check-out** | ✅ | Dashboard-integrated with mood emojis |
-| **Payments** | ⏳ | Stripe integration planned (mobile uses native IAP) |
+## Spec Documents
 
-## Project Structure
-
-```
-src/
-├── app/
-│   ├── (auth)/           # Login, onboarding (no sidebar)
-│   ├── (dashboard)/      # All authenticated pages (sidebar + topbar)
-│   │   ├── dashboard/
-│   │   ├── checklists/   # list, [id], [id]/history, new, edit/[id]
-│   │   ├── recipes/      # list, [id], new, edit/[id], import
-│   │   ├── allergens/
-│   │   ├── menu/         # Recipes + Allergens tabs (active recipes = menu)
-│   │   ├── reports/
-│   │   ├── team/
-│   │   ├── incidents/
-│   │   ├── deliveries/   # list, new
-│   │   ├── suppliers/
-│   │   ├── documents/    # list, [id], upload
-│   │   ├── diary/
-│   │   ├── notifications/
-│   │   └── settings/
-│   └── layout.tsx
-├── components/
-│   ├── layout/           # Sidebar, Topbar, CommandPalette, PageHeader
-│   ├── shared/           # EmptyState, StatusBadge
-│   └── ui/               # shadcn/ui components
-├── hooks/                # useAuth hook
-├── lib/                  # Supabase client, constants, utilities
-├── stores/               # Zustand auth store
-└── types/                # Database type definitions
-```
+- `docs/01-DESIGN.md` — UI organization, colors, typography, components
+- `docs/02-FEATURES.md` — all 17 features described
+- `docs/03-ONBOARDING.md` — onboarding scenarios, edge cases
+- `docs/04-DATABASE.md` — 21 tables, RPCs, Edge Functions, storage
 
 ## Deployment
-
-Deployed to Vercel. Auto-deploys on push to `main` are NOT enabled — deploy manually:
 
 ```bash
 npx vercel --prod
 ```
 
-Environment variables set in Vercel project settings:
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-
-## Known Issues / TODO
-
-- [ ] Stripe integration for web payments (mobile uses native Apple/Google IAP)
-- [ ] Sidebar doesn't collapse responsively with content area padding
-- [ ] Photo upload in checklists shows "available on mobile" placeholder
-- [ ] Recipe edit page not yet implemented (new page works)
+Domain: `app.blueroll.app` (CNAME → `cname.vercel-dns.com`)
