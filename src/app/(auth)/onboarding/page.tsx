@@ -281,9 +281,9 @@ export default function OnboardingPage() {
           business_name: businessName,
           owner_name: fullName.trim(),
           business_address: businessAddress,
-          fhrs_id: fhrsId,
-          fsa_rating: fsaRating,
-          post_code: postCode,
+          p_fhrs_id: fhrsId,
+          p_fsa_rating: fsaRating,
+          p_post_code: postCode,
         })
 
         if (rpcError) {
