@@ -137,6 +137,7 @@ export default function NewRecipePage() {
         .from('recipes')
         .insert({
           business_id: business.id,
+          created_by: profile.id,
           name: name.trim(),
           description: description.trim() || null,
           category,

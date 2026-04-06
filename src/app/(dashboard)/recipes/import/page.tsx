@@ -227,6 +227,7 @@ export default function ImportRecipePage() {
         .from('recipes')
         .insert({
           business_id: business.id,
+          created_by: profile.id,
           name: parsed.name.trim(),
           description: parsed.description.trim() || null,
           category: parsed.category,
