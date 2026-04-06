@@ -439,7 +439,19 @@ export default function HaccpPackPage() {
         .eq('business_id', businessId)
         .single()
       if (error && error.code !== 'PGRST116') throw error
-      return (data as HaccpPackRow | null) ?? { ...EMPTY_DATA, business_id: businessId }
+      if (!data) return { ...EMPTY_DATA, business_id: businessId }
+      // DB stores {data: {toggles, texts, ...}} — unpack into flat HaccpPackRow
+      const inner = data.data as any ?? {}
+      return {
+        id: data.id,
+        business_id: data.business_id,
+        toggles: inner.toggles ?? {},
+        texts: inner.texts ?? {},
+        files: inner.files ?? {},
+        selects: inner.selects ?? {},
+        overrides: inner.overrides ?? {},
+        updated_at: data.updated_at,
+      } as HaccpPackRow
     },
     enabled: !!businessId,
   })
@@ -617,11 +629,13 @@ export default function HaccpPackPage() {
     mutationFn: async (newData: HaccpPackRow) => {
       const payload = {
         business_id: businessId,
-        toggles: newData.toggles,
-        texts: newData.texts,
-        files: newData.files,
-        selects: newData.selects,
-        overrides: newData.overrides,
+        data: {
+          toggles: newData.toggles,
+          texts: newData.texts,
+          files: newData.files,
+          selects: newData.selects,
+          overrides: newData.overrides,
+        },
         updated_at: new Date().toISOString(),
       }
       const { error } = await supabase
