@@ -88,7 +88,7 @@ export function Topbar() {
             <Bell className="h-4 w-4" strokeWidth={1.5} />
           </Link>
 
-          {/* User dropdown */}
+          {/* User menu */}
           <DropdownMenu>
             <DropdownMenuTrigger className="flex items-center gap-2 rounded-md px-2 py-1 text-[13px] transition-colors hover:bg-accent">
               <Avatar className="h-6 w-6">
@@ -109,10 +109,6 @@ export function Topbar() {
                 </div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => router.push('/settings/profile')}>
-                <User className="h-4 w-4" />
-                Profile &amp; Settings
-              </DropdownMenuItem>
               <DropdownMenuItem onClick={() => router.push('/settings')}>
                 <Settings className="h-4 w-4" />
                 Settings
@@ -124,6 +120,18 @@ export function Topbar() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+
+          {/* Direct sign out button */}
+          <button
+            onClick={() => {
+              supabase.auth.signOut()
+              window.location.href = '/onboarding'
+            }}
+            className="ml-1 flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+            title="Sign out"
+          >
+            <LogOut className="h-4 w-4" strokeWidth={1.5} />
+          </button>
         </div>
       </header>
 
