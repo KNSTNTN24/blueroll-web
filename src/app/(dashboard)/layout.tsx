@@ -17,10 +17,10 @@ export default function DashboardLayout({
 
   useEffect(() => {
     if (isLoading) return
-    if (!user) {
+    if (!user || !profile) {
       router.replace('/login')
     }
-  }, [isLoading, user, router])
+  }, [isLoading, user, profile, router])
 
   if (isLoading) {
     return (
@@ -30,7 +30,7 @@ export default function DashboardLayout({
     )
   }
 
-  if (!user) return null
+  if (!user || !profile) return null
 
   return (
     <div className="flex h-screen overflow-hidden">
