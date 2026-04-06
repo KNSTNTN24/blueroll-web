@@ -12,7 +12,7 @@ export default function DashboardLayout({
   children: React.ReactNode
 }) {
   const router = useRouter()
-  const { user, profile, isLoading, isSubscribed } = useAuth()
+  const { user, profile, isLoading } = useAuth()
   const [collapsed, setCollapsed] = useState(false)
 
   useEffect(() => {
@@ -21,10 +21,12 @@ export default function DashboardLayout({
       router.replace('/login')
     } else if (!profile) {
       router.replace('/onboarding')
-    } else if (!isSubscribed) {
-      router.replace('/paywall')
     }
-  }, [isLoading, user, profile, isSubscribed, router])
+    // TODO: re-enable subscription gating when Stripe is fully configured
+    // else if (!isSubscribed) {
+    //   router.replace('/paywall')
+    // }
+  }, [isLoading, user, profile, router])
 
   if (isLoading) {
     return (
@@ -34,7 +36,7 @@ export default function DashboardLayout({
     )
   }
 
-  if (!user || !profile || !isSubscribed) {
+  if (!user || !profile) {
     return null
   }
 

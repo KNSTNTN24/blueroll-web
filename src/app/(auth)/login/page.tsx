@@ -39,21 +39,8 @@ export default function LoginPage() {
         return
       }
 
-      // Check subscription
-      const { data: business } = await supabase
-        .from('businesses')
-        .select('subscription_status')
-        .eq('id', profile.business_id)
-        .single()
-
-      if (!mounted) return
-
-      const status = business?.subscription_status
-      if (status === 'active' || status === 'trialing') {
-        router.replace('/dashboard')
-      } else {
-        router.replace('/paywall')
-      }
+      // TODO: re-enable subscription check when Stripe is fully configured
+      router.replace('/dashboard')
     }).catch(() => {
       if (mounted) setCheckingSession(false)
     })
@@ -106,18 +93,8 @@ export default function LoginPage() {
         return
       }
 
-      const { data: business } = await supabase
-        .from('businesses')
-        .select('subscription_status')
-        .eq('id', profile.business_id)
-        .single()
-
-      const status = business?.subscription_status
-      if (status === 'active' || status === 'trialing') {
-        router.replace('/dashboard')
-      } else {
-        router.replace('/paywall')
-      }
+      // TODO: re-enable subscription check when Stripe is fully configured
+      router.replace('/dashboard')
     } catch {
       setError('Something went wrong. Please try again.')
       setLoading(false)
