@@ -362,23 +362,14 @@ export default function OnboardingPage() {
     setContent(BRAND_COPY[step])
   }, [step, setContent])
 
-  // If user is already logged in with a profile, go to dashboard
+  // Sign out any existing session when landing on onboarding
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
-        try {
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('id')
-            .eq('id', session.user.id)
-            .single()
-          if (profile) {
-            window.location.href = '/dashboard'
-          }
-        } catch { /* no profile — stay on onboarding */ }
+        supabase.auth.signOut()
       }
-    }).catch(() => { /* ignore */ })
-  }, [router])
+    }).catch(() => {})
+  }, [])
 
   // State
   const [name, setName] = useState('')
