@@ -293,10 +293,10 @@ export default function OnboardingPage() {
           await seedDefaultChecklists(profile.business_id)
         }
 
-        // 4. Go to paywall step
-        setSettingUp(false)
-        setSigningUp(false)
-        setStep(7)
+        // Business created — go to dashboard
+        // TODO: re-enable paywall step (setStep(7)) when Stripe gating is active
+        window.location.href = '/dashboard'
+        return
       } else {
         // Join team
         const { error: joinError } = await (supabase.rpc as any)('join_with_invite', {
