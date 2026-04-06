@@ -87,6 +87,8 @@ export default function PaywallPage() {
           userId: session.user.id,
           email: session.user.email,
           businessId: profile?.business_id,
+          success_url: `${window.location.origin}/dashboard`,
+          cancel_url: `${window.location.origin}/paywall`,
         },
       })
 
