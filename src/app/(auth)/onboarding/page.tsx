@@ -293,10 +293,10 @@ export default function OnboardingPage() {
           await seedDefaultChecklists(profile.business_id)
         }
 
-        // Business created — go to dashboard
-        // TODO: re-enable paywall step (setStep(7)) when Stripe gating is active
-        window.location.href = '/dashboard'
-        return
+        // Business created — show paywall
+        setSettingUp(false)
+        setSigningUp(false)
+        setStep(7)
       } else {
         // Join team
         const { error: joinError } = await (supabase.rpc as any)('join_with_invite', {
@@ -313,9 +313,30 @@ export default function OnboardingPage() {
           return
         }
 
-        // Join successful — go to dashboard
-        window.location.href = '/dashboard'
-        return
+        // Check if business already subscribed — skip paywall if so
+        const { data: joinProfile } = await supabase
+          .from('profiles')
+          .select('business_id')
+          .eq('id', (await supabase.auth.getUser()).data.user!.id)
+          .single()
+
+        if (joinProfile?.business_id) {
+          const { data: biz } = await supabase
+            .from('businesses')
+            .select('subscription_status')
+            .eq('id', joinProfile.business_id)
+            .single()
+
+          if (biz?.subscription_status === 'active' || biz?.subscription_status === 'trialing') {
+            window.location.href = '/dashboard'
+            return
+          }
+        }
+
+        // Business not subscribed — show paywall
+        setSettingUp(false)
+        setSigningUp(false)
+        setStep(5)
       }
     } catch {
       setSignupError('Something went wrong. Please try again.')
