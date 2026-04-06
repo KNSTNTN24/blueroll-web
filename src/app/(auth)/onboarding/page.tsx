@@ -345,7 +345,7 @@ export default function OnboardingPage() {
     }
   }
 
-  // ── Paywall: start trial ──
+  // ── Paywall: start trial (TEST STUB — no Stripe) ──
   async function handleStartTrial() {
     setStartingTrial(true)
     setPaywallError(null)
@@ -364,33 +364,29 @@ export default function OnboardingPage() {
         .eq('id', session.user.id)
         .single()
 
-      const { data, error } = await supabase.functions.invoke('create-subscription', {
-        body: {
-          userId: session.user.id,
-          email: session.user.email,
-          businessId: profile?.business_id,
-          success_url: `${window.location.origin}/dashboard`,
-          cancel_url: `${window.location.origin}/paywall`,
-        },
-      })
-
-      if (error) {
-        console.error('create-subscription error:', error)
-        setPaywallError(typeof error === 'object' ? JSON.stringify(error) : String(error))
+      if (!profile?.business_id) {
+        setPaywallError('No business found.')
         setStartingTrial(false)
         return
       }
 
-      // Edge Function returns JSON, but supabase.functions.invoke may wrap it
-      const result = typeof data === 'string' ? JSON.parse(data) : data
-      const checkoutUrl = result?.checkoutUrl || result?.url
-      if (checkoutUrl) {
-        window.location.href = checkoutUrl
-      } else {
-        console.error('No checkout URL in response:', data)
-        setPaywallError(result?.error || 'Failed to get checkout URL. Please try again.')
+      // TEST STUB: write trialing status directly to DB instead of Stripe
+      const { error } = await supabase
+        .from('businesses')
+        .update({
+          subscription_status: 'trialing',
+          trial_ends_at: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+        })
+        .eq('id', profile.business_id)
+
+      if (error) {
+        setPaywallError('Failed to activate trial: ' + error.message)
         setStartingTrial(false)
+        return
       }
+
+      // Go to dashboard
+      window.location.href = '/dashboard'
     } catch {
       setPaywallError('Something went wrong. Please try again.')
       setStartingTrial(false)

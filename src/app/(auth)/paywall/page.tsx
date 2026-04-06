@@ -82,29 +82,28 @@ export default function PaywallPage() {
         .eq('id', session.user.id)
         .single()
 
-      const { data, error: fnError } = await supabase.functions.invoke('create-subscription', {
-        body: {
-          userId: session.user.id,
-          email: session.user.email,
-          businessId: profile?.business_id,
-          success_url: `${window.location.origin}/dashboard`,
-          cancel_url: `${window.location.origin}/paywall`,
-        },
-      })
-
-      if (fnError) {
-        setError('Failed to start trial. Please try again.')
+      if (!profile?.business_id) {
+        setError('No business found.')
         setStartingTrial(false)
         return
       }
 
-      const checkoutUrl = data?.checkoutUrl || data?.url
-      if (checkoutUrl) {
-        window.location.href = checkoutUrl
-      } else {
-        setError('Failed to start trial. Please try again.')
+      // TEST STUB: write trialing status directly to DB instead of Stripe
+      const { error: updateError } = await supabase
+        .from('businesses')
+        .update({
+          subscription_status: 'trialing',
+          trial_ends_at: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+        })
+        .eq('id', profile.business_id)
+
+      if (updateError) {
+        setError('Failed to activate trial: ' + updateError.message)
         setStartingTrial(false)
+        return
       }
+
+      window.location.href = '/dashboard'
     } catch {
       setError('Something went wrong. Please try again.')
       setStartingTrial(false)
