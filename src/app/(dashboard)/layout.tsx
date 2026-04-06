@@ -19,12 +19,8 @@ export default function DashboardLayout({
     if (isLoading) return
     if (!user) {
       router.replace('/onboarding')
-      return
     }
-    if (!profile) {
-      router.replace('/onboarding')
-    }
-  }, [isLoading, user, profile, router])
+  }, [isLoading, user, router])
 
   if (isLoading) {
     return (
@@ -34,7 +30,7 @@ export default function DashboardLayout({
     )
   }
 
-  if (!user || !profile) return null
+  if (!user) return null
 
   return (
     <div className="flex h-screen overflow-hidden">
