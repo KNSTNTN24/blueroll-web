@@ -4,7 +4,6 @@ import { useState, useCallback, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
-import { PAIN_POINTS } from '@/lib/constants'
 import { cn } from '@/lib/utils'
 import {
   Search,
