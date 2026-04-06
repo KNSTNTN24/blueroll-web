@@ -6,7 +6,8 @@
 
 ### Логин
 - Поля: email, пароль
-- При успешном логине: проверка есть ли профиль → если да, на дашборд; если нет, на setup/онбординг
+- При успешном логине: проверка профиля → проверка подписки → dashboard или paywall
+- Если нет профиля → /onboarding
 - Ошибки: "Invalid email or password", "Email not confirmed"
 - Ссылка "Don't have an account? → Create account" → ведёт на онбординг
 
@@ -308,14 +309,34 @@
 
 ---
 
-## 16. Платежи
+## 16. Платежи и подписка
 
-- В мобилке: нативные In-App Purchase (Apple/Google)
-- На вебе: **Stripe** (Checkout Session + Customer Portal)
-- Edge Functions: create-subscription, manage-subscription
+### Stripe (веб)
+- Edge Function `create-subscription`: создаёт Stripe Customer + Checkout Session (14-day trial)
+- Edge Function `manage-subscription`: Stripe Customer Portal (смена карты, отмена)
+- Цена: **£14.99/мес** (price_id: `price_1TEVMUHaq4vjSIKeWZNDhuFg`)
 - Триал: 14 дней бесплатно
-- Подписка: £15/мес
-- Гейтинг: без подписки → paywall после онбординга
+- Success URL: `https://app.blueroll.app/dashboard`
+- Cancel URL: `https://app.blueroll.app/paywall`
+
+### Paywall экран (/paywall)
+- Полноэкранный emerald gradient
+- Заголовок: "Everything you need for food safety"
+- 6 фич со списком (чеклисты, AI import, аллергены, отчёты, команда, документы)
+- CTA: "Start free trial" + "then £14.99/mo after 14 days"
+- Подвал: "14-day free trial. Cancel anytime." + ссылки Terms/Privacy
+
+### Гейтинг
+- Без активной подписки → redirect на /paywall
+- Проверяется `businesses.subscription_status`
+- Допуск: `active`, `trialing`
+- Блокировка: `canceled`, `past_due`, `null`
+- Join-юзер пропускает paywall если бизнес уже оплачен owner'ом
+
+### В Settings
+- Секция "Subscription": текущий статус, дата окончания триала/подписки
+- Кнопка "Manage subscription" → Stripe Customer Portal
+- Кнопка "Upgrade" если нет подписки
 
 ---
 
