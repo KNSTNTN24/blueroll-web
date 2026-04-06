@@ -67,6 +67,7 @@ const emptyParsed: ParsedRecipe = {
 export default function ImportRecipePage() {
   const router = useRouter()
   const queryClient = useQueryClient()
+  const profile = useAuthStore((s) => s.profile)
   const business = useAuthStore((s) => s.business)
   const fileInputRef = useRef<HTMLInputElement>(null)
 

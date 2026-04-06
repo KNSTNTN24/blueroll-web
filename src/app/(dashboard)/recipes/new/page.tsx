@@ -34,6 +34,7 @@ const EXTRA_CARE_OPTIONS = [
 export default function NewRecipePage() {
   const router = useRouter()
   const queryClient = useQueryClient()
+  const profile = useAuthStore((s) => s.profile)
   const business = useAuthStore((s) => s.business)
 
   const [saving, setSaving] = useState(false)
