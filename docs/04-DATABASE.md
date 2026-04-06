@@ -10,7 +10,7 @@
 
 ---
 
-## Таблицы (20 активных)
+## Таблицы (21 активная)
 
 ### 1. businesses
 | Колонка | Тип | Описание |
@@ -26,6 +26,8 @@
 | subscription_id | TEXT | Stripe subscription |
 | subscription_status | TEXT | trialing/active/canceled |
 | trial_ends_at | TIMESTAMPTZ | Конец триала |
+| haccp_last_reviewed_at | TIMESTAMPTZ | Дата последнего 4-week HACCP review |
+| haccp_auto_fill | BOOLEAN | DEFAULT true — автозаполнение HACCP Pack из данных Blueroll |
 | created_at | TIMESTAMPTZ | |
 | updated_at | TIMESTAMPTZ | |
 
@@ -157,6 +159,8 @@ FK hints: `profiles!checklist_completions_completed_by_fkey(full_name)`, `checkl
 | reheating_instructions | TEXT | |
 | hot_holding_required | BOOLEAN | |
 | chilling_method | TEXT | |
+| freezing_instructions | TEXT | Как замораживать (для HACCP Pack → Chilling → Freezing) |
+| defrosting_instructions | TEXT | Как размораживать (для HACCP Pack → Chilling → Defrosting) |
 | photo_url | TEXT | |
 | source_video_url | TEXT | |
 | business_id | UUID NOT NULL | FK → businesses(id) |
@@ -330,6 +334,37 @@ FK hints: `suppliers(name)`, `profiles(full_name)`, `delivery_photos(*)`
 
 ---
 
+### 21. haccp_pack_data
+| Колонка | Тип | Описание |
+|---------|-----|----------|
+| id | UUID PK | gen_random_uuid() |
+| business_id | UUID NOT NULL UNIQUE | FK → businesses(id) CASCADE |
+| data | JSONB NOT NULL | Все ручные данные: toggles, texts, file refs, selects, overrides |
+| updated_at | TIMESTAMPTZ | DEFAULT NOW() |
+
+**Одна строка на бизнес.** Структура `data` JSONB:
+```json
+{
+  "toggles": { "personal-hygiene-0": true, "cloths-1": false, ... },
+  "texts": { "personal-hygiene-work-clothes": "White chef jacket...", ... },
+  "files": { "pest-control-pest-contract": "filename.pdf", ... },
+  "selects": { "chilled-storage-fridge-method": "Digital display", ... },
+  "overrides": { "separating-foods-delivery-times": "custom text overriding auto" }
+}
+```
+
+- `toggles` — key = `{methodId}-{toggleIndex}`, value = boolean
+- `texts` — key = `{methodId}-{textKey}`, value = string
+- `files` — key = `{methodId}-{fileKey}`, value = filename (файл хранится в Storage)
+- `selects` — key = `{methodId}-{selectKey}`, value = string
+- `overrides` — key совпадает с auto-полем, если set → приоритет над авто
+
+Запросы:
+- SELECT: `.select('*').eq('business_id', bid).single()` — загрузка всего пака
+- UPSERT: `.upsert({ business_id, data, updated_at })` — сохранение при каждом изменении
+
+---
+
 ## RPC функции (SECURITY DEFINER)
 
 ### setup_business
@@ -363,7 +398,7 @@ join_with_invite(
 
 ### import-recipe
 - **POST**: `{ text?, pdf_base64?, image_base64?, image_mime?, filename? }`
-- **Возвращает**: `{ name, description, category, instructions, cookingMethod, cookingTemp, cookingTime, cookingTimeUnit, ingredients[{name, quantity, unit, allergens[]}] }`
+- **Возвращает**: `{ name, description, category, instructions, cookingMethod, cookingTemp, cookingTime, cookingTimeUnit, chillingMethod, freezingInstructions, defrostingInstructions, reheatingInstructions, hotHoldingRequired, extraCareFlags[], ingredients[{name, quantity, unit, allergens[]}] }`
 - **Модель**: Claude Sonnet
 - **Env**: `ANTHROPIC_API_KEY`
 
@@ -375,7 +410,7 @@ join_with_invite(
 
 ### delete-account
 - **POST**: `{ userId, businessId }`
-- **Логика**: каскадное удаление всех данных бизнеса + auth user
+- **Логика**: каскадное удаление всех данных бизнеса + auth user (включая haccp_pack_data)
 - **Env**: `SUPABASE_SERVICE_ROLE_KEY`
 
 ### capture-lead
@@ -392,6 +427,7 @@ join_with_invite(
 - **Upload**: `supabase.storage.from('documents').upload(path, file)`
 - **Download**: `supabase.storage.from('documents').createSignedUrl(path, 3600)` — signed URL на 1 час
 - **Delete**: `supabase.storage.from('documents').remove([path])`
+- **Также используется для**: файлов HACCP Pack (сертификаты, расписания) — path: `{businessId}/haccp/{methodId}_{fileKey}_{fileName}`
 
 ---
 
