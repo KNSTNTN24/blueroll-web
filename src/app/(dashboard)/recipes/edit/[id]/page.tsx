@@ -1,8 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { use, useState, useEffect } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
-import { useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { toast } from 'sonner'
@@ -31,12 +31,14 @@ const EXTRA_CARE_OPTIONS = [
   { value: 'shellfish', label: 'Shellfish' },
 ]
 
-export default function NewRecipePage() {
+export default function EditRecipePage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params)
   const router = useRouter()
   const queryClient = useQueryClient()
   const business = useAuthStore((s) => s.business)
 
   const [saving, setSaving] = useState(false)
+  const [loaded, setLoaded] = useState(false)
 
   // Form state
   const [name, setName] = useState('')
@@ -53,9 +55,56 @@ export default function NewRecipePage() {
   const [reheatingInstructions, setReheatingInstructions] = useState('')
   const [hotHoldingRequired, setHotHoldingRequired] = useState(false)
   const [extraCareFlags, setExtraCareFlags] = useState<string[]>([])
-  const [ingredients, setIngredients] = useState<IngredientRow[]>([
-    { name: '', quantity: '', unit: '', allergens: [] },
-  ])
+  const [ingredients, setIngredients] = useState<IngredientRow[]>([])
+
+  const { data: recipe, isLoading } = useQuery({
+    queryKey: ['recipe', id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('recipes')
+        .select(`
+          *,
+          recipe_ingredients (
+            quantity,
+            unit,
+            ingredient:ingredients (id, name, allergens)
+          )
+        `)
+        .eq('id', id)
+        .single()
+      if (error) throw error
+      return data
+    },
+  })
+
+  // Pre-fill form when recipe loads
+  useEffect(() => {
+    if (recipe && !loaded) {
+      setName(recipe.name ?? '')
+      setDescription(recipe.description ?? '')
+      setCategory(recipe.category ?? 'main')
+      setInstructions(recipe.instructions ?? '')
+      setCookingMethod(recipe.cooking_method ?? '')
+      setCookingTemp(recipe.cooking_temp?.toString() ?? '')
+      setCookingTime(recipe.cooking_time?.toString() ?? '')
+      setCookingTimeUnit(recipe.cooking_time_unit ?? 'minutes')
+      setChillingMethod(recipe.chilling_method ?? '')
+      setFreezingInstructions(recipe.freezing_instructions ?? '')
+      setDefrostingInstructions(recipe.defrosting_instructions ?? '')
+      setReheatingInstructions(recipe.reheating_instructions ?? '')
+      setHotHoldingRequired(recipe.hot_holding_required ?? false)
+      setExtraCareFlags(recipe.extra_care_flags ?? [])
+      setIngredients(
+        recipe.recipe_ingredients?.map((ri: any) => ({
+          name: ri.ingredient?.name ?? '',
+          quantity: ri.quantity?.toString() ?? '',
+          unit: ri.unit ?? '',
+          allergens: ri.ingredient?.allergens ?? [],
+        })) ?? [{ name: '', quantity: '', unit: '', allergens: [] }]
+      )
+      setLoaded(true)
+    }
+  }, [recipe, loaded])
 
   function addIngredient() {
     setIngredients([...ingredients, { name: '', quantity: '', unit: '', allergens: [] }])
@@ -97,12 +146,11 @@ export default function NewRecipePage() {
 
     setSaving(true)
     try {
-      // 1. Upsert ingredients by name
+      // 1. Upsert ingredients
       const validIngredients = ingredients.filter((i) => i.name.trim())
       const ingredientIds: Record<string, string> = {}
 
       for (const ing of validIngredients) {
-        // Check if ingredient exists
         const { data: existing } = await supabase
           .from('ingredients')
           .select('id')
@@ -111,7 +159,6 @@ export default function NewRecipePage() {
           .single()
 
         if (existing) {
-          // Update allergens
           await supabase
             .from('ingredients')
             .update({ allergens: ing.allergens })
@@ -132,11 +179,10 @@ export default function NewRecipePage() {
         }
       }
 
-      // 2. Create recipe
-      const { data: recipe, error: recipeError } = await supabase
+      // 2. Update recipe
+      const { error: recipeError } = await supabase
         .from('recipes')
-        .insert({
-          business_id: business.id,
+        .update({
           name: name.trim(),
           description: description.trim() || null,
           category,
@@ -151,16 +197,16 @@ export default function NewRecipePage() {
           reheating_instructions: reheatingInstructions.trim() || null,
           hot_holding_required: hotHoldingRequired,
           extra_care_flags: extraCareFlags,
-          active: true,
         })
-        .select('id')
-        .single()
+        .eq('id', id)
 
       if (recipeError) throw recipeError
 
-      // 3. Create recipe_ingredients
+      // 3. Replace recipe_ingredients
+      await supabase.from('recipe_ingredients').delete().eq('recipe_id', id)
+
       const recipeIngredients = validIngredients.map((ing) => ({
-        recipe_id: recipe.id,
+        recipe_id: id,
         ingredient_id: ingredientIds[ing.name],
         quantity: ing.quantity ? Number(ing.quantity) : null,
         unit: ing.unit.trim() || null,
@@ -173,14 +219,31 @@ export default function NewRecipePage() {
         if (riError) throw riError
       }
 
-      toast.success('Recipe created')
+      toast.success('Recipe updated')
       queryClient.invalidateQueries({ queryKey: ['recipes'] })
-      router.push(`/recipes/${recipe.id}`)
+      queryClient.invalidateQueries({ queryKey: ['recipe', id] })
+      router.push(`/recipes/${id}`)
     } catch (err: any) {
-      toast.error(err.message || 'Failed to create recipe')
+      toast.error(err.message || 'Failed to update recipe')
     } finally {
       setSaving(false)
     }
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-16 text-[13px] text-muted-foreground">
+        Loading recipe...
+      </div>
+    )
+  }
+
+  if (!recipe) {
+    return (
+      <div className="flex items-center justify-center py-16 text-[13px] text-muted-foreground">
+        Recipe not found
+      </div>
+    )
   }
 
   return (
@@ -190,11 +253,11 @@ export default function NewRecipePage() {
           variant="ghost"
           size="sm"
           className="h-7 w-7 p-0"
-          onClick={() => router.push('/recipes')}
+          onClick={() => router.push(`/recipes/${id}`)}
         >
           <ArrowLeft className="h-4 w-4" />
         </Button>
-        <PageHeader title="New Recipe" description="Add a new recipe to your collection" />
+        <PageHeader title="Edit Recipe" description={`Editing "${recipe.name}"`} />
       </div>
 
       <div className="max-w-3xl space-y-6">
@@ -447,11 +510,11 @@ export default function NewRecipePage() {
             className="gap-1.5 bg-emerald-600 hover:bg-emerald-700"
           >
             <Save className="h-3.5 w-3.5" />
-            {saving ? 'Saving...' : 'Save Recipe'}
+            {saving ? 'Saving...' : 'Update Recipe'}
           </Button>
           <Button
             variant="outline"
-            onClick={() => router.push('/recipes')}
+            onClick={() => router.push(`/recipes/${id}`)}
           >
             Cancel
           </Button>

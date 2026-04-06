@@ -4,431 +4,267 @@ import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
+import {
+  Search, Download, Printer, LayoutGrid, Table2, Check, AlertTriangle,
+  ArrowUpDown,
+} from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { EmptyState } from '@/components/shared/empty-state'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Input } from '@/components/ui/input'
 import {
   EU_ALLERGENS,
   ALLERGEN_LABELS,
-  ALLERGEN_EMOJI,
   RECIPE_CATEGORY_LABELS,
   type EUAllergen,
 } from '@/lib/constants'
-import { cn } from '@/lib/utils'
-import {
-  ShieldAlert,
-  Download,
-  FileDown,
-  Search,
-  Check,
-  Wheat,
-  Leaf,
-  Milk,
-  ArrowUpDown,
-} from 'lucide-react'
-import { toast } from 'sonner'
 
-// ---------------------------------------------------------------------------
-// Allergen helper functions
-// ---------------------------------------------------------------------------
+type ViewMode = 'card' | 'matrix'
+type SortKey = 'name' | 'category' | 'allergen_count'
 
-type IngredientRow = { allergens: string[] }
-type RecipeIngredientWithIngredient = { ingredients: IngredientRow | null }
-
-function collectAllergens(
-  recipeIngredients: RecipeIngredientWithIngredient[]
-): Set<EUAllergen> {
-  const set = new Set<EUAllergen>()
-  for (const ri of recipeIngredients) {
-    if (ri.ingredients?.allergens) {
-      for (const a of ri.ingredients.allergens) {
-        if ((EU_ALLERGENS as readonly string[]).includes(a)) {
-          set.add(a as EUAllergen)
-        }
-      }
-    }
-  }
-  return set
+function getAllergens(recipe: any): string[] {
+  const set = new Set<string>()
+  recipe.recipe_ingredients?.forEach((ri: any) => {
+    ri.ingredient?.allergens?.forEach((a: string) => set.add(a))
+  })
+  return Array.from(set)
 }
-
-function isVegetarian(allergens: Set<EUAllergen>): boolean {
-  // No fish, crustaceans, or molluscs
-  return !allergens.has('fish') && !allergens.has('crustaceans') && !allergens.has('molluscs')
-}
-
-function isVegan(allergens: Set<EUAllergen>): boolean {
-  // No animal-derived allergens
-  return (
-    isVegetarian(allergens) &&
-    !allergens.has('milk') &&
-    !allergens.has('eggs')
-  )
-}
-
-function isGlutenFree(allergens: Set<EUAllergen>): boolean {
-  return !allergens.has('gluten')
-}
-
-function isDairyFree(allergens: Set<EUAllergen>): boolean {
-  return !allergens.has('milk')
-}
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-interface RecipeWithAllergens {
-  id: string
-  name: string
-  category: string
-  allergens: Set<EUAllergen>
-}
-
-type SortField = 'name' | 'category' | 'allergenCount'
-type SortDir = 'asc' | 'desc'
-
-// ---------------------------------------------------------------------------
-// Page
-// ---------------------------------------------------------------------------
 
 export default function AllergensPage() {
-  const { business } = useAuthStore()
-  const [search, setSearch] = useState('')
-  const [sortField, setSortField] = useState<SortField>('name')
-  const [sortDir, setSortDir] = useState<SortDir>('asc')
+  const business = useAuthStore((s) => s.business)
 
-  const { data: recipes, isLoading } = useQuery({
-    queryKey: ['recipes-with-allergens', business?.id],
+  const [view, setView] = useState<ViewMode>('matrix')
+  const [search, setSearch] = useState('')
+  const [sortKey, setSortKey] = useState<SortKey>('name')
+
+  const { data: recipes = [], isLoading } = useQuery({
+    queryKey: ['allergen-recipes', business?.id],
     queryFn: async () => {
+      if (!business?.id) return []
       const { data, error } = await supabase
         .from('recipes')
-        .select('id, name, category, recipe_ingredients(ingredient_id, ingredients(name, allergens))')
-        .eq('business_id', business!.id)
+        .select(`
+          *,
+          recipe_ingredients (
+            ingredient:ingredients (name, allergens)
+          )
+        `)
+        .eq('business_id', business.id)
         .eq('active', true)
         .order('name')
       if (error) throw error
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return (data as any[]) ?? []
+      return data ?? []
     },
     enabled: !!business?.id,
   })
 
-  // Compute allergen data for each recipe
-  const enriched: RecipeWithAllergens[] = useMemo(() => {
-    if (!recipes) return []
-    return recipes.map((r) => ({
-      id: r.id,
-      name: r.name,
-      category: r.category,
-      allergens: collectAllergens(
-        (r.recipe_ingredients as unknown as RecipeIngredientWithIngredient[]) ?? []
-      ),
-    }))
-  }, [recipes])
+  const enriched = useMemo(
+    () =>
+      recipes.map((r: any) => ({
+        ...r,
+        _allergens: getAllergens(r),
+      })),
+    [recipes]
+  )
 
-  // Filter
   const filtered = useMemo(() => {
-    if (!search.trim()) return enriched
-    const q = search.toLowerCase()
-    return enriched.filter((r) => r.name.toLowerCase().includes(q))
-  }, [enriched, search])
-
-  // Sort
-  const sorted = useMemo(() => {
-    const arr = [...filtered]
-    arr.sort((a, b) => {
-      let cmp = 0
-      if (sortField === 'name') cmp = a.name.localeCompare(b.name)
-      else if (sortField === 'category') cmp = a.category.localeCompare(b.category)
-      else cmp = a.allergens.size - b.allergens.size
-      return sortDir === 'asc' ? cmp : -cmp
+    let list = enriched.filter(
+      (r: any) => !search || r.name.toLowerCase().includes(search.toLowerCase())
+    )
+    list.sort((a: any, b: any) => {
+      if (sortKey === 'name') return a.name.localeCompare(b.name)
+      if (sortKey === 'category') return (a.category ?? '').localeCompare(b.category ?? '')
+      return b._allergens.length - a._allergens.length
     })
-    return arr
-  }, [filtered, sortField, sortDir])
+    return list
+  }, [enriched, search, sortKey])
 
   // Group by category for card view
   const grouped = useMemo(() => {
-    const map = new Map<string, RecipeWithAllergens[]>()
-    for (const r of sorted) {
-      const list = map.get(r.category) ?? []
-      list.push(r)
-      map.set(r.category, list)
-    }
+    const map: Record<string, any[]> = {}
+    filtered.forEach((r: any) => {
+      const cat = r.category ?? 'other'
+      if (!map[cat]) map[cat] = []
+      map[cat].push(r)
+    })
     return map
-  }, [sorted])
+  }, [filtered])
 
-  function toggleSort(field: SortField) {
-    if (sortField === field) {
-      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
-    } else {
-      setSortField(field)
-      setSortDir('asc')
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Export CSV
-  // ---------------------------------------------------------------------------
   function exportCSV() {
     const header = ['Recipe', 'Category', ...EU_ALLERGENS.map((a) => ALLERGEN_LABELS[a])]
-    const rows = sorted.map((r) => [
-      `"${r.name}"`,
-      r.category,
-      ...EU_ALLERGENS.map((a) => (r.allergens.has(a) ? 'Y' : '')),
+    const rows = filtered.map((r: any) => [
+      r.name,
+      RECIPE_CATEGORY_LABELS[r.category] ?? r.category,
+      ...EU_ALLERGENS.map((a) => (r._allergens.includes(a) ? 'Y' : '')),
     ])
-    const csv = [header.join(','), ...rows.map((row) => row.join(','))].join('\n')
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const csv = [header, ...rows].map((row) => row.map((c: string) => `"${c}"`).join(',')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = 'allergen-matrix.csv'
-    link.click()
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'allergen-matrix.csv'
+    a.click()
     URL.revokeObjectURL(url)
-    toast.success('CSV exported')
   }
 
-  // ---------------------------------------------------------------------------
-  // Export PDF (print-based)
-  // ---------------------------------------------------------------------------
-  function exportPDF() {
+  function handlePrint() {
     window.print()
   }
 
-  // ---------------------------------------------------------------------------
-  // Loading
-  // ---------------------------------------------------------------------------
-  if (isLoading) {
-    return (
-      <div className="space-y-6">
-        <div className="h-8 w-48 animate-pulse rounded bg-muted" />
-        <div className="space-y-3">
-          {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-12 animate-pulse rounded-lg bg-muted" />
-          ))}
-        </div>
-      </div>
-    )
-  }
-
-  // ---------------------------------------------------------------------------
-  // Render
-  // ---------------------------------------------------------------------------
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Allergen Matrix"
-        description="Track allergens across all recipes for EU compliance"
-      >
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={exportCSV} className="text-[12px]">
-            <FileDown className="mr-1.5 h-3.5 w-3.5" />
-            CSV
-          </Button>
-          <Button variant="outline" size="sm" onClick={exportPDF} className="text-[12px]">
-            <Download className="mr-1.5 h-3.5 w-3.5" />
-            PDF
-          </Button>
-        </div>
+      <PageHeader title="Allergen Matrix" description="EU 14 allergens across all active recipes">
+        <Button variant="outline" size="sm" onClick={exportCSV} className="gap-1.5">
+          <Download className="h-3.5 w-3.5" />
+          CSV
+        </Button>
+        <Button variant="outline" size="sm" onClick={handlePrint} className="gap-1.5">
+          <Printer className="h-3.5 w-3.5" />
+          PDF
+        </Button>
       </PageHeader>
 
-      {/* Search */}
-      <div className="relative max-w-xs">
-        <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search recipes..."
-          className="pl-8 text-[13px]"
-        />
+      {/* Controls */}
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search recipes..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-8 text-[13px]"
+          />
+        </div>
+        <select
+          value={sortKey}
+          onChange={(e) => setSortKey(e.target.value as SortKey)}
+          className="h-9 rounded-md border border-border bg-background px-3 text-[13px] text-foreground outline-none"
+        >
+          <option value="name">Sort by Name</option>
+          <option value="category">Sort by Category</option>
+          <option value="allergen_count">Sort by Allergen Count</option>
+        </select>
+        <div className="flex gap-1 rounded-md border border-border p-0.5">
+          <button
+            onClick={() => setView('card')}
+            className={`rounded p-1.5 transition-colors ${
+              view === 'card' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <LayoutGrid className="h-4 w-4" />
+          </button>
+          <button
+            onClick={() => setView('matrix')}
+            className={`rounded p-1.5 transition-colors ${
+              view === 'matrix' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <Table2 className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
-      {enriched.length === 0 ? (
+      {isLoading ? (
+        <div className="flex items-center justify-center py-16 text-[13px] text-muted-foreground">
+          Loading allergen data...
+        </div>
+      ) : filtered.length === 0 ? (
         <EmptyState
-          icon={ShieldAlert}
-          title="No recipes found"
-          description="Add recipes with ingredients to see the allergen matrix."
+          icon={AlertTriangle}
+          title="No active recipes"
+          description={search ? 'Try adjusting your search' : 'Activate recipes to see allergen data'}
         />
+      ) : view === 'matrix' ? (
+        /* ── Matrix View ── */
+        <div className="overflow-x-auto rounded-lg border border-border">
+          <table className="w-full text-[13px]">
+            <thead>
+              <tr className="border-b border-border bg-muted/50">
+                <th className="sticky left-0 bg-muted/50 px-4 py-2.5 text-left font-medium text-muted-foreground min-w-[200px]">
+                  Recipe
+                </th>
+                <th className="px-3 py-2.5 text-left font-medium text-muted-foreground min-w-[100px]">
+                  Category
+                </th>
+                {EU_ALLERGENS.map((a) => (
+                  <th
+                    key={a}
+                    className="px-1 py-2.5 text-center font-medium text-muted-foreground min-w-[60px]"
+                  >
+                    <span className="text-[10px] leading-tight block">
+                      {ALLERGEN_LABELS[a]}
+                    </span>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((recipe: any) => (
+                <tr key={recipe.id} className="border-b border-border last:border-0 hover:bg-muted/30">
+                  <td className="sticky left-0 bg-background px-4 py-2.5 font-medium text-foreground">
+                    {recipe.name}
+                  </td>
+                  <td className="px-3 py-2.5 text-muted-foreground">
+                    {RECIPE_CATEGORY_LABELS[recipe.category] ?? recipe.category}
+                  </td>
+                  {EU_ALLERGENS.map((a) => (
+                    <td key={a} className="px-1 py-2.5 text-center">
+                      {recipe._allergens.includes(a) ? (
+                        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-red-100 text-red-700">
+                          <Check className="h-3 w-3" />
+                        </span>
+                      ) : (
+                        <span className="text-gray-300">-</span>
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       ) : (
-        <Tabs defaultValue="matrix">
-          <TabsList>
-            <TabsTrigger value="matrix">Matrix</TabsTrigger>
-            <TabsTrigger value="cards">Cards</TabsTrigger>
-          </TabsList>
-
-          {/* ----------------------------------------------------------------- */}
-          {/* MATRIX VIEW                                                        */}
-          {/* ----------------------------------------------------------------- */}
-          <TabsContent value="matrix" className="mt-4">
-            <div className="rounded-lg border border-border bg-white">
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse text-[13px]">
-                  <thead>
-                    <tr className="border-b border-border">
-                      <th
-                        className="sticky left-0 z-10 bg-white px-4 py-2.5 text-left text-[12px] font-medium text-muted-foreground cursor-pointer hover:text-foreground"
-                        onClick={() => toggleSort('name')}
-                      >
-                        <span className="inline-flex items-center gap-1">
-                          Recipe
-                          <ArrowUpDown className="h-3 w-3" />
+        /* ── Card View ── */
+        <div className="space-y-8">
+          {Object.entries(grouped).map(([cat, items]) => (
+            <div key={cat}>
+              <h2 className="text-[14px] font-semibold text-foreground mb-3">
+                {RECIPE_CATEGORY_LABELS[cat] ?? cat}
+              </h2>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {items.map((recipe: any) => (
+                  <div
+                    key={recipe.id}
+                    className="rounded-lg border border-border p-4 space-y-3"
+                  >
+                    <div className="flex items-start justify-between">
+                      <h3 className="text-[13px] font-medium text-foreground">{recipe.name}</h3>
+                      {recipe._allergens.length > 0 && (
+                        <span className="text-[11px] font-medium text-red-600 bg-red-50 rounded-full px-2 py-0.5 border border-red-200">
+                          {recipe._allergens.length} allergen{recipe._allergens.length !== 1 ? 's' : ''}
                         </span>
-                      </th>
-                      <th
-                        className="px-3 py-2.5 text-left text-[12px] font-medium text-muted-foreground cursor-pointer hover:text-foreground"
-                        onClick={() => toggleSort('category')}
-                      >
-                        <span className="inline-flex items-center gap-1">
-                          Category
-                          <ArrowUpDown className="h-3 w-3" />
-                        </span>
-                      </th>
-                      {EU_ALLERGENS.map((allergen) => (
-                        <th
-                          key={allergen}
-                          className="px-2 py-2.5 text-center text-[11px] font-medium text-muted-foreground"
-                          title={ALLERGEN_LABELS[allergen]}
-                        >
-                          <div className="flex flex-col items-center gap-0.5">
-                            <span>{ALLERGEN_EMOJI[allergen]}</span>
-                            <span className="max-w-[3.5rem] truncate">
-                              {ALLERGEN_LABELS[allergen]}
-                            </span>
-                          </div>
-                        </th>
-                      ))}
-                      <th
-                        className="px-3 py-2.5 text-center text-[12px] font-medium text-muted-foreground cursor-pointer hover:text-foreground"
-                        onClick={() => toggleSort('allergenCount')}
-                      >
-                        <span className="inline-flex items-center gap-1">
-                          Total
-                          <ArrowUpDown className="h-3 w-3" />
-                        </span>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {sorted.map((recipe) => (
-                      <tr
-                        key={recipe.id}
-                        className="transition-colors hover:bg-accent/50"
-                      >
-                        <td className="sticky left-0 z-10 bg-white px-4 py-2.5 font-medium">
-                          {recipe.name}
-                        </td>
-                        <td className="px-3 py-2.5 text-muted-foreground capitalize">
-                          {recipe.category}
-                        </td>
-                        {EU_ALLERGENS.map((allergen) => (
-                          <td key={allergen} className="px-2 py-2.5 text-center">
-                            {recipe.allergens.has(allergen) ? (
-                              <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-red-100 text-red-600">
-                                <Check className="h-3 w-3" strokeWidth={2.5} />
-                              </span>
-                            ) : (
-                              <span className="text-gray-200">&mdash;</span>
-                            )}
-                          </td>
+                      )}
+                    </div>
+                    {recipe._allergens.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5">
+                        {recipe._allergens.map((a: string) => (
+                          <span
+                            key={a}
+                            className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-medium text-red-700 border border-red-200"
+                          >
+                            {ALLERGEN_LABELS[a as EUAllergen] ?? a}
+                          </span>
                         ))}
-                        <td className="px-3 py-2.5 text-center tabular-nums font-medium">
-                          {recipe.allergens.size}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                      </div>
+                    ) : (
+                      <p className="text-[12px] text-muted-foreground">No allergens</p>
+                    )}
+                  </div>
+                ))}
               </div>
             </div>
-          </TabsContent>
-
-          {/* ----------------------------------------------------------------- */}
-          {/* CARD VIEW                                                          */}
-          {/* ----------------------------------------------------------------- */}
-          <TabsContent value="cards" className="mt-4">
-            <div className="space-y-8">
-              {Array.from(grouped.entries()).map(([category, items]) => (
-                <div key={category}>
-                  <h3 className="mb-3 text-[13px] font-semibold text-muted-foreground uppercase tracking-wider">
-                    {RECIPE_CATEGORY_LABELS[category] ?? category}
-                  </h3>
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    {items.map((recipe) => {
-                      const allergenArr = Array.from(recipe.allergens)
-                      return (
-                        <div
-                          key={recipe.id}
-                          className="rounded-lg border border-border bg-white p-4 transition-shadow hover:shadow-sm"
-                        >
-                          <div className="flex items-start justify-between">
-                            <div>
-                              <p className="text-[13px] font-medium">{recipe.name}</p>
-                              <p className="mt-0.5 text-[11px] text-muted-foreground capitalize">
-                                {recipe.category}
-                              </p>
-                            </div>
-                            <span className="tabular-nums rounded bg-gray-100 px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
-                              {allergenArr.length} allergen{allergenArr.length !== 1 ? 's' : ''}
-                            </span>
-                          </div>
-
-                          {/* Allergen badges */}
-                          {allergenArr.length > 0 ? (
-                            <div className="mt-3 flex flex-wrap gap-1">
-                              {allergenArr.map((a) => (
-                                <span
-                                  key={a}
-                                  className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-medium text-red-700 border border-red-200"
-                                >
-                                  <span>{ALLERGEN_EMOJI[a]}</span>
-                                  {ALLERGEN_LABELS[a]}
-                                </span>
-                              ))}
-                            </div>
-                          ) : (
-                            <p className="mt-3 text-[11px] text-emerald-600">
-                              No known allergens
-                            </p>
-                          )}
-
-                          {/* Dietary labels */}
-                          <div className="mt-3 flex flex-wrap gap-1.5">
-                            {isVegan(recipe.allergens) && (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700 border border-emerald-200">
-                                <Leaf className="h-3 w-3" />
-                                Vegan
-                              </span>
-                            )}
-                            {isVegetarian(recipe.allergens) && !isVegan(recipe.allergens) && (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-[10px] font-medium text-green-700 border border-green-200">
-                                <Leaf className="h-3 w-3" />
-                                Vegetarian
-                              </span>
-                            )}
-                            {isGlutenFree(recipe.allergens) && (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 border border-amber-200">
-                                <Wheat className="h-3 w-3" />
-                                Gluten-Free
-                              </span>
-                            )}
-                            {isDairyFree(recipe.allergens) && (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-700 border border-blue-200">
-                                <Milk className="h-3 w-3" />
-                                Dairy-Free
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </TabsContent>
-        </Tabs>
+          ))}
+        </div>
       )}
     </div>
   )

@@ -1,65 +1,109 @@
 'use client'
 
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
+import { toast } from 'sonner'
+import {
+  ClipboardList, Plus, History, Pencil, Clock,
+} from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { EmptyState } from '@/components/shared/empty-state'
 import { StatusBadge } from '@/components/shared/status-badge'
 import { Button } from '@/components/ui/button'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
-import {
-  ClipboardCheck,
-  Plus,
-  ChevronRight,
-  Clock,
-  Pencil,
-  History,
-} from 'lucide-react'
-import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import { format, startOfDay, endOfDay } from 'date-fns'
-import { toast } from 'sonner'
+import { CHECKLIST_FREQUENCIES, ROLE_LABELS, type UserRole } from '@/lib/constants'
+import { startOfDay, startOfWeek, startOfMonth } from 'date-fns'
+
+function getPeriodStart(frequency: string): Date {
+  const now = new Date()
+  if (frequency === 'weekly') return startOfWeek(now, { weekStartsOn: 1 })
+  if (frequency === 'monthly') return startOfMonth(now)
+  if (frequency === 'four_weekly') {
+    const d = startOfWeek(now, { weekStartsOn: 1 })
+    d.setDate(d.getDate() - 21)
+    return d
+  }
+  return startOfDay(now)
+}
 
 export default function ChecklistsPage() {
-  const { profile, business } = useAuthStore()
   const router = useRouter()
   const queryClient = useQueryClient()
+  const profile = useAuthStore((s) => s.profile)
+  const business = useAuthStore((s) => s.business)
   const isManager = profile?.role === 'owner' || profile?.role === 'manager'
-  const today = new Date()
 
-  const { data: templates, isLoading } = useQuery({
-    queryKey: ['checklist-templates', business?.id],
+  // ── Today's templates for user's role ──
+  const { data: myTemplates = [], isLoading: loadingMy } = useQuery({
+    queryKey: ['my-checklists', business?.id, profile?.role],
     queryFn: async () => {
-      const { data } = await supabase
+      if (!business?.id || !profile?.role) return []
+      const { data, error } = await supabase
         .from('checklist_templates')
-        .select('*, checklist_template_items(*)')
-        .eq('business_id', business!.id)
+        .select('*, checklist_template_items(id)')
+        .eq('business_id', business.id)
+        .eq('active', true)
+        .contains('assigned_roles', [profile.role])
         .order('name')
+      if (error) throw error
       return data ?? []
     },
-    enabled: !!business?.id,
+    enabled: !!business?.id && !!profile?.role,
   })
 
-  const { data: completions } = useQuery({
-    queryKey: ['checklist-completions-today', business?.id],
+  // ── All templates for library ──
+  const { data: allTemplates = [], isLoading: loadingAll } = useQuery({
+    queryKey: ['all-checklists', business?.id],
     queryFn: async () => {
-      const todayStart = startOfDay(today).toISOString()
-      const todayEnd = endOfDay(today).toISOString()
-      const { data } = await supabase
+      if (!business?.id) return []
+      const { data, error } = await supabase
+        .from('checklist_templates')
+        .select('*, checklist_template_items(id)')
+        .eq('business_id', business.id)
+        .order('name')
+      if (error) throw error
+      return data ?? []
+    },
+    enabled: !!business?.id && isManager,
+  })
+
+  // ── Completions for status check ──
+  const { data: completions = [] } = useQuery({
+    queryKey: ['checklist-completions', business?.id],
+    queryFn: async () => {
+      if (!business?.id) return []
+      // Fetch completions from the last month to cover all period types
+      const monthAgo = new Date()
+      monthAgo.setDate(monthAgo.getDate() - 35)
+      const { data, error } = await supabase
         .from('checklist_completions')
-        .select('*, profiles!checklist_completions_completed_by_fkey(full_name)')
-        .eq('business_id', business!.id)
-        .gte('completed_at', todayStart)
-        .lte('completed_at', todayEnd)
+        .select('template_id, completed_at, signed_off_by')
+        .eq('business_id', business.id)
+        .gte('completed_at', monthAgo.toISOString())
+      if (error) throw error
       return data ?? []
     },
     enabled: !!business?.id,
   })
 
-  const toggleActive = useMutation({
+  function getStatus(template: any): { label: string; status: 'success' | 'warning' | 'info' | 'neutral' } {
+    const periodStart = getPeriodStart(template.frequency)
+    const completion = completions.find(
+      (c: any) => c.template_id === template.id && new Date(c.completed_at) >= periodStart
+    )
+    if (!completion) return { label: 'Pending', status: 'neutral' }
+    if (completion.signed_off_by) return { label: 'Signed Off', status: 'success' }
+    if (template.supervisor_role) return { label: 'Awaiting Sign-off', status: 'warning' }
+    return { label: 'Completed', status: 'success' }
+  }
+
+  // ── Toggle active mutation ──
+  const toggleActiveMutation = useMutation({
     mutationFn: async ({ id, active }: { id: string; active: boolean }) => {
       const { error } = await supabase
         .from('checklist_templates')
@@ -68,50 +112,24 @@ export default function ChecklistsPage() {
       if (error) throw error
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['checklist-templates'] })
-      toast.success('Checklist updated')
+      queryClient.invalidateQueries({ queryKey: ['all-checklists'] })
+      queryClient.invalidateQueries({ queryKey: ['my-checklists'] })
+      toast.success('Template updated')
     },
+    onError: () => toast.error('Failed to update template'),
   })
-
-  const activeTemplates = templates?.filter((t) => t.active) ?? []
-  const myTemplates = activeTemplates.filter((t) =>
-    t.assigned_roles.includes(profile?.role ?? '')
-  )
-
-  const getStatus = (templateId: string) => {
-    const completion = completions?.find((c) => c.template_id === templateId)
-    if (!completion) return { status: 'pending' as const, label: 'Pending' }
-    if (completion.signed_off_by) return { status: 'success' as const, label: 'Signed Off' }
-    return { status: 'success' as const, label: 'Completed' }
-  }
-
-  if (isLoading) {
-    return (
-      <div className="space-y-6">
-        <div className="h-8 w-48 animate-pulse rounded bg-muted" />
-        <div className="space-y-3">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="h-16 animate-pulse rounded-lg bg-muted" />
-          ))}
-        </div>
-      </div>
-    )
-  }
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Checklists"
-        description="Daily, weekly, and monthly HACCP checklists"
-      >
+      <PageHeader title="Checklists" description="Daily food safety checks">
         {isManager && (
           <Button
-            onClick={() => router.push('/checklists/new')}
             size="sm"
-            className="bg-emerald-600 hover:bg-emerald-700"
+            onClick={() => router.push('/checklists/new')}
+            className="gap-1.5"
           >
-            <Plus className="mr-1.5 h-3.5 w-3.5" />
-            New Checklist
+            <Plus className="h-3.5 w-3.5" />
+            New Template
           </Button>
         )}
       </PageHeader>
@@ -122,153 +140,121 @@ export default function ChecklistsPage() {
           {isManager && <TabsTrigger value="library">Library</TabsTrigger>}
         </TabsList>
 
+        {/* ── Today tab ── */}
         <TabsContent value="today" className="mt-4">
-          {myTemplates.length === 0 ? (
+          {loadingMy ? (
+            <div className="flex items-center justify-center py-16">
+              <div className="h-6 w-6 animate-spin rounded-full border-2 border-emerald-600 border-t-transparent" />
+            </div>
+          ) : myTemplates.length === 0 ? (
             <EmptyState
-              icon={ClipboardCheck}
+              icon={ClipboardList}
               title="No checklists assigned"
-              description="There are no active checklists assigned to your role. Ask your manager to assign checklists."
+              description="There are no active checklists for your role today."
             />
           ) : (
-            <div className="rounded-lg border border-border bg-white">
-              <div className="divide-y divide-border">
-                {myTemplates.map((template) => {
-                  const { status, label } = getStatus(template.id)
-                  return (
-                    <Link
-                      key={template.id}
-                      href={`/checklists/${template.id}`}
-                      className="flex items-center justify-between px-4 py-3 transition-colors hover:bg-accent/50"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div
-                          className={cn(
-                            'flex h-8 w-8 items-center justify-center rounded-md',
-                            status === 'success'
-                              ? 'bg-emerald-50 text-emerald-600'
-                              : 'bg-gray-50 text-gray-400'
-                          )}
-                        >
-                          <ClipboardCheck className="h-4 w-4" />
-                        </div>
-                        <div>
-                          <p className="text-[13px] font-medium">{template.name}</p>
-                          <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                            <span className="capitalize">{template.frequency}</span>
-                            <span>&middot;</span>
-                            <span>
-                              {(template.checklist_template_items as unknown[])?.length ?? 0} items
-                            </span>
-                            {template.deadline_time && (
-                              <>
-                                <span>&middot;</span>
-                                <span className="flex items-center gap-0.5">
-                                  <Clock className="h-3 w-3" />
-                                  {template.deadline_time}
-                                </span>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <StatusBadge
-                          status={status === 'success' ? 'success' : 'warning'}
-                          label={label}
-                        />
-                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                      </div>
-                    </Link>
-                  )
-                })}
-              </div>
+            <div className="space-y-2">
+              {myTemplates.map((t: any) => {
+                const s = getStatus(t)
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => router.push(`/checklists/${t.id}`)}
+                    className="flex w-full items-center gap-4 rounded-lg border border-border bg-white px-4 py-3 text-left transition-colors hover:bg-accent/50"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13px] font-medium text-foreground">{t.name}</p>
+                      <p className="mt-0.5 text-[12px] text-muted-foreground">
+                        {t.frequency} &middot; {t.checklist_template_items?.length ?? 0} items
+                        {t.deadline_time && (
+                          <span className="inline-flex items-center gap-1 ml-2">
+                            <Clock className="h-3 w-3" /> by {t.deadline_time}
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                    <StatusBadge status={s.status} label={s.label} />
+                  </button>
+                )
+              })}
             </div>
           )}
         </TabsContent>
 
+        {/* ── Library tab (managers) ── */}
         {isManager && (
           <TabsContent value="library" className="mt-4">
-            {templates?.length === 0 ? (
+            {loadingAll ? (
+              <div className="flex items-center justify-center py-16">
+                <div className="h-6 w-6 animate-spin rounded-full border-2 border-emerald-600 border-t-transparent" />
+              </div>
+            ) : allTemplates.length === 0 ? (
               <EmptyState
-                icon={ClipboardCheck}
-                title="No checklists yet"
-                description="Create your first checklist template or import the default UK HACCP templates."
-                action={{
-                  label: 'New Checklist',
-                  onClick: () => router.push('/checklists/new'),
-                }}
+                icon={ClipboardList}
+                title="No templates"
+                description="Create your first checklist template."
+                action={{ label: 'New Template', onClick: () => router.push('/checklists/new') }}
               />
             ) : (
-              <div className="rounded-lg border border-border bg-white">
-                <table className="w-full">
+              <div className="overflow-hidden rounded-lg border border-border">
+                <table className="w-full text-[13px]">
                   <thead>
-                    <tr className="border-b border-border">
-                      <th className="px-4 py-2.5 text-left text-[12px] font-medium text-muted-foreground">
-                        Name
-                      </th>
-                      <th className="px-4 py-2.5 text-left text-[12px] font-medium text-muted-foreground">
-                        Frequency
-                      </th>
-                      <th className="px-4 py-2.5 text-left text-[12px] font-medium text-muted-foreground">
-                        Items
-                      </th>
-                      <th className="px-4 py-2.5 text-left text-[12px] font-medium text-muted-foreground">
-                        Assigned
-                      </th>
-                      <th className="px-4 py-2.5 text-center text-[12px] font-medium text-muted-foreground">
-                        Active
-                      </th>
-                      <th className="px-4 py-2.5 text-right text-[12px] font-medium text-muted-foreground">
-                        Actions
-                      </th>
+                    <tr className="border-b border-border bg-muted/50">
+                      <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Name</th>
+                      <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Frequency</th>
+                      <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Items</th>
+                      <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Roles</th>
+                      <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Active</th>
+                      <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-border">
-                    {templates?.map((template) => (
-                      <tr key={template.id} className="transition-colors hover:bg-accent/50">
-                        <td className="px-4 py-3 text-[13px] font-medium">
-                          {template.name}
-                        </td>
-                        <td className="px-4 py-3 text-[13px] capitalize text-muted-foreground">
-                          {template.frequency}
-                        </td>
-                        <td className="px-4 py-3 text-[13px] tabular-nums text-muted-foreground">
-                          {(template.checklist_template_items as unknown[])?.length ?? 0}
+                  <tbody>
+                    {allTemplates.map((t: any) => (
+                      <tr key={t.id} className="border-b border-border last:border-0 hover:bg-muted/30">
+                        <td className="px-4 py-3 font-medium text-foreground">{t.name}</td>
+                        <td className="px-4 py-3 capitalize text-muted-foreground">{t.frequency}</td>
+                        <td className="px-4 py-3 tabular-nums text-muted-foreground">
+                          {t.checklist_template_items?.length ?? 0}
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex flex-wrap gap-1">
-                            {template.assigned_roles.map((role: string) => (
+                            {(t.assigned_roles ?? []).map((r: string) => (
                               <span
-                                key={role}
-                                className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] capitalize text-muted-foreground"
+                                key={r}
+                                className="inline-flex items-center rounded-full bg-gray-50 px-2 py-0.5 text-[10px] font-medium text-gray-600 border border-gray-200"
                               >
-                                {role.replace('_', ' ')}
+                                {ROLE_LABELS[r as UserRole] ?? r}
                               </span>
                             ))}
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-center">
+                        <td className="px-4 py-3">
                           <Switch
-                            checked={template.active}
+                            checked={t.active}
                             onCheckedChange={(checked) =>
-                              toggleActive.mutate({ id: template.id, active: checked })
+                              toggleActiveMutation.mutate({ id: t.id, active: checked })
                             }
                           />
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3 text-right">
                           <div className="flex items-center justify-end gap-1">
-                            <button
-                              onClick={() => router.push(`/checklists/edit/${template.id}`)}
-                              className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0"
+                              onClick={() => router.push(`/checklists/edit/${t.id}`)}
                             >
                               <Pencil className="h-3.5 w-3.5" />
-                            </button>
-                            <button
-                              onClick={() => router.push(`/checklists/${template.id}/history`)}
-                              className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0"
+                              onClick={() => router.push(`/checklists/${t.id}/history`)}
                             >
                               <History className="h-3.5 w-3.5" />
-                            </button>
+                            </Button>
                           </div>
                         </td>
                       </tr>

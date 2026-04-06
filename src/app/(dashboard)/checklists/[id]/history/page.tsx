@@ -1,163 +1,210 @@
 'use client'
-import { use } from 'react'
+
+import { use, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
-import { PageHeader } from '@/components/layout/page-header'
+import {
+  ArrowLeft, ChevronDown, ChevronRight, AlertTriangle, CheckCircle2,
+  ShieldCheck, ClipboardList,
+} from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/shared/status-badge'
 import { EmptyState } from '@/components/shared/empty-state'
-import { ArrowLeft, History, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react'
-import Link from 'next/link'
-import { format } from 'date-fns'
 import { cn } from '@/lib/utils'
-import { useState } from 'react'
+import { format } from 'date-fns'
 
-export default function ClientPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id: templateId } = use(params)
-  const { business } = useAuthStore()
-  const [expandedId, setExpandedId] = useState<string | null>(null)
+export default function ChecklistHistoryPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params)
+  const router = useRouter()
+  const business = useAuthStore((s) => s.business)
 
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+
+  function toggleExpanded(completionId: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(completionId)) next.delete(completionId)
+      else next.add(completionId)
+      return next
+    })
+  }
+
+  // ── Load template ──
   const { data: template } = useQuery({
-    queryKey: ['checklist-template', templateId],
+    queryKey: ['checklist-template', id],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('checklist_templates')
-        .select('*, checklist_template_items(*)')
-        .eq('id', templateId)
+        .select('id, name, description')
+        .eq('id', id)
         .single()
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return data as any
+      if (error) throw error
+      return data
     },
   })
 
-  const { data: completions } = useQuery({
-    queryKey: ['checklist-history', templateId],
+  // ── Load completions with responses ──
+  const { data: completions = [], isLoading } = useQuery({
+    queryKey: ['checklist-history', id, business?.id],
     queryFn: async () => {
-      const { data } = await supabase
+      if (!business?.id) return []
+      const { data, error } = await supabase
         .from('checklist_completions')
         .select(`
           *,
-          checklist_responses(*),
-          profiles!checklist_completions_completed_by_fkey(full_name)
+          completed_by_profile:profiles!checklist_completions_completed_by_fkey(full_name),
+          signed_off_by_profile:profiles!checklist_completions_signed_off_by_fkey(full_name),
+          checklist_responses(
+            *,
+            item:checklist_template_items(name, item_type, unit, min_value, max_value)
+          )
         `)
-        .eq('template_id', templateId)
-        .eq('business_id', business!.id)
+        .eq('template_id', id)
+        .eq('business_id', business.id)
         .order('completed_at', { ascending: false })
-        .limit(50)
+      if (error) throw error
       return data ?? []
     },
     enabled: !!business?.id,
   })
 
-  const items = (template?.checklist_template_items ?? []) as Array<{
-    id: string; name: string; item_type: string; unit: string | null
-  }>
-  const itemMap = new Map(items.map((i) => [i.id, i]))
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-emerald-600 border-t-transparent" />
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
-      <div>
-        <Link
-          href="/checklists"
-          className="mb-3 inline-flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground"
+      {/* Header */}
+      <div className="flex items-start gap-3">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="mt-0.5 h-7 w-7 p-0"
+          onClick={() => router.push('/checklists')}
         >
-          <ArrowLeft className="h-3.5 w-3.5" />
-          Back to Checklists
-        </Link>
-        <PageHeader
-          title={`${template?.name ?? 'Checklist'} — History`}
-          description="All past completions"
-        />
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">
+            {template?.name ?? 'Checklist'} — History
+          </h1>
+          {template?.description && (
+            <p className="mt-1 text-[13px] text-muted-foreground">{template.description}</p>
+          )}
+        </div>
       </div>
 
-      {completions?.length === 0 ? (
+      {completions.length === 0 ? (
         <EmptyState
-          icon={History}
+          icon={ClipboardList}
           title="No completions yet"
-          description="This checklist hasn't been completed yet."
+          description="This checklist has not been completed yet."
         />
       ) : (
-        <div className="space-y-2">
-          {completions?.map((completion) => {
-            const isExpanded = expandedId === completion.id
-            const responses = (completion.checklist_responses ?? []) as Array<{
-              item_id: string; value: string; notes: string | null; flagged: boolean
-            }>
-            const flaggedCount = responses.filter((r) => r.flagged).length
-            const completerName = (completion.profiles as { full_name: string | null } | null)?.full_name ?? 'Unknown'
+        <div className="space-y-3">
+          {completions.map((comp: any) => {
+            const isOpen = expanded.has(comp.id)
+            const flaggedCount = (comp.checklist_responses ?? []).filter((r: any) => r.flagged).length
+            const responses: any[] = comp.checklist_responses ?? []
+            // Sort responses by item sort_order
+            responses.sort((a: any, b: any) => (a.item?.sort_order ?? 0) - (b.item?.sort_order ?? 0))
 
             return (
-              <div key={completion.id} className="rounded-lg border border-border bg-white">
+              <div key={comp.id} className="rounded-lg border border-border bg-white">
                 <button
-                  onClick={() => setExpandedId(isExpanded ? null : completion.id)}
-                  className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-accent/50"
+                  type="button"
+                  onClick={() => toggleExpanded(comp.id)}
+                  className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-accent/50 transition-colors"
                 >
-                  <div className="flex items-center gap-3">
-                    <div>
-                      <p className="text-[13px] font-medium">
-                        {format(new Date(completion.completed_at), 'dd MMM yyyy, HH:mm')}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="text-[13px] font-medium text-foreground">
+                        {format(new Date(comp.completed_at), 'dd MMM yyyy, HH:mm')}
                       </p>
-                      <p className="text-[11px] text-muted-foreground">
-                        by {completerName}
-                      </p>
+                      {comp.signed_off_by && (
+                        <StatusBadge status="success" label="Signed Off" />
+                      )}
+                      {flaggedCount > 0 && (
+                        <StatusBadge status="error" label={`${flaggedCount} flagged`} />
+                      )}
                     </div>
+                    <p className="mt-0.5 text-[12px] text-muted-foreground">
+                      By {comp.completed_by_profile?.full_name ?? 'Unknown'}
+                      {comp.signed_off_by_profile && (
+                        <> &middot; Signed off by {comp.signed_off_by_profile.full_name}</>
+                      )}
+                    </p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {flaggedCount > 0 && (
-                      <span className="flex items-center gap-1 text-[11px] font-medium text-red-600">
-                        <AlertTriangle className="h-3 w-3" />
-                        {flaggedCount} flagged
-                      </span>
-                    )}
-                    <StatusBadge
-                      status={completion.signed_off_by ? 'success' : 'info'}
-                      label={completion.signed_off_by ? 'Signed Off' : 'Completed'}
-                    />
-                    {isExpanded ? (
-                      <ChevronUp className="h-4 w-4 text-muted-foreground" />
-                    ) : (
-                      <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                    )}
-                  </div>
+                  {isOpen ? (
+                    <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  )}
                 </button>
 
-                {isExpanded && (
-                  <div className="border-t border-border px-4 py-3">
-                    <table className="w-full text-[13px]">
-                      <thead>
-                        <tr className="text-left text-[11px] text-muted-foreground">
-                          <th className="pb-2 font-medium">Item</th>
-                          <th className="pb-2 font-medium">Response</th>
-                          <th className="pb-2 font-medium">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border">
-                        {responses.map((resp) => {
-                          const item = itemMap.get(resp.item_id)
-                          return (
-                            <tr key={resp.item_id}>
-                              <td className="py-2">{item?.name ?? 'Unknown'}</td>
-                              <td className="py-2 tabular-nums">
-                                {resp.value}
-                                {item?.unit && ` ${item.unit}`}
-                              </td>
-                              <td className="py-2">
-                                {resp.flagged ? (
-                                  <span className="text-red-600 font-medium">Flagged</span>
-                                ) : (
-                                  <span className="text-emerald-600">OK</span>
-                                )}
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                    {completion.notes && (
-                      <p className="mt-2 text-[12px] text-muted-foreground">
-                        Notes: {completion.notes}
-                      </p>
-                    )}
+                {isOpen && (
+                  <div className="border-t border-border px-4 py-3 space-y-2">
+                    {responses.map((resp: any) => (
+                      <div
+                        key={resp.id}
+                        className={cn(
+                          'flex items-start justify-between rounded-md px-3 py-2',
+                          resp.flagged ? 'bg-red-50' : 'bg-gray-50/50',
+                        )}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[13px] font-medium text-foreground">
+                              {resp.item?.name ?? 'Unknown item'}
+                            </span>
+                            {resp.flagged && (
+                              <AlertTriangle className="h-3.5 w-3.5 text-red-500" />
+                            )}
+                          </div>
+                          {resp.notes && (
+                            <p className="mt-0.5 text-[12px] text-muted-foreground italic">{resp.notes}</p>
+                          )}
+                        </div>
+                        <div className="ml-3 shrink-0 text-right">
+                          {resp.item?.item_type === 'tick' && (
+                            <span className={cn('text-[13px] font-medium', resp.value === 'true' ? 'text-emerald-600' : 'text-muted-foreground')}>
+                              {resp.value === 'true' ? 'Done' : 'Not done'}
+                            </span>
+                          )}
+                          {resp.item?.item_type === 'temperature' && (
+                            <span className={cn('text-[13px] font-medium tabular-nums', resp.flagged ? 'text-red-600' : 'text-foreground')}>
+                              {resp.value} {resp.item.unit ?? '°C'}
+                            </span>
+                          )}
+                          {resp.item?.item_type === 'text' && (
+                            <span className="text-[13px] text-muted-foreground max-w-[200px] truncate block">
+                              {resp.value || '—'}
+                            </span>
+                          )}
+                          {resp.item?.item_type === 'yes_no' && (
+                            <StatusBadge
+                              status={resp.value === 'yes' ? 'success' : resp.value === 'no' ? 'error' : 'neutral'}
+                              label={resp.value === 'yes' ? 'Yes' : resp.value === 'no' ? 'No' : 'N/A'}
+                            />
+                          )}
+                          {resp.item?.item_type === 'photo' && (
+                            resp.photo_url ? (
+                              <a href={resp.photo_url} target="_blank" rel="noopener noreferrer" className="text-[12px] text-emerald-600 hover:underline">
+                                View
+                              </a>
+                            ) : (
+                              <span className="text-[12px] text-muted-foreground">No photo</span>
+                            )
+                          )}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>

@@ -1,266 +1,200 @@
 'use client'
 
-import { useState } from 'react'
+import { use, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
+import { toast } from 'sonner'
+import {
+  Search, Plus, Sparkles, MoreHorizontal, Eye, Pencil, Trash2,
+  ChefHat, Filter,
+} from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { EmptyState } from '@/components/shared/empty-state'
 import { StatusBadge } from '@/components/shared/status-badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { RECIPE_CATEGORY_LABELS, ALLERGEN_LABELS, type EUAllergen } from '@/lib/constants'
-import { cn } from '@/lib/utils'
-import {
-  ChefHat,
-  Plus,
-  Sparkles,
-  Search,
-  ChevronRight,
-} from 'lucide-react'
-import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+  RECIPE_CATEGORIES,
+  RECIPE_CATEGORY_LABELS,
+  ALLERGEN_LABELS,
+  type EUAllergen,
+} from '@/lib/constants'
 
-const ALLERGEN_COLORS: Record<string, string> = {
-  gluten: 'bg-amber-100 text-amber-800 border-amber-200',
-  crustaceans: 'bg-red-100 text-red-800 border-red-200',
-  eggs: 'bg-yellow-100 text-yellow-800 border-yellow-200',
-  fish: 'bg-blue-100 text-blue-800 border-blue-200',
-  peanuts: 'bg-orange-100 text-orange-800 border-orange-200',
-  soybeans: 'bg-lime-100 text-lime-800 border-lime-200',
-  milk: 'bg-sky-100 text-sky-800 border-sky-200',
-  nuts: 'bg-amber-100 text-amber-800 border-amber-200',
-  celery: 'bg-green-100 text-green-800 border-green-200',
-  mustard: 'bg-yellow-100 text-yellow-800 border-yellow-200',
-  sesame: 'bg-stone-100 text-stone-800 border-stone-200',
-  sulphites: 'bg-purple-100 text-purple-800 border-purple-200',
-  lupin: 'bg-pink-100 text-pink-800 border-pink-200',
-  molluscs: 'bg-teal-100 text-teal-800 border-teal-200',
+/* ── dietary helpers ── */
+const DIETARY_RULES: Record<string, (allergens: string[]) => boolean> = {
+  Vegan: (a) => !a.some((x) => ['milk', 'eggs', 'fish', 'crustaceans', 'molluscs'].includes(x)),
+  Vegetarian: (a) => !a.some((x) => ['fish', 'crustaceans', 'molluscs'].includes(x)),
+  'Gluten-Free': (a) => !a.includes('gluten'),
+  'Dairy-Free': (a) => !a.includes('milk'),
+}
+
+function computeDietary(allergens: string[]): string[] {
+  return Object.entries(DIETARY_RULES)
+    .filter(([, fn]) => fn(allergens))
+    .map(([label]) => label)
 }
 
 export default function RecipesPage() {
-  const { profile, business } = useAuthStore()
   const router = useRouter()
-  const isManager =
-    profile?.role === 'owner' ||
-    profile?.role === 'manager' ||
-    profile?.role === 'chef'
+  const profile = useAuthStore((s) => s.profile)
+  const business = useAuthStore((s) => s.business)
+  const isManager = profile?.role === 'owner' || profile?.role === 'manager'
 
   const [search, setSearch] = useState('')
-  const [categoryFilter, setCategoryFilter] = useState<string>('all')
+  const [category, setCategory] = useState('')
 
-  const { data: recipes, isLoading } = useQuery({
+  const { data: recipes = [], isLoading } = useQuery({
     queryKey: ['recipes', business?.id],
     queryFn: async () => {
-      const { data } = await supabase
+      if (!business?.id) return []
+      const { data, error } = await supabase
         .from('recipes')
-        .select('*, recipe_ingredients(*, ingredients(*))')
-        .eq('business_id', business!.id)
+        .select(`
+          *,
+          recipe_ingredients (
+            ingredient:ingredients (name, allergens)
+          )
+        `)
+        .eq('business_id', business.id)
         .order('name')
+      if (error) throw error
       return data ?? []
     },
     enabled: !!business?.id,
   })
 
-  const filteredRecipes = (recipes ?? []).filter((recipe) => {
-    const matchesSearch =
-      !search ||
-      recipe.name.toLowerCase().includes(search.toLowerCase()) ||
-      recipe.description?.toLowerCase().includes(search.toLowerCase())
-    const matchesCategory =
-      categoryFilter === 'all' || recipe.category === categoryFilter
-    return matchesSearch && matchesCategory
+  const filtered = recipes.filter((r: any) => {
+    const matchSearch =
+      !search || r.name.toLowerCase().includes(search.toLowerCase())
+    const matchCategory = !category || r.category === category
+    return matchSearch && matchCategory
   })
 
-  const getAllergens = (recipe: any) => {
-    const allergenSet = new Set<string>()
-    const ri = recipe.recipe_ingredients as Array<{
-      ingredients: { allergens: string[] } | null
-    }>
-    ri?.forEach((item) => {
-      item.ingredients?.allergens?.forEach((a) => allergenSet.add(a))
+  function getAllergens(recipe: any): string[] {
+    const set = new Set<string>()
+    recipe.recipe_ingredients?.forEach((ri: any) => {
+      ri.ingredient?.allergens?.forEach((a: string) => set.add(a))
     })
-    return Array.from(allergenSet).sort()
+    return Array.from(set)
   }
 
-  const getDietaryLabels = (allergens: string[]) => {
-    const labels: string[] = []
-    if (!allergens.includes('milk')) labels.push('Dairy-Free')
-    if (!allergens.includes('gluten')) labels.push('Gluten-Free')
-    if (
-      !allergens.includes('milk') &&
-      !allergens.includes('eggs') &&
-      !allergens.includes('fish') &&
-      !allergens.includes('crustaceans') &&
-      !allergens.includes('molluscs')
-    ) {
-      labels.push('Vegan')
-    } else if (
-      !allergens.includes('fish') &&
-      !allergens.includes('crustaceans') &&
-      !allergens.includes('molluscs')
-    ) {
-      labels.push('Vegetarian')
+  async function handleDelete(id: string) {
+    if (!confirm('Delete this recipe? This cannot be undone.')) return
+    const { error } = await supabase.from('recipes').delete().eq('id', id)
+    if (error) {
+      toast.error('Failed to delete recipe')
+    } else {
+      toast.success('Recipe deleted')
     }
-    return labels
-  }
-
-  if (isLoading) {
-    return (
-      <div className="space-y-6">
-        <div className="h-8 w-48 animate-pulse rounded bg-muted" />
-        <div className="space-y-3">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="h-16 animate-pulse rounded-lg bg-muted" />
-          ))}
-        </div>
-      </div>
-    )
   }
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Recipes"
-        description="Manage recipes, allergens, and dietary information"
-      >
+      <PageHeader title="Recipes" description="Manage your recipe collection">
         {isManager && (
-          <div className="flex items-center gap-2">
+          <>
             <Button
-              onClick={() => router.push('/recipes/import')}
               size="sm"
               variant="outline"
+              onClick={() => router.push('/recipes/import')}
+              className="gap-1.5"
             >
-              <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+              <Sparkles className="h-3.5 w-3.5" />
               AI Import
             </Button>
             <Button
-              onClick={() => router.push('/recipes/new')}
               size="sm"
-              className="bg-emerald-600 hover:bg-emerald-700"
+              onClick={() => router.push('/recipes/new')}
+              className="gap-1.5 bg-emerald-600 hover:bg-emerald-700"
             >
-              <Plus className="mr-1.5 h-3.5 w-3.5" />
+              <Plus className="h-3.5 w-3.5" />
               New Recipe
             </Button>
-          </div>
+          </>
         )}
       </PageHeader>
 
-      {/* Filter bar */}
+      {/* Filters */}
       <div className="flex items-center gap-3">
-        <div className="relative flex-1 max-w-xs">
+        <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
+            placeholder="Search recipes..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search recipes..."
             className="pl-8 text-[13px]"
           />
         </div>
-        <Select value={categoryFilter} onValueChange={(v) => setCategoryFilter(v ?? "")}>
-          <SelectTrigger className="w-[160px]">
-            <SelectValue placeholder="All categories" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All categories</SelectItem>
-            {Object.entries(RECIPE_CATEGORY_LABELS).map(([value, label]) => (
-              <SelectItem key={value} value={value}>
-                {label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <select
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+          className="h-9 rounded-md border border-border bg-background px-3 text-[13px] text-foreground outline-none"
+        >
+          <option value="">All Categories</option>
+          {RECIPE_CATEGORIES.map((c) => (
+            <option key={c} value={c}>
+              {RECIPE_CATEGORY_LABELS[c]}
+            </option>
+          ))}
+        </select>
       </div>
 
-      {/* Recipes table */}
-      {filteredRecipes.length === 0 ? (
+      {/* Table */}
+      {isLoading ? (
+        <div className="flex items-center justify-center py-16 text-[13px] text-muted-foreground">
+          Loading recipes...
+        </div>
+      ) : filtered.length === 0 ? (
         <EmptyState
           icon={ChefHat}
-          title={recipes?.length === 0 ? 'No recipes yet' : 'No recipes match your filters'}
-          description={
-            recipes?.length === 0
-              ? 'Add your first recipe to start tracking allergens and dietary information.'
-              : 'Try changing your search or category filter.'
-          }
+          title="No recipes found"
+          description={search || category ? 'Try adjusting your filters' : 'Add your first recipe to get started'}
           action={
-            recipes?.length === 0 && isManager
-              ? {
-                  label: 'New Recipe',
-                  onClick: () => router.push('/recipes/new'),
-                }
+            isManager && !search && !category
+              ? { label: 'New Recipe', onClick: () => router.push('/recipes/new') }
               : undefined
           }
         />
       ) : (
-        <div className="rounded-lg border border-border bg-white">
-          <table className="w-full">
+        <div className="overflow-hidden rounded-lg border border-border">
+          <table className="w-full text-[13px]">
             <thead>
-              <tr className="border-b border-border">
-                <th className="px-4 py-2.5 text-left text-[12px] font-medium text-muted-foreground">
-                  Name
-                </th>
-                <th className="px-4 py-2.5 text-left text-[12px] font-medium text-muted-foreground">
-                  Category
-                </th>
-                <th className="px-4 py-2.5 text-left text-[12px] font-medium text-muted-foreground">
-                  Allergens
-                </th>
-                <th className="px-4 py-2.5 text-left text-[12px] font-medium text-muted-foreground">
-                  Dietary
-                </th>
-                <th className="px-4 py-2.5 text-left text-[12px] font-medium text-muted-foreground">
-                  Status
-                </th>
-                <th className="px-4 py-2.5 text-right text-[12px] font-medium text-muted-foreground">
-                  Actions
-                </th>
+              <tr className="border-b border-border bg-muted/50">
+                <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Name</th>
+                <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Category</th>
+                <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Allergens</th>
+                <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Dietary</th>
+                <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Status</th>
+                <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-border">
-              {filteredRecipes.map((recipe) => {
+            <tbody>
+              {filtered.map((recipe: any) => {
                 const allergens = getAllergens(recipe)
-                const dietaryLabels = getDietaryLabels(allergens)
+                const dietary = computeDietary(allergens)
                 return (
                   <tr
                     key={recipe.id}
-                    className="transition-colors hover:bg-accent/50"
+                    className="border-b border-border last:border-0 hover:bg-muted/30 cursor-pointer"
+                    onClick={() => router.push(`/recipes/${recipe.id}`)}
                   >
-                    <td className="px-4 py-3">
-                      <div>
-                        <p className="text-[13px] font-medium">{recipe.name}</p>
-                        {recipe.description && (
-                          <p className="mt-0.5 text-[11px] text-muted-foreground line-clamp-1">
-                            {recipe.description}
-                          </p>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[11px] capitalize text-muted-foreground">
-                        {RECIPE_CATEGORY_LABELS[recipe.category] ?? recipe.category}
-                      </span>
+                    <td className="px-4 py-3 font-medium text-foreground">{recipe.name}</td>
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {RECIPE_CATEGORY_LABELS[recipe.category] ?? recipe.category}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-1">
                         {allergens.length === 0 ? (
-                          <span className="text-[11px] text-muted-foreground">None</span>
+                          <span className="text-muted-foreground">None</span>
                         ) : (
-                          allergens.map((allergen) => (
+                          allergens.map((a) => (
                             <span
-                              key={allergen}
-                              className={cn(
-                                'inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium',
-                                ALLERGEN_COLORS[allergen] ?? 'bg-gray-100 text-gray-700 border-gray-200'
-                              )}
+                              key={a}
+                              className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-medium text-red-700 border border-red-200"
                             >
-                              {ALLERGEN_LABELS[allergen as EUAllergen] ?? allergen}
+                              {ALLERGEN_LABELS[a as EUAllergen] ?? a}
                             </span>
                           ))
                         )}
@@ -268,18 +202,14 @@ export default function RecipesPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-1">
-                        {dietaryLabels.length === 0 ? (
-                          <span className="text-[11px] text-muted-foreground">--</span>
-                        ) : (
-                          dietaryLabels.map((label) => (
-                            <span
-                              key={label}
-                              className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700"
-                            >
-                              {label}
-                            </span>
-                          ))
-                        )}
+                        {dietary.map((d) => (
+                          <span
+                            key={d}
+                            className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 border border-emerald-200"
+                          >
+                            {d}
+                          </span>
+                        ))}
                       </div>
                     </td>
                     <td className="px-4 py-3">
@@ -289,13 +219,36 @@ export default function RecipesPage() {
                       />
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <Link
-                        href={`/recipes/${recipe.id}`}
-                        className="inline-flex items-center gap-0.5 text-[12px] font-medium text-emerald-600 hover:text-emerald-700"
-                      >
-                        View
-                        <ChevronRight className="h-3 w-3" />
-                      </Link>
+                      <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-7 p-0"
+                          onClick={() => router.push(`/recipes/${recipe.id}`)}
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                        </Button>
+                        {isManager && (
+                          <>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0"
+                              onClick={() => router.push(`/recipes/edit/${recipe.id}`)}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0 text-red-600 hover:text-red-700"
+                              onClick={() => handleDelete(recipe.id)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 )

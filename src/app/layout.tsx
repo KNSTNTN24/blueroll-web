@@ -4,31 +4,23 @@ import { Providers } from '@/components/providers'
 import './globals.css'
 
 const inter = Inter({
-  variable: '--font-sans',
   subsets: ['latin'],
-  display: 'swap',
+  variable: '--font-inter',
 })
 
 export const metadata: Metadata = {
-  title: {
-    default: 'Blueroll — HACCP Management',
-    template: '%s | Blueroll',
-  },
-  description:
-    'Digital food safety and HACCP management for UK restaurants. Replace paper records with smart checklists, AI recipe import, and compliance reports.',
-  icons: {
-    icon: '/favicon.ico',
-  },
+  title: 'Blueroll — HACCP Management',
+  description: 'Digital HACCP management for food businesses',
 }
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode
-}>) {
+}) {
   return (
-    <html lang="en" className={`${inter.variable} h-full`} suppressHydrationWarning>
-      <body className="h-full antialiased">
+    <html lang="en" className={inter.variable}>
+      <body className="min-h-screen font-sans">
         <Providers>{children}</Providers>
       </body>
     </html>

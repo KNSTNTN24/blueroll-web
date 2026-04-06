@@ -4,110 +4,79 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
+import { useRouter } from 'next/navigation'
+import { FileText, Plus, Search, Download } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { EmptyState } from '@/components/shared/empty-state'
-import { StatusBadge } from '@/components/shared/status-badge'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
-import {
-  FileText,
-  Upload,
-  Search,
-  Eye,
-  AlertTriangle,
-} from 'lucide-react'
-import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { DOCUMENT_CATEGORIES } from '@/lib/constants'
 import { format, differenceInDays } from 'date-fns'
 
-const CATEGORIES = [
-  'all',
-  'certificate',
-  'license',
-  'policy',
-  'procedure',
-  'training',
-  'audit',
-  'insurance',
-  'other',
-]
-
-type DocumentRow = {
+interface Document {
   id: string
   title: string
   description: string | null
   category: string
-  file_url: string
+  file_path: string
   file_name: string
   file_size: number | null
-  file_type: string | null
-  uploaded_by: string
-  business_id: string
   access_level: string
   expires_at: string | null
+  uploaded_by: string
   created_at: string
-  updated_at: string | null
-  uploader: { full_name: string | null } | null
+  uploader?: { full_name: string | null; email: string }
 }
 
 function formatFileSize(bytes: number | null): string {
-  if (!bytes) return '—'
+  if (!bytes) return '-'
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-function getExpiryStatus(expiresAt: string | null): { status: 'success' | 'warning' | 'error' | 'neutral'; label: string } {
-  if (!expiresAt) return { status: 'neutral', label: 'No expiry' }
-  const days = differenceInDays(new Date(expiresAt), new Date())
-  if (days < 0) return { status: 'error', label: 'Expired' }
-  if (days <= 30) return { status: 'warning', label: `${days}d left` }
-  return { status: 'success', label: format(new Date(expiresAt), 'dd MMM yyyy') }
+function expiryStatus(expiresAt: string | null): { label: string; color: string } | null {
+  if (!expiresAt) return null
+  const daysLeft = differenceInDays(new Date(expiresAt), new Date())
+  if (daysLeft < 0) return { label: 'Expired', color: 'text-red-700 bg-red-50' }
+  if (daysLeft <= 30) return { label: `${daysLeft}d left`, color: 'text-amber-700 bg-amber-50' }
+  return null
 }
 
 export default function DocumentsPage() {
-  const { profile, business } = useAuthStore()
+  const business = useAuthStore((s) => s.business)
   const router = useRouter()
-  const isManager = profile?.role === 'owner' || profile?.role === 'manager'
 
-  const [category, setCategory] = useState('all')
   const [search, setSearch] = useState('')
+  const [category, setCategory] = useState<string>('all')
 
-  const { data: documents, isLoading } = useQuery({
+  const { data: documents = [], isLoading } = useQuery({
     queryKey: ['documents', business?.id],
     queryFn: async () => {
-      const { data } = await supabase
+      if (!business?.id) return []
+      const { data, error } = await supabase
         .from('documents')
-        .select('*, uploader:profiles!documents_uploaded_by_fkey(full_name)')
-        .eq('business_id', business!.id)
+        .select('*, uploader:profiles!documents_uploaded_by_fkey(full_name, email)')
+        .eq('business_id', business.id)
         .order('created_at', { ascending: false })
-      return (data ?? []) as unknown as DocumentRow[]
+      if (error) throw error
+      return (data ?? []) as Document[]
     },
     enabled: !!business?.id,
   })
 
-  const filtered = documents?.filter((doc) => {
-    if (category !== 'all' && doc.category !== category) return false
-    if (search) {
-      const q = search.toLowerCase()
-      return (
-        doc.title.toLowerCase().includes(q) ||
-        doc.file_name.toLowerCase().includes(q) ||
-        doc.category.toLowerCase().includes(q)
-      )
-    }
+  const filtered = documents.filter((d) => {
+    if (category !== 'all' && d.category !== category) return false
+    if (search && !d.title.toLowerCase().includes(search.toLowerCase())) return false
     return true
-  }) ?? []
+  })
 
   if (isLoading) {
     return (
       <div className="space-y-6">
-        <div className="h-8 w-48 animate-pulse rounded bg-muted" />
-        <div className="space-y-3">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="h-16 animate-pulse rounded-lg bg-muted" />
-          ))}
+        <PageHeader title="Documents" description="Manage certificates, policies and more" />
+        <div className="flex items-center justify-center py-16">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-emerald-600 border-t-transparent" />
         </div>
       </div>
     )
@@ -115,48 +84,50 @@ export default function DocumentsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Documents"
-        description="Certificates, licences, policies, and compliance documents"
-      >
-        {isManager && (
-          <Button
-            onClick={() => router.push('/documents/upload')}
-            size="sm"
-            className="bg-emerald-600 hover:bg-emerald-700"
-          >
-            <Upload className="mr-1.5 h-3.5 w-3.5" />
-            Upload
-          </Button>
-        )}
+      <PageHeader title="Documents" description="Manage certificates, policies and more">
+        <Button size="sm" onClick={() => router.push('/documents/upload')}>
+          <Plus className="h-3.5 w-3.5" />
+          Upload
+        </Button>
       </PageHeader>
 
       {/* Filters */}
-      <div className="space-y-3">
-        <div className="relative max-w-sm">
-          <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-wrap gap-1">
+          <button
+            onClick={() => setCategory('all')}
+            className={cn(
+              'rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors',
+              category === 'all'
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                : 'bg-white text-muted-foreground border-border hover:border-emerald-200'
+            )}
+          >
+            All
+          </button>
+          {DOCUMENT_CATEGORIES.map((c) => (
+            <button
+              key={c}
+              onClick={() => setCategory(c)}
+              className={cn(
+                'rounded-full border px-2.5 py-1 text-[11px] font-medium capitalize transition-colors',
+                category === c
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                  : 'bg-white text-muted-foreground border-border hover:border-emerald-200'
+              )}
+            >
+              {c}
+            </button>
+          ))}
+        </div>
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search documents..."
-            className="pl-9 text-[13px]"
+            className="rounded-md border border-border bg-white pl-8 pr-3 py-1.5 text-[13px] text-foreground placeholder:text-muted-foreground focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 w-56"
           />
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          {CATEGORIES.map((cat) => (
-            <button
-              key={cat}
-              onClick={() => setCategory(cat)}
-              className={cn(
-                'rounded-full border px-3 py-1 text-[11px] font-medium capitalize transition-colors',
-                category === cat
-                  ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
-                  : 'border-gray-200 text-muted-foreground hover:bg-accent'
-              )}
-            >
-              {cat}
-            </button>
-          ))}
         </div>
       </div>
 
@@ -164,8 +135,8 @@ export default function DocumentsPage() {
         <EmptyState
           icon={FileText}
           title="No documents"
-          description={search || category !== 'all' ? 'No documents match your filters.' : 'Upload your first compliance document.'}
-          action={isManager && !search ? { label: 'Upload Document', onClick: () => router.push('/documents/upload') } : undefined}
+          description={documents.length === 0 ? 'Upload your first document to get started.' : 'No documents match your filters.'}
+          action={documents.length === 0 ? { label: 'Upload document', onClick: () => router.push('/documents/upload') } : undefined}
         />
       ) : (
         <div className="rounded-lg border border-border bg-white">
@@ -183,35 +154,41 @@ export default function DocumentsPage() {
             </thead>
             <tbody className="divide-y divide-border">
               {filtered.map((doc) => {
-                const expiry = getExpiryStatus(doc.expires_at)
+                const expiry = expiryStatus(doc.expires_at)
                 return (
-                  <tr key={doc.id} className="transition-colors hover:bg-accent/50">
-                    <td className="px-4 py-3 text-[13px] font-medium">{doc.title}</td>
-                    <td className="px-4 py-3">
-                      <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium capitalize text-muted-foreground">
+                  <tr key={doc.id} className="hover:bg-accent/50">
+                    <td className="px-4 py-2.5 text-[13px] font-medium text-foreground">{doc.title}</td>
+                    <td className="px-4 py-2.5">
+                      <span className="inline-flex items-center rounded-full border border-border bg-gray-50 px-2 py-0.5 text-[11px] font-medium capitalize text-muted-foreground">
                         {doc.category}
                       </span>
                     </td>
-                    <td className="max-w-[180px] px-4 py-3 text-[13px] text-muted-foreground truncate">
-                      {doc.file_name}
+                    <td className="max-w-[150px] truncate px-4 py-2.5 text-[13px] text-muted-foreground">{doc.file_name}</td>
+                    <td className="px-4 py-2.5 text-[13px] tabular-nums text-muted-foreground">{formatFileSize(doc.file_size)}</td>
+                    <td className="px-4 py-2.5 text-[13px] text-muted-foreground">
+                      {doc.uploader?.full_name || doc.uploader?.email || 'Unknown'}
                     </td>
-                    <td className="px-4 py-3 text-[13px] tabular-nums text-muted-foreground">
-                      {formatFileSize(doc.file_size)}
+                    <td className="px-4 py-2.5">
+                      {doc.expires_at ? (
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[13px] tabular-nums text-muted-foreground">
+                            {format(new Date(doc.expires_at), 'dd MMM yyyy')}
+                          </span>
+                          {expiry && (
+                            <span className={cn('rounded px-1.5 py-0.5 text-[10px] font-medium', expiry.color)}>
+                              {expiry.label}
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-[13px] text-muted-foreground">-</span>
+                      )}
                     </td>
-                    <td className="px-4 py-3 text-[13px] text-muted-foreground">
-                      {doc.uploader?.full_name ?? 'Unknown'}
-                    </td>
-                    <td className="px-4 py-3">
-                      <StatusBadge status={expiry.status} label={expiry.label} />
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center justify-end">
-                        <Link
-                          href={`/documents/${doc.id}`}
-                          className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-                        >
-                          <Eye className="h-3.5 w-3.5" />
-                        </Link>
+                    <td className="px-4 py-2.5">
+                      <div className="flex items-center justify-end gap-1">
+                        <Button variant="ghost" size="icon" onClick={() => router.push(`/documents/${doc.id}`)} title="View">
+                          <Download className="h-3.5 w-3.5" />
+                        </Button>
                       </div>
                     </td>
                   </tr>

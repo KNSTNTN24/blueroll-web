@@ -4,59 +4,50 @@ import { useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
+import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
+import { ArrowLeft } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
-import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
-  ArrowLeft,
-  Loader2,
-} from 'lucide-react'
-import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
-import { toast } from 'sonner'
 
 export default function NewDeliveryPage() {
-  const { profile, business } = useAuthStore()
+  const profile = useAuthStore((s) => s.profile)
+  const business = useAuthStore((s) => s.business)
   const router = useRouter()
 
   const [supplierId, setSupplierId] = useState('')
-  const [receivedAt, setReceivedAt] = useState(format(new Date(), "yyyy-MM-dd'T'HH:mm"))
-  const [productTemperature, setProductTemperature] = useState('')
+  const [deliveredAt, setDeliveredAt] = useState(format(new Date(), "yyyy-MM-dd'T'HH:mm"))
+  const [temperature, setTemperature] = useState('')
   const [notes, setNotes] = useState('')
 
-  const { data: suppliers } = useQuery({
+  const { data: suppliers = [] } = useQuery({
     queryKey: ['suppliers', business?.id],
     queryFn: async () => {
-      const { data } = await supabase
+      if (!business?.id) return []
+      const { data, error } = await supabase
         .from('suppliers')
         .select('id, name')
-        .eq('business_id', business!.id)
+        .eq('business_id', business.id)
         .order('name')
+      if (error) throw error
       return data ?? []
     },
     enabled: !!business?.id,
   })
 
-  const createMutation = useMutation({
+  const mutation = useMutation({
     mutationFn: async () => {
-      const temp = productTemperature.trim() ? parseFloat(productTemperature) : null
+      if (!business?.id || !profile?.id) throw new Error('No business')
+      if (!supplierId) throw new Error('Select a supplier')
+
       const { error } = await supabase.from('deliveries').insert({
-        supplier_id: supplierId || null,
-        received_by: profile!.id,
-        received_at: new Date(receivedAt).toISOString(),
-        product_temperature: temp,
-        notes: notes.trim() || null,
-        business_id: business!.id,
+        business_id: business.id,
+        supplier_id: supplierId,
+        received_by: profile.id,
+        delivered_at: new Date(deliveredAt).toISOString(),
+        product_temperature: temperature ? parseFloat(temperature) : null,
+        notes: notes || null,
       })
       if (error) throw error
     },
@@ -64,93 +55,81 @@ export default function NewDeliveryPage() {
       toast.success('Delivery recorded')
       router.push('/deliveries')
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err: Error) => toast.error(err.message),
   })
 
   return (
     <div className="space-y-6">
-      <div>
-        <Link
-          href="/deliveries"
-          className="mb-3 inline-flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground"
-        >
+      <PageHeader title="New Delivery" description="Record an incoming delivery">
+        <Button variant="outline" size="sm" onClick={() => router.push('/deliveries')}>
           <ArrowLeft className="h-3.5 w-3.5" />
-          Back to Deliveries
-        </Link>
-        <PageHeader
-          title="Record Delivery"
-          description="Log a new goods-in delivery"
-        />
-      </div>
+          Back
+        </Button>
+      </PageHeader>
 
-      <div className="max-w-lg rounded-lg border border-border bg-white p-6">
-        <div className="space-y-4">
-          <div className="space-y-1.5">
-            <Label className="text-[13px]">Supplier</Label>
-            <Select value={supplierId} onValueChange={(val) => setSupplierId(val ?? '')}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select supplier..." />
-              </SelectTrigger>
-              <SelectContent>
-                {suppliers?.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>
-                    {s.name}
-                  </SelectItem>
+      <div className="max-w-lg">
+        <form onSubmit={(e) => { e.preventDefault(); mutation.mutate() }} className="space-y-4">
+          <div className="rounded-lg border border-border bg-white p-4 space-y-4">
+            <div className="space-y-1.5">
+              <label className="text-[13px] font-medium text-foreground">Supplier</label>
+              <select
+                required
+                value={supplierId}
+                onChange={(e) => setSupplierId(e.target.value ?? '')}
+                className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] text-foreground focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              >
+                <option value="">Select a supplier</option>
+                {suppliers.map((s: { id: string; name: string }) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
                 ))}
-              </SelectContent>
-            </Select>
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[13px] font-medium text-foreground">Date and time</label>
+              <input
+                type="datetime-local"
+                required
+                value={deliveredAt}
+                onChange={(e) => setDeliveredAt(e.target.value)}
+                className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] text-foreground focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[13px] font-medium text-foreground">Temperature (°C)</label>
+              <input
+                type="number"
+                step="0.1"
+                value={temperature}
+                onChange={(e) => setTemperature(e.target.value)}
+                className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] text-foreground tabular-nums focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                placeholder="e.g. 3.5"
+              />
+              <p className="text-[12px] text-muted-foreground">Leave empty if not applicable</p>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[13px] font-medium text-foreground">Notes</label>
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                rows={3}
+                className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] text-foreground focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                placeholder="Any notes about the delivery..."
+              />
+            </div>
           </div>
 
-          <div className="space-y-1.5">
-            <Label className="text-[13px]">Received at</Label>
-            <Input
-              type="datetime-local"
-              value={receivedAt}
-              onChange={(e) => setReceivedAt(e.target.value)}
-            />
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" size="sm" type="button" onClick={() => router.push('/deliveries')}>
+              Cancel
+            </Button>
+            <Button size="sm" type="submit" disabled={mutation.isPending}>
+              {mutation.isPending ? 'Saving...' : 'Record delivery'}
+            </Button>
           </div>
-
-          <div className="space-y-1.5">
-            <Label className="text-[13px]">Product Temperature (°C)</Label>
-            <Input
-              type="number"
-              step="0.1"
-              value={productTemperature}
-              onChange={(e) => setProductTemperature(e.target.value)}
-              placeholder="e.g. 3.5"
-              className="w-32 tabular-nums"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label className="text-[13px]">Notes</Label>
-            <Textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Any notes about the delivery..."
-              className="min-h-[80px] text-[13px]"
-            />
-          </div>
-        </div>
-
-        <div className="mt-6 flex items-center gap-3">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => router.push('/deliveries')}
-          >
-            Cancel
-          </Button>
-          <Button
-            size="sm"
-            className="bg-emerald-600 hover:bg-emerald-700"
-            disabled={createMutation.isPending}
-            onClick={() => createMutation.mutate()}
-          >
-            {createMutation.isPending && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
-            Record Delivery
-          </Button>
-        </div>
+        </form>
       </div>
     </div>
   )

@@ -4,241 +4,183 @@ import { useState, useRef } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
-import { PageHeader } from '@/components/layout/page-header'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
-import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
-  ArrowLeft,
-  Upload,
-  File,
-  X,
-  Loader2,
-} from 'lucide-react'
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
+import { ArrowLeft, Upload, X } from 'lucide-react'
+import { PageHeader } from '@/components/layout/page-header'
+import { Button } from '@/components/ui/button'
+import { DOCUMENT_CATEGORIES } from '@/lib/constants'
 
-const CATEGORIES = [
-  'certificate',
-  'license',
-  'policy',
-  'procedure',
-  'training',
-  'audit',
-  'insurance',
-  'other',
-]
-
-const ACCESS_LEVELS = [
-  { value: 'all', label: 'All staff' },
-  { value: 'managers_only', label: 'Managers only' },
-  { value: 'owner_only', label: 'Owner only' },
-]
-
-export default function UploadDocumentPage() {
-  const { profile, business } = useAuthStore()
+export default function DocumentUploadPage() {
+  const profile = useAuthStore((s) => s.profile)
+  const business = useAuthStore((s) => s.business)
   const router = useRouter()
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
 
+  const [file, setFile] = useState<File | null>(null)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
-  const [category, setCategory] = useState('')
-  const [accessLevel, setAccessLevel] = useState('all')
+  const [category, setCategory] = useState<string>('other')
+  const [accessLevel, setAccessLevel] = useState<string>('all')
   const [expiresAt, setExpiresAt] = useState('')
-  const [file, setFile] = useState<File | null>(null)
 
-  const uploadMutation = useMutation({
+  const mutation = useMutation({
     mutationFn: async () => {
-      if (!file) throw new Error('Please select a file')
-      if (!category) throw new Error('Please select a category')
+      if (!business?.id || !profile?.id || !file) throw new Error('Missing data')
 
-      const fileExt = file.name.split('.').pop()
-      const filePath = `${business!.id}/${crypto.randomUUID()}.${fileExt}`
+      const timestamp = Date.now()
+      const filePath = `${business.id}/${timestamp}_${file.name}`
 
       const { error: uploadError } = await supabase.storage
         .from('documents')
         .upload(filePath, file)
-
       if (uploadError) throw uploadError
 
       const { error: insertError } = await supabase.from('documents').insert({
-        title: title.trim(),
-        description: description.trim() || null,
+        business_id: business.id,
+        title: title || file.name,
+        description: description || null,
         category,
-        file_url: filePath,
+        file_path: filePath,
         file_name: file.name,
         file_size: file.size,
-        file_type: file.type || null,
-        uploaded_by: profile!.id,
-        business_id: business!.id,
         access_level: accessLevel,
-        expires_at: expiresAt || null,
+        expires_at: expiresAt ? new Date(expiresAt).toISOString() : null,
+        uploaded_by: profile.id,
       })
-
       if (insertError) throw insertError
     },
     onSuccess: () => {
       toast.success('Document uploaded')
       router.push('/documents')
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err: Error) => toast.error(err.message),
   })
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selected = e.target.files?.[0]
-    if (selected) {
-      setFile(selected)
-      if (!title) setTitle(selected.name.replace(/\.[^/.]+$/, ''))
+  function handleFileDrop(e: React.DragEvent) {
+    e.preventDefault()
+    const f = e.dataTransfer.files?.[0]
+    if (f) {
+      setFile(f)
+      if (!title) setTitle(f.name.replace(/\.[^/.]+$/, ''))
+    }
+  }
+
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]
+    if (f) {
+      setFile(f)
+      if (!title) setTitle(f.name.replace(/\.[^/.]+$/, ''))
     }
   }
 
   return (
     <div className="space-y-6">
-      <div>
-        <Link
-          href="/documents"
-          className="mb-3 inline-flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground"
-        >
+      <PageHeader title="Upload Document" description="Add a new document to your library">
+        <Button variant="outline" size="sm" onClick={() => router.push('/documents')}>
           <ArrowLeft className="h-3.5 w-3.5" />
-          Back to Documents
-        </Link>
-        <PageHeader
-          title="Upload Document"
-          description="Upload a compliance document, certificate, or policy"
-        />
-      </div>
+          Back
+        </Button>
+      </PageHeader>
 
-      <div className="max-w-lg rounded-lg border border-border bg-white p-6">
-        <div className="space-y-4">
-          {/* File upload */}
-          <div className="space-y-1.5">
-            <Label className="text-[13px]">File</Label>
-            {file ? (
-              <div className="flex items-center gap-3 rounded-lg border border-border p-3">
-                <File className="h-5 w-5 text-muted-foreground" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-[13px] font-medium truncate">{file.name}</p>
-                  <p className="text-[11px] text-muted-foreground">
-                    {(file.size / 1024).toFixed(1)} KB
-                  </p>
+      <div className="max-w-lg">
+        <form onSubmit={(e) => { e.preventDefault(); mutation.mutate() }} className="space-y-4">
+          <div className="rounded-lg border border-border bg-white p-4 space-y-4">
+            {/* File Upload */}
+            <div className="space-y-1.5">
+              <label className="text-[13px] font-medium text-foreground">File</label>
+              {file ? (
+                <div className="flex items-center justify-between rounded-md border border-border bg-gray-50 px-3 py-2">
+                  <span className="text-[13px] text-foreground truncate">{file.name}</span>
+                  <button type="button" onClick={() => setFile(null)} className="ml-2 text-muted-foreground hover:text-foreground">
+                    <X className="h-3.5 w-3.5" />
+                  </button>
                 </div>
-                <button
-                  onClick={() => { setFile(null); if (fileInputRef.current) fileInputRef.current.value = '' }}
-                  className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+              ) : (
+                <div
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={handleFileDrop}
+                  onClick={() => fileRef.current?.click()}
+                  className="flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-border py-8 text-center hover:border-emerald-300 transition-colors"
                 >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="flex w-full flex-col items-center gap-2 rounded-lg border-2 border-dashed border-gray-200 p-8 text-center transition-colors hover:border-gray-300 hover:bg-accent/50"
-              >
-                <Upload className="h-6 w-6 text-muted-foreground" />
-                <div>
-                  <p className="text-[13px] font-medium">Click to upload</p>
-                  <p className="text-[11px] text-muted-foreground">PDF, DOC, JPG, PNG up to 10MB</p>
+                  <Upload className="mb-2 h-5 w-5 text-muted-foreground" />
+                  <p className="text-[13px] text-muted-foreground">
+                    Drop a file here or <span className="text-emerald-600 font-medium">browse</span>
+                  </p>
+                  <p className="mt-1 text-[11px] text-muted-foreground">PDF, images, documents up to 50MB</p>
                 </div>
-              </button>
-            )}
-            <input
-              ref={fileInputRef}
-              type="file"
-              className="hidden"
-              onChange={handleFileSelect}
-              accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.xls,.xlsx"
-            />
+              )}
+              <input ref={fileRef} type="file" className="hidden" onChange={handleFileSelect} />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[13px] font-medium text-foreground">Title</label>
+              <input
+                required
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                placeholder="Document title"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[13px] font-medium text-foreground">Description</label>
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                rows={2}
+                className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                placeholder="Optional description"
+              />
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <label className="text-[13px] font-medium text-foreground">Category</label>
+                <select
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value ?? '')}
+                  className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] capitalize focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                >
+                  {DOCUMENT_CATEGORIES.map((c) => (
+                    <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[13px] font-medium text-foreground">Access level</label>
+                <select
+                  value={accessLevel}
+                  onChange={(e) => setAccessLevel(e.target.value ?? '')}
+                  className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                >
+                  <option value="all">All team members</option>
+                  <option value="managers_only">Managers only</option>
+                  <option value="owner_only">Owner only</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[13px] font-medium text-foreground">Expires at</label>
+              <input
+                type="date"
+                value={expiresAt}
+                onChange={(e) => setExpiresAt(e.target.value)}
+                className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              />
+              <p className="text-[12px] text-muted-foreground">Leave empty if the document does not expire</p>
+            </div>
           </div>
 
-          <div className="space-y-1.5">
-            <Label className="text-[13px]">Title</Label>
-            <Input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Document title"
-              className="text-[13px]"
-            />
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" size="sm" type="button" onClick={() => router.push('/documents')}>Cancel</Button>
+            <Button size="sm" type="submit" disabled={mutation.isPending || !file}>
+              {mutation.isPending ? 'Uploading...' : 'Upload document'}
+            </Button>
           </div>
-
-          <div className="space-y-1.5">
-            <Label className="text-[13px]">Description</Label>
-            <Textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Optional description..."
-              className="min-h-[60px] text-[13px]"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label className="text-[13px]">Category</Label>
-            <Select value={category} onValueChange={(v) => setCategory(v ?? "")}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select category..." />
-              </SelectTrigger>
-              <SelectContent>
-                {CATEGORIES.map((cat) => (
-                  <SelectItem key={cat} value={cat} className="capitalize">
-                    {cat}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label className="text-[13px]">Access Level</Label>
-            <Select value={accessLevel} onValueChange={(v) => setAccessLevel(v ?? "")}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {ACCESS_LEVELS.map((level) => (
-                  <SelectItem key={level.value} value={level.value}>
-                    {level.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label className="text-[13px]">Expiry Date (optional)</Label>
-            <Input
-              type="date"
-              value={expiresAt}
-              onChange={(e) => setExpiresAt(e.target.value)}
-            />
-          </div>
-        </div>
-
-        <div className="mt-6 flex items-center gap-3">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => router.push('/documents')}
-          >
-            Cancel
-          </Button>
-          <Button
-            size="sm"
-            className="bg-emerald-600 hover:bg-emerald-700"
-            disabled={!title.trim() || !file || !category || uploadMutation.isPending}
-            onClick={() => uploadMutation.mutate()}
-          >
-            {uploadMutation.isPending && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
-            Upload Document
-          </Button>
-        </div>
+        </form>
       </div>
     </div>
   )

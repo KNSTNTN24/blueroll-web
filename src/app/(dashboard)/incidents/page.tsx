@@ -4,203 +4,192 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
+import { toast } from 'sonner'
+import { AlertTriangle, Plus, Pencil, Trash2, CheckCircle2 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { EmptyState } from '@/components/shared/empty-state'
 import { StatusBadge } from '@/components/shared/status-badge'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
-import { Label } from '@/components/ui/label'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
-import {
-  AlertTriangle,
-  Plus,
-  MoreHorizontal,
-  Pencil,
-  Trash2,
-  CheckCircle2,
-  Loader2,
-} from 'lucide-react'
+import { INCIDENT_TYPES } from '@/lib/constants'
+import { notifyNewIncident, notifyIncidentResolved } from '@/lib/notifications'
 import { format } from 'date-fns'
-import { toast } from 'sonner'
 
-type IncidentWithProfiles = {
+interface Incident {
   id: string
   type: string
   description: string
   action_taken: string | null
   follow_up: string | null
-  reported_by: string
-  date: string
-  business_id: string
-  created_at: string
   status: string
+  reported_by: string
   resolved_by: string | null
   resolved_at: string | null
   resolved_notes: string | null
-  updated_at: string | null
-  reporter: { full_name: string | null } | null
-  resolver: { full_name: string | null } | null
+  incident_date: string
+  created_at: string
+  reporter?: { full_name: string | null; email: string }
 }
 
+type Tab = 'all' | 'open' | 'resolved'
+
 export default function IncidentsPage() {
-  const { profile, business } = useAuthStore()
+  const profile = useAuthStore((s) => s.profile)
+  const business = useAuthStore((s) => s.business)
   const queryClient = useQueryClient()
   const isManager = profile?.role === 'owner' || profile?.role === 'manager'
 
-  const [tab, setTab] = useState('all')
-  const [showNewDialog, setShowNewDialog] = useState(false)
-  const [showResolveDialog, setShowResolveDialog] = useState(false)
-  const [showEditDialog, setShowEditDialog] = useState(false)
-  const [selectedIncident, setSelectedIncident] = useState<IncidentWithProfiles | null>(null)
+  const [tab, setTab] = useState<Tab>('all')
+  const [showCreate, setShowCreate] = useState(false)
+  const [showResolve, setShowResolve] = useState<string | null>(null)
+  const [showEdit, setShowEdit] = useState<Incident | null>(null)
 
-  const [newType, setNewType] = useState('incident')
-  const [newDescription, setNewDescription] = useState('')
-  const [newActionTaken, setNewActionTaken] = useState('')
-  const [newDate, setNewDate] = useState(format(new Date(), 'yyyy-MM-dd'))
-  const [resolveNotes, setResolveNotes] = useState('')
+  // Create form state
+  const [cType, setCType] = useState<string>('incident')
+  const [cDesc, setCDesc] = useState('')
+  const [cAction, setCAction] = useState('')
+  const [cFollowUp, setCFollowUp] = useState('')
+  const [cDate, setCDate] = useState(format(new Date(), 'yyyy-MM-dd'))
 
-  const { data: incidents, isLoading } = useQuery({
+  // Resolve form state
+  const [rNotes, setRNotes] = useState('')
+
+  // Edit form state
+  const [eType, setEType] = useState<string>('incident')
+  const [eDesc, setEDesc] = useState('')
+  const [eAction, setEAction] = useState('')
+  const [eFollowUp, setEFollowUp] = useState('')
+
+  const { data: incidents = [], isLoading } = useQuery({
     queryKey: ['incidents', business?.id],
     queryFn: async () => {
-      const { data } = await supabase
+      if (!business?.id) return []
+      const { data, error } = await supabase
         .from('incidents')
-        .select('*, reporter:profiles!incidents_reported_by_fkey(full_name), resolver:profiles!incidents_resolved_by_fkey(full_name)')
-        .eq('business_id', business!.id)
-        .order('date', { ascending: false })
-      return (data ?? []) as unknown as IncidentWithProfiles[]
+        .select('*, reporter:profiles!incidents_reported_by_fkey(full_name, email)')
+        .eq('business_id', business.id)
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      return (data ?? []) as Incident[]
     },
     enabled: !!business?.id,
   })
 
+  const filtered = incidents.filter((i) => {
+    if (tab === 'open') return i.status === 'open'
+    if (tab === 'resolved') return i.status === 'resolved'
+    return true
+  })
+
   const createMutation = useMutation({
     mutationFn: async () => {
+      if (!business?.id || !profile?.id) throw new Error('No business')
       const { error } = await supabase.from('incidents').insert({
-        type: newType,
-        description: newDescription,
-        action_taken: newActionTaken || null,
-        date: newDate,
-        reported_by: profile!.id,
-        business_id: business!.id,
+        business_id: business.id,
+        type: cType,
+        description: cDesc,
+        action_taken: cAction || null,
+        follow_up: cFollowUp || null,
+        status: 'open',
+        reported_by: profile.id,
+        incident_date: cDate,
       })
       if (error) throw error
+      await notifyNewIncident(business.id, cDesc.substring(0, 100))
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['incidents'] })
       toast.success('Incident reported')
-      setShowNewDialog(false)
-      resetForm()
+      setShowCreate(false)
+      setCType('incident')
+      setCDesc('')
+      setCAction('')
+      setCFollowUp('')
+      setCDate(format(new Date(), 'yyyy-MM-dd'))
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err: Error) => toast.error(err.message),
   })
 
   const resolveMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (incidentId: string) => {
+      if (!profile?.id) throw new Error('No user')
+      const incident = incidents.find((i) => i.id === incidentId)
       const { error } = await supabase
         .from('incidents')
         .update({
           status: 'resolved',
-          resolved_by: profile!.id,
+          resolved_by: profile.id,
           resolved_at: new Date().toISOString(),
-          resolved_notes: resolveNotes || null,
+          resolved_notes: rNotes || null,
         })
-        .eq('id', selectedIncident!.id)
+        .eq('id', incidentId)
       if (error) throw error
+      if (incident) {
+        await notifyIncidentResolved(incident.reported_by, incident.description.substring(0, 100))
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['incidents'] })
       toast.success('Incident resolved')
-      setShowResolveDialog(false)
-      setSelectedIncident(null)
-      setResolveNotes('')
+      setShowResolve(null)
+      setRNotes('')
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err: Error) => toast.error(err.message),
   })
 
   const editMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (incidentId: string) => {
       const { error } = await supabase
         .from('incidents')
         .update({
-          type: newType,
-          description: newDescription,
-          action_taken: newActionTaken || null,
+          type: eType,
+          description: eDesc,
+          action_taken: eAction || null,
+          follow_up: eFollowUp || null,
         })
-        .eq('id', selectedIncident!.id)
+        .eq('id', incidentId)
       if (error) throw error
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['incidents'] })
       toast.success('Incident updated')
-      setShowEditDialog(false)
-      setSelectedIncident(null)
-      resetForm()
+      setShowEdit(null)
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err: Error) => toast.error(err.message),
   })
 
   const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from('incidents').delete().eq('id', id)
+    mutationFn: async (incidentId: string) => {
+      const { error } = await supabase.from('incidents').delete().eq('id', incidentId)
       if (error) throw error
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['incidents'] })
       toast.success('Incident deleted')
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err: Error) => toast.error(err.message),
   })
 
-  const resetForm = () => {
-    setNewType('incident')
-    setNewDescription('')
-    setNewActionTaken('')
-    setNewDate(format(new Date(), 'yyyy-MM-dd'))
+  function openEdit(incident: Incident) {
+    setEType(incident.type)
+    setEDesc(incident.description)
+    setEAction(incident.action_taken ?? '')
+    setEFollowUp(incident.follow_up ?? '')
+    setShowEdit(incident)
   }
 
-  const openEdit = (incident: IncidentWithProfiles) => {
-    setSelectedIncident(incident)
-    setNewType(incident.type)
-    setNewDescription(incident.description)
-    setNewActionTaken(incident.action_taken ?? '')
-    setShowEditDialog(true)
-  }
-
-  const filtered = incidents?.filter((i) => {
-    if (tab === 'open') return i.status === 'open'
-    if (tab === 'resolved') return i.status === 'resolved'
-    return true
-  }) ?? []
+  const tabs: { key: Tab; label: string }[] = [
+    { key: 'all', label: 'All' },
+    { key: 'open', label: 'Open' },
+    { key: 'resolved', label: 'Resolved' },
+  ]
 
   if (isLoading) {
     return (
       <div className="space-y-6">
-        <div className="h-8 w-48 animate-pulse rounded bg-muted" />
-        <div className="space-y-3">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="h-16 animate-pulse rounded-lg bg-muted" />
-          ))}
+        <PageHeader title="Incidents" description="Track complaints and incidents" />
+        <div className="flex items-center justify-center py-16">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-emerald-600 border-t-transparent" />
         </div>
       </div>
     )
@@ -208,272 +197,258 @@ export default function IncidentsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Incidents & Complaints"
-        description="Track food safety incidents and customer complaints"
-      >
-        <Button
-          onClick={() => { resetForm(); setShowNewDialog(true) }}
-          size="sm"
-          className="bg-emerald-600 hover:bg-emerald-700"
-        >
-          <Plus className="mr-1.5 h-3.5 w-3.5" />
-          New Incident
+      <PageHeader title="Incidents" description="Track complaints and incidents">
+        <Button size="sm" onClick={() => setShowCreate(true)}>
+          <Plus className="h-3.5 w-3.5" />
+          Report incident
         </Button>
       </PageHeader>
 
-      <Tabs value={tab} onValueChange={(v) => setTab(v ?? "")}>
-        <TabsList>
-          <TabsTrigger value="all">All ({incidents?.length ?? 0})</TabsTrigger>
-          <TabsTrigger value="open">Open ({incidents?.filter((i) => i.status === 'open').length ?? 0})</TabsTrigger>
-          <TabsTrigger value="resolved">Resolved ({incidents?.filter((i) => i.status === 'resolved').length ?? 0})</TabsTrigger>
-        </TabsList>
+      {/* Filter Tabs */}
+      <div className="flex gap-1 rounded-lg border border-border bg-white p-1">
+        {tabs.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={cn(
+              'rounded-md px-3 py-1.5 text-[13px] font-medium transition-colors',
+              tab === t.key
+                ? 'bg-emerald-50 text-emerald-700'
+                : 'text-muted-foreground hover:text-foreground'
+            )}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
 
-        <TabsContent value={tab} className="mt-4">
-          {filtered.length === 0 ? (
-            <EmptyState
-              icon={AlertTriangle}
-              title="No incidents"
-              description={tab === 'all' ? 'No incidents or complaints have been reported.' : `No ${tab} incidents found.`}
-            />
-          ) : (
-            <div className="rounded-lg border border-border bg-white">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-border">
-                    <th className="px-4 py-2.5 text-left text-[12px] font-medium text-muted-foreground">Date</th>
-                    <th className="px-4 py-2.5 text-left text-[12px] font-medium text-muted-foreground">Type</th>
-                    <th className="px-4 py-2.5 text-left text-[12px] font-medium text-muted-foreground">Description</th>
-                    <th className="px-4 py-2.5 text-left text-[12px] font-medium text-muted-foreground">Reported by</th>
-                    <th className="px-4 py-2.5 text-left text-[12px] font-medium text-muted-foreground">Status</th>
-                    <th className="px-4 py-2.5 text-right text-[12px] font-medium text-muted-foreground">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {filtered.map((incident) => (
-                    <tr key={incident.id} className="transition-colors hover:bg-accent/50">
-                      <td className="px-4 py-3 text-[13px] tabular-nums text-muted-foreground">
-                        {format(new Date(incident.date), 'dd MMM yyyy')}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={cn(
-                          'rounded-full px-2 py-0.5 text-[11px] font-medium capitalize',
-                          incident.type === 'complaint'
-                            ? 'bg-amber-50 text-amber-700'
-                            : 'bg-red-50 text-red-700'
-                        )}>
-                          {incident.type}
-                        </span>
-                      </td>
-                      <td className="max-w-xs px-4 py-3 text-[13px] truncate">
-                        {incident.description}
-                      </td>
-                      <td className="px-4 py-3 text-[13px] text-muted-foreground">
-                        {incident.reporter?.full_name ?? 'Unknown'}
-                      </td>
-                      <td className="px-4 py-3">
-                        <StatusBadge
-                          status={incident.status === 'resolved' ? 'success' : 'error'}
-                          label={incident.status === 'resolved' ? 'Resolved' : 'Open'}
-                        />
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center justify-end">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger>
-                              <button className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground">
-                                <MoreHorizontal className="h-3.5 w-3.5" />
-                              </button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              {incident.status === 'open' && (
-                                <DropdownMenuItem
-                                  onClick={() => {
-                                    setSelectedIncident(incident)
-                                    setResolveNotes('')
-                                    setShowResolveDialog(true)
-                                  }}
-                                >
-                                  <CheckCircle2 className="mr-2 h-3.5 w-3.5" />
-                                  Resolve
-                                </DropdownMenuItem>
-                              )}
-                              {isManager && (
-                                <>
-                                  <DropdownMenuItem onClick={() => openEdit(incident)}>
-                                    <Pencil className="mr-2 h-3.5 w-3.5" />
-                                    Edit
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    className="text-red-600"
-                                    onClick={() => deleteMutation.mutate(incident.id)}
-                                  >
-                                    <Trash2 className="mr-2 h-3.5 w-3.5" />
-                                    Delete
-                                  </DropdownMenuItem>
-                                </>
-                              )}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
-                      </td>
-                    </tr>
+      {/* Create Dialog */}
+      {showCreate && (
+        <div className="rounded-lg border border-border bg-white p-4">
+          <form onSubmit={(e) => { e.preventDefault(); createMutation.mutate() }} className="space-y-4">
+            <h3 className="text-[14px] font-medium text-foreground">Report an incident</h3>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <label className="text-[13px] font-medium text-foreground">Type</label>
+                <select
+                  value={cType}
+                  onChange={(e) => setCType(e.target.value ?? '')}
+                  className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                >
+                  {INCIDENT_TYPES.map((t) => (
+                    <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>
                   ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </TabsContent>
-      </Tabs>
-
-      {/* New Incident Dialog */}
-      <Dialog open={showNewDialog} onOpenChange={setShowNewDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Report Incident</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <Label className="text-[13px]">Type</Label>
-              <Select value={newType} onValueChange={(v) => setNewType(v ?? "")}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="incident">Incident</SelectItem>
-                  <SelectItem value="complaint">Complaint</SelectItem>
-                </SelectContent>
-              </Select>
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[13px] font-medium text-foreground">Date</label>
+                <input
+                  type="date"
+                  value={cDate}
+                  onChange={(e) => setCDate(e.target.value)}
+                  className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                />
+              </div>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-[13px]">Date</Label>
-              <Input type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-[13px]">Description</Label>
-              <Textarea
-                value={newDescription}
-                onChange={(e) => setNewDescription(e.target.value)}
-                placeholder="Describe the incident..."
-                className="min-h-[80px] text-[13px]"
+              <label className="text-[13px] font-medium text-foreground">Description</label>
+              <textarea
+                required
+                value={cDesc}
+                onChange={(e) => setCDesc(e.target.value)}
+                rows={3}
+                className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                placeholder="Describe what happened..."
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-[13px]">Action Taken</Label>
-              <Textarea
-                value={newActionTaken}
-                onChange={(e) => setNewActionTaken(e.target.value)}
-                placeholder="What action was taken? (optional)"
-                className="min-h-[60px] text-[13px]"
+              <label className="text-[13px] font-medium text-foreground">Action taken</label>
+              <textarea
+                value={cAction}
+                onChange={(e) => setCAction(e.target.value)}
+                rows={2}
+                className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                placeholder="What actions were taken..."
               />
             </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setShowNewDialog(false)}>
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              className="bg-emerald-600 hover:bg-emerald-700"
-              disabled={!newDescription.trim() || createMutation.isPending}
-              onClick={() => createMutation.mutate()}
-            >
-              {createMutation.isPending && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
-              Report
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            <div className="space-y-1.5">
+              <label className="text-[13px] font-medium text-foreground">Follow up</label>
+              <textarea
+                value={cFollowUp}
+                onChange={(e) => setCFollowUp(e.target.value)}
+                rows={2}
+                className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                placeholder="Follow up actions needed..."
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" size="sm" type="button" onClick={() => setShowCreate(false)}>Cancel</Button>
+              <Button size="sm" type="submit" disabled={createMutation.isPending}>
+                {createMutation.isPending ? 'Submitting...' : 'Submit'}
+              </Button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {/* Resolve Dialog */}
-      <Dialog open={showResolveDialog} onOpenChange={setShowResolveDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Resolve Incident</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <p className="text-[13px] text-muted-foreground">
-              {selectedIncident?.description}
-            </p>
+      {showResolve && (
+        <div className="rounded-lg border border-border bg-white p-4">
+          <form onSubmit={(e) => { e.preventDefault(); resolveMutation.mutate(showResolve) }} className="space-y-4">
+            <h3 className="text-[14px] font-medium text-foreground">Resolve incident</h3>
             <div className="space-y-1.5">
-              <Label className="text-[13px]">Resolution Notes</Label>
-              <Textarea
-                value={resolveNotes}
-                onChange={(e) => setResolveNotes(e.target.value)}
-                placeholder="Describe how the incident was resolved..."
-                className="min-h-[80px] text-[13px]"
+              <label className="text-[13px] font-medium text-foreground">Resolution notes</label>
+              <textarea
+                value={rNotes}
+                onChange={(e) => setRNotes(e.target.value)}
+                rows={3}
+                className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                placeholder="How was this resolved..."
               />
             </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setShowResolveDialog(false)}>
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              className="bg-emerald-600 hover:bg-emerald-700"
-              disabled={resolveMutation.isPending}
-              onClick={() => resolveMutation.mutate()}
-            >
-              {resolveMutation.isPending && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
-              Resolve
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" size="sm" type="button" onClick={() => { setShowResolve(null); setRNotes('') }}>Cancel</Button>
+              <Button size="sm" type="submit" disabled={resolveMutation.isPending}>
+                {resolveMutation.isPending ? 'Resolving...' : 'Resolve'}
+              </Button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {/* Edit Dialog */}
-      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit Incident</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
+      {showEdit && (
+        <div className="rounded-lg border border-border bg-white p-4">
+          <form onSubmit={(e) => { e.preventDefault(); editMutation.mutate(showEdit.id) }} className="space-y-4">
+            <h3 className="text-[14px] font-medium text-foreground">Edit incident</h3>
             <div className="space-y-1.5">
-              <Label className="text-[13px]">Type</Label>
-              <Select value={newType} onValueChange={(v) => setNewType(v ?? "")}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="incident">Incident</SelectItem>
-                  <SelectItem value="complaint">Complaint</SelectItem>
-                </SelectContent>
-              </Select>
+              <label className="text-[13px] font-medium text-foreground">Type</label>
+              <select
+                value={eType}
+                onChange={(e) => setEType(e.target.value ?? '')}
+                className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              >
+                {INCIDENT_TYPES.map((t) => (
+                  <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>
+                ))}
+              </select>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-[13px]">Description</Label>
-              <Textarea
-                value={newDescription}
-                onChange={(e) => setNewDescription(e.target.value)}
-                className="min-h-[80px] text-[13px]"
+              <label className="text-[13px] font-medium text-foreground">Description</label>
+              <textarea
+                required
+                value={eDesc}
+                onChange={(e) => setEDesc(e.target.value)}
+                rows={3}
+                className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-[13px]">Action Taken</Label>
-              <Textarea
-                value={newActionTaken}
-                onChange={(e) => setNewActionTaken(e.target.value)}
-                className="min-h-[60px] text-[13px]"
+              <label className="text-[13px] font-medium text-foreground">Action taken</label>
+              <textarea
+                value={eAction}
+                onChange={(e) => setEAction(e.target.value)}
+                rows={2}
+                className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
               />
             </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setShowEditDialog(false)}>
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              className="bg-emerald-600 hover:bg-emerald-700"
-              disabled={!newDescription.trim() || editMutation.isPending}
-              onClick={() => editMutation.mutate()}
-            >
-              {editMutation.isPending && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
-              Save
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            <div className="space-y-1.5">
+              <label className="text-[13px] font-medium text-foreground">Follow up</label>
+              <textarea
+                value={eFollowUp}
+                onChange={(e) => setEFollowUp(e.target.value)}
+                rows={2}
+                className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" size="sm" type="button" onClick={() => setShowEdit(null)}>Cancel</Button>
+              <Button size="sm" type="submit" disabled={editMutation.isPending}>
+                {editMutation.isPending ? 'Saving...' : 'Save'}
+              </Button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Table */}
+      {filtered.length === 0 ? (
+        <EmptyState
+          icon={AlertTriangle}
+          title="No incidents"
+          description={tab === 'all' ? 'No incidents have been reported yet.' : `No ${tab} incidents.`}
+        />
+      ) : (
+        <div className="rounded-lg border border-border bg-white">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-border">
+                <th className="px-4 py-2.5 text-left text-[12px] font-medium text-muted-foreground">Date</th>
+                <th className="px-4 py-2.5 text-left text-[12px] font-medium text-muted-foreground">Type</th>
+                <th className="px-4 py-2.5 text-left text-[12px] font-medium text-muted-foreground">Description</th>
+                <th className="px-4 py-2.5 text-left text-[12px] font-medium text-muted-foreground">Reported by</th>
+                <th className="px-4 py-2.5 text-left text-[12px] font-medium text-muted-foreground">Status</th>
+                <th className="px-4 py-2.5 text-right text-[12px] font-medium text-muted-foreground">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {filtered.map((inc) => (
+                <tr key={inc.id} className="hover:bg-accent/50">
+                  <td className="px-4 py-2.5 text-[13px] tabular-nums text-muted-foreground">
+                    {format(new Date(inc.incident_date || inc.created_at), 'dd MMM yyyy')}
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <span className={cn(
+                      'inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium',
+                      inc.type === 'complaint'
+                        ? 'bg-amber-50 text-amber-700 border-amber-200'
+                        : 'bg-red-50 text-red-700 border-red-200'
+                    )}>
+                      {inc.type.charAt(0).toUpperCase() + inc.type.slice(1)}
+                    </span>
+                  </td>
+                  <td className="max-w-xs truncate px-4 py-2.5 text-[13px] text-foreground">
+                    {inc.description}
+                  </td>
+                  <td className="px-4 py-2.5 text-[13px] text-muted-foreground">
+                    {inc.reporter?.full_name || inc.reporter?.email || 'Unknown'}
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <StatusBadge
+                      status={inc.status === 'open' ? 'warning' : 'success'}
+                      label={inc.status.charAt(0).toUpperCase() + inc.status.slice(1)}
+                    />
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <div className="flex items-center justify-end gap-1">
+                      {inc.status === 'open' && (
+                        <Button variant="ghost" size="icon" onClick={() => { setRNotes(''); setShowResolve(inc.id) }} title="Resolve">
+                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                        </Button>
+                      )}
+                      {isManager && (
+                        <>
+                          <Button variant="ghost" size="icon" onClick={() => openEdit(inc)} title="Edit">
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => { if (confirm('Delete this incident?')) deleteMutation.mutate(inc.id) }}
+                            title="Delete"
+                          >
+                            <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }

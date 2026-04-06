@@ -1,36 +1,24 @@
 'use client'
 
-import { useState, useCallback, useEffect } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { PAIN_POINTS } from '@/lib/constants'
-import { cn } from '@/lib/utils'
-import {
-  Search,
-  MapPin,
-  Check,
-  ArrowRight,
-  ArrowLeft,
-  Building2,
-  Loader2,
-  Users,
-  Store,
-} from 'lucide-react'
+import { seedDefaultChecklists } from '@/lib/seed-checklists'
+import { PAYWALL_FEATURES } from '@/lib/constants'
 
-interface FsaEstablishment {
+// ── Types ──
+
+type Scenario = 'new' | 'join' | null
+
+interface FsaBusiness {
   FHRSID: number
   BusinessName: string
-  BusinessType: string
   AddressLine1: string
   AddressLine2: string
   AddressLine3: string
   PostCode: string
   RatingValue: string
-  RatingDate: string
   scores: {
     Hygiene: number | null
     Structural: number | null
@@ -38,125 +26,204 @@ interface FsaEstablishment {
   }
 }
 
-// Flow A (new business): name → choice → postcode → select → rating → painpoints → signup (7 steps)
-// Flow B (join team):    name → choice → invite → painpoints → signup (5 steps)
-type Step =
-  | 'name'
-  | 'choice'
-  | 'postcode'
-  | 'select'
-  | 'rating'
-  | 'invite'
-  | 'pain-points'
-  | 'signup'
+// ── Helpers ──
+
+function ratingColor(rating: number) {
+  if (rating >= 4) return 'bg-emerald-500'
+  if (rating === 3) return 'bg-yellow-500'
+  return 'bg-red-500'
+}
+
+function ratingBadgeColor(rating: number) {
+  if (rating >= 4) return 'bg-emerald-100 text-emerald-700'
+  if (rating === 3) return 'bg-yellow-100 text-yellow-700'
+  return 'bg-red-100 text-red-700'
+}
+
+function scoreBarWidth(score: number | null, max: number) {
+  if (score === null || score === undefined) return 0
+  return Math.round((score / max) * 100)
+}
+
+// ── Progress Bar ──
+
+function ProgressBar({ current, total }: { current: number; total: number }) {
+  return (
+    <div className="flex gap-1.5">
+      {Array.from({ length: total }, (_, i) => (
+        <div
+          key={i}
+          className={`h-1 flex-1 rounded-full transition-colors ${
+            i < current ? 'bg-emerald-600' : 'bg-gray-200'
+          }`}
+        />
+      ))}
+    </div>
+  )
+}
+
+// ── Main Component ──
 
 export default function OnboardingPage() {
   const router = useRouter()
-  const [step, setStep] = useState<Step>('name')
-  const [isJoinFlow, setIsJoinFlow] = useState(false)
-  const [checking, setChecking] = useState(true)
 
-  // If user is already logged in with a profile, go to dashboard
-  useEffect(() => {
-    let done = false
-    const timeout = setTimeout(() => {
-      if (!done) { done = true; setChecking(false) }
-    }, 3000)
+  // Session check
+  const [checkingSession, setCheckingSession] = useState(true)
 
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (done) return
-      if (session?.user) {
-        try {
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('id')
-            .eq('id', session.user.id)
-            .single()
-          if (profile) {
-            done = true
-            clearTimeout(timeout)
-            window.location.href = '/dashboard'
-            return
-          }
-        } catch {
-          // Profile doesn't exist yet — show onboarding
-        }
-      }
-      if (!done) { done = true; clearTimeout(timeout); setChecking(false) }
-    }).catch(() => {
-      if (!done) { done = true; clearTimeout(timeout); setChecking(false) }
-    })
+  // Wizard state
+  const [step, setStep] = useState(1)
+  const [scenario, setScenario] = useState<Scenario>(null)
 
-    return () => clearTimeout(timeout)
-  }, [router])
+  // Step 1: Name
+  const [fullName, setFullName] = useState('')
 
-  // Name
-  const [name, setName] = useState('')
-
-  // FSA search
+  // Step 3a: Postcode search
   const [postcode, setPostcode] = useState('')
-  const [searchResults, setSearchResults] = useState<FsaEstablishment[]>([])
   const [searching, setSearching] = useState(false)
-  const [selected, setSelected] = useState<FsaEstablishment | null>(null)
+  const [fsaResults, setFsaResults] = useState<FsaBusiness[]>([])
+  const [searchError, setSearchError] = useState<string | null>(null)
+  const [skippedFsa, setSkippedFsa] = useState(false)
 
-  // Invite
+  // Step 4a: Selected business
+  const [selectedBusiness, setSelectedBusiness] = useState<FsaBusiness | null>(null)
+
+  // Step 3b: Invite code
   const [inviteCode, setInviteCode] = useState('')
 
-  // Pain points
-  const [painPoints, setPainPoints] = useState<Set<string>>(new Set())
-
-  // Signup
+  // Step 6/4: Signup
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
-  const [signupError, setSignupError] = useState('')
-  const [signupLoading, setSignupLoading] = useState(false)
+  const [signupError, setSignupError] = useState<string | null>(null)
+  const [signingUp, setSigningUp] = useState(false)
 
-  // Step tracking for progress bar
-  const stepsForFlow = isJoinFlow
-    ? ['name', 'choice', 'invite', 'pain-points', 'signup']
-    : ['name', 'choice', 'postcode', 'select', 'rating', 'pain-points', 'signup']
+  // Setting up account message
+  const [settingUp, setSettingUp] = useState(false)
 
-  const currentStepIndex = stepsForFlow.indexOf(step)
-  const totalSteps = stepsForFlow.length
+  // Paywall
+  const [startingTrial, setStartingTrial] = useState(false)
+  const [paywallError, setPaywallError] = useState<string | null>(null)
 
+  const firstName = fullName.trim().split(' ')[0] || ''
+
+  // Determine total steps and current display step
+  const totalSteps = scenario === 'join' ? 5 : 7
+
+  // Map internal step to display step for each scenario
+  function getDisplayStep(): number {
+    if (scenario === 'join') {
+      // Steps: 1(name) 2(choice) 3(invite) 4(signup) 5(paywall)
+      if (step <= 2) return step
+      if (step === 3) return 3 // invite
+      if (step === 4) return 4 // signup
+      if (step === 5) return 5 // paywall
+      return step
+    }
+    // Scenario A (new): 1(name) 2(choice) 3(postcode) 4(select) 5(rating) 6(signup) 7(paywall)
+    return step
+  }
+
+  const displayStep = getDisplayStep()
+  const isPaywallStep = (scenario === 'new' && step === 7) || (scenario === 'join' && step === 5)
+
+  // ── Session check on mount ──
+  useEffect(() => {
+    let mounted = true
+    const timeout = setTimeout(() => {
+      if (mounted) setCheckingSession(false)
+    }, 3000)
+
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (!mounted) return
+      if (!session?.user) {
+        setCheckingSession(false)
+        return
+      }
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('business_id')
+        .eq('id', session.user.id)
+        .single()
+
+      if (!mounted) return
+
+      if (profile) {
+        // Has profile, check subscription
+        const { data: business } = await supabase
+          .from('businesses')
+          .select('subscription_status')
+          .eq('id', profile.business_id)
+          .single()
+
+        if (!mounted) return
+        const status = business?.subscription_status
+        if (status === 'active' || status === 'trialing') {
+          router.replace('/dashboard')
+        } else {
+          router.replace('/paywall')
+        }
+      } else {
+        setCheckingSession(false)
+      }
+    }).catch(() => {
+      if (mounted) setCheckingSession(false)
+    })
+
+    return () => {
+      mounted = false
+      clearTimeout(timeout)
+    }
+  }, [router])
+
+  // ── FSA API search ──
   const searchFsa = useCallback(async () => {
     if (!postcode.trim()) return
     setSearching(true)
+    setSearchError(null)
+    setFsaResults([])
+
     try {
       const res = await fetch(
         `https://api.ratings.food.gov.uk/Establishments?address=${encodeURIComponent(
-          postcode
+          postcode.trim()
         )}&pageSize=20&sortOptionKey=distance`,
-        {
-          headers: {
-            'x-api-version': '2',
-            Accept: 'application/json',
-          },
-        }
+        { headers: { 'x-api-version': '2', Accept: 'application/json' } }
       )
+      if (!res.ok) throw new Error('Failed to search')
       const data = await res.json()
-      setSearchResults(data.establishments || [])
-      setStep('select')
+      const establishments: FsaBusiness[] = (data.establishments || []).map(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (e: any) => ({
+          FHRSID: e.FHRSID,
+          BusinessName: e.BusinessName,
+          AddressLine1: e.AddressLine1 || '',
+          AddressLine2: e.AddressLine2 || '',
+          AddressLine3: e.AddressLine3 || '',
+          PostCode: e.PostCode || '',
+          RatingValue: e.RatingValue || 'Awaiting',
+          scores: {
+            Hygiene: e.scores?.Hygiene ?? null,
+            Structural: e.scores?.Structural ?? null,
+            ConfidenceInManagement: e.scores?.ConfidenceInManagement ?? null,
+          },
+        })
+      )
+      setFsaResults(establishments)
+      if (establishments.length > 0) {
+        setStep(4)
+      }
     } catch {
-      setSearchResults([])
+      setSearchError('Could not search. Check the postcode and try again.')
     } finally {
       setSearching(false)
     }
   }, [postcode])
 
-  const togglePainPoint = (point: string) => {
-    setPainPoints((prev) => {
-      const next = new Set(prev)
-      if (next.has(point)) next.delete(point)
-      else next.add(point)
-      return next
-    })
-  }
-
-  const handleSignup = async (e: React.FormEvent) => {
+  // ── Signup handler ──
+  async function handleSignup(e: React.FormEvent) {
     e.preventDefault()
-    setSignupError('')
+    setSignupError(null)
 
     if (password !== confirmPassword) {
       setSignupError('Passwords do not match')
@@ -167,629 +234,724 @@ export default function OnboardingPage() {
       return
     }
 
-    setSignupLoading(true)
+    setSigningUp(true)
 
     try {
-      const { error: authError } = await supabase.auth.signUp({
-        email: email.trim(),
+      // 1. Sign up
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+        email,
         password,
       })
-      if (authError) {
-        if (authError.message.includes('already registered')) {
+
+      if (signUpError) {
+        if (
+          signUpError.message.includes('already registered') ||
+          signUpError.message.includes('already been registered')
+        ) {
           setSignupError('This email is already registered. Try signing in.')
         } else {
-          throw authError
+          setSignupError(signUpError.message)
         }
-        setSignupLoading(false)
+        setSigningUp(false)
         return
       }
 
-      if (isJoinFlow && inviteCode.trim()) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { error: joinError } = await (supabase.rpc as any)('join_with_invite', {
-          invite_token: inviteCode.trim(),
-          member_name: name.trim(),
-        })
-        if (joinError) {
-          setSignupError('Invalid or expired invite token. Ask your manager for a new one.')
-          setSignupLoading(false)
-          return
-        }
-      } else {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { error: setupError } = await (supabase.rpc as any)('setup_business', {
-          business_name: selected?.BusinessName ?? 'My Restaurant',
-          owner_name: name.trim(),
-          business_address: selected
-            ? [selected.AddressLine1, selected.AddressLine2, selected.PostCode]
-                .filter(Boolean)
-                .join(', ')
-            : undefined,
-          p_fhrs_id: selected?.FHRSID,
-          p_fsa_rating: selected?.RatingValue,
-          p_post_code: selected?.PostCode,
-        })
-        if (setupError) throw setupError
-
-        // Seed default checklists for new business
-        try {
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('business_id')
-            .eq('id', (await supabase.auth.getUser()).data.user!.id)
-            .single()
-          if (profile?.business_id) {
-            await seedDefaultChecklists(profile.business_id)
-          }
-        } catch {
-          // Non-critical — checklists can be created manually
-        }
+      const userId = signUpData.user?.id
+      if (!userId) {
+        setSignupError('Something went wrong. Please try again.')
+        setSigningUp(false)
+        return
       }
 
-      // Full page reload to ensure auth store picks up the new session + profile
-      window.location.href = '/dashboard'
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Something went wrong'
-      setSignupError(message)
-      setSignupLoading(false)
+      setSettingUp(true)
+
+      if (scenario === 'new') {
+        // 2. Setup business via RPC
+        const businessName = selectedBusiness?.BusinessName || `${firstName}'s Business`
+        const businessAddress = selectedBusiness
+          ? [selectedBusiness.AddressLine1, selectedBusiness.AddressLine2, selectedBusiness.AddressLine3]
+              .filter(Boolean)
+              .join(', ')
+          : null
+        const fhrsId = selectedBusiness?.FHRSID || null
+        const fsaRating = selectedBusiness?.RatingValue || null
+        const postCode = selectedBusiness?.PostCode || null
+
+        const { error: rpcError } = await (supabase.rpc as any)('setup_business', {
+          business_name: businessName,
+          owner_name: fullName.trim(),
+          business_address: businessAddress,
+          fhrs_id: fhrsId,
+          fsa_rating: fsaRating,
+          post_code: postCode,
+        })
+
+        if (rpcError) {
+          setSignupError(rpcError.message || 'Failed to set up business')
+          setSigningUp(false)
+          setSettingUp(false)
+          return
+        }
+
+        // 3. Get business_id from profile to seed checklists
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('business_id')
+          .eq('id', userId)
+          .single()
+
+        if (profile?.business_id) {
+          await seedDefaultChecklists(profile.business_id)
+        }
+
+        // 4. Go to paywall step
+        setSettingUp(false)
+        setSigningUp(false)
+        setStep(7)
+      } else {
+        // Join team
+        const { error: joinError } = await (supabase.rpc as any)('join_with_invite', {
+          invite_token: inviteCode,
+          member_name: fullName.trim(),
+        })
+
+        if (joinError) {
+          setSignupError(
+            'Invalid or expired invite token. Ask your manager for a new one.'
+          )
+          setSigningUp(false)
+          setSettingUp(false)
+          return
+        }
+
+        // Go to paywall step
+        setSettingUp(false)
+        setSigningUp(false)
+        setStep(5)
+      }
+    } catch {
+      setSignupError('Something went wrong. Please try again.')
+      setSigningUp(false)
+      setSettingUp(false)
     }
   }
 
-  const ratingColor = (rating: string) => {
-    const n = parseInt(rating)
-    if (n >= 4) return 'text-emerald-600 bg-emerald-50 border-emerald-200'
-    if (n >= 3) return 'text-amber-600 bg-amber-50 border-amber-200'
-    return 'text-red-600 bg-red-50 border-red-200'
-  }
+  // ── Paywall: start trial ──
+  async function handleStartTrial() {
+    setStartingTrial(true)
+    setPaywallError(null)
 
-  const goBack = () => {
-    const idx = stepsForFlow.indexOf(step)
-    if (idx > 0) {
-      setStep(stepsForFlow[idx - 1] as Step)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.user) {
+        setPaywallError('Not authenticated. Please sign in again.')
+        setStartingTrial(false)
+        return
+      }
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('business_id')
+        .eq('id', session.user.id)
+        .single()
+
+      const { data, error } = await supabase.functions.invoke('create-subscription', {
+        body: {
+          userId: session.user.id,
+          email: session.user.email,
+          businessId: profile?.business_id,
+        },
+      })
+
+      if (error) {
+        setPaywallError('Failed to start trial. Please try again.')
+        setStartingTrial(false)
+        return
+      }
+
+      const checkoutUrl = data?.checkoutUrl || data?.url
+      if (checkoutUrl) {
+        window.location.href = checkoutUrl
+      } else {
+        setPaywallError('Failed to start trial. Please try again.')
+        setStartingTrial(false)
+      }
+    } catch {
+      setPaywallError('Something went wrong. Please try again.')
+      setStartingTrial(false)
     }
   }
 
-  if (checking) {
+  // ── Back button logic ──
+  function handleBack() {
+    if (scenario === 'new') {
+      if (step === 7) setStep(6)
+      else if (step === 6) setStep(skippedFsa ? 3 : 5)
+      else if (step === 5) setStep(4)
+      else if (step === 4) setStep(3)
+      else if (step === 3) { setStep(2); setScenario(null) }
+      else if (step === 2) setStep(1)
+    } else if (scenario === 'join') {
+      if (step === 5) setStep(4)
+      else if (step === 4) setStep(3)
+      else if (step === 3) { setStep(2); setScenario(null) }
+      else if (step === 2) setStep(1)
+    } else {
+      if (step === 2) setStep(1)
+    }
+  }
+
+  // ── Loading states ──
+
+  if (checkingSession) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-center">
-        <Loader2 className="h-6 w-6 animate-spin text-emerald-600" />
-        <p className="mt-4 text-[14px] font-medium text-foreground">
-          Setting up your account...
-        </p>
-        <p className="mt-1.5 text-[13px] text-muted-foreground">
-          You&apos;ll be redirected to the dashboard automatically.
-          <br />
-          If the page doesn&apos;t load within a few seconds,{' '}
-          <button
-            onClick={() => window.location.href = '/dashboard'}
-            className="font-medium text-emerald-600 underline hover:text-emerald-700"
-          >
-            click here
-          </button>.
-        </p>
+      <div className="flex min-h-screen items-center justify-center bg-gray-50">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-emerald-600 border-t-transparent" />
+          <p className="text-sm text-gray-500">Loading...</p>
+        </div>
       </div>
     )
   }
 
-  return (
-    <div>
-      {/* Progress */}
-      <div className="mb-8 flex gap-1">
-        {Array.from({ length: totalSteps }).map((_, i) => (
-          <div
-            key={i}
-            className={cn(
-              'h-1 flex-1 rounded-full transition-colors',
-              currentStepIndex >= i ? 'bg-emerald-600' : 'bg-gray-200'
-            )}
-          />
-        ))}
+  if (settingUp) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
+        <div className="flex flex-col items-center gap-4 text-center">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-emerald-600 border-t-transparent" />
+          <div>
+            <p className="text-lg font-medium text-gray-900">Setting up your account...</p>
+            <p className="mt-1 text-sm text-gray-500">You&apos;ll be redirected automatically.</p>
+          </div>
+          <Link href="/paywall" className="mt-4 text-sm text-emerald-600 hover:text-emerald-500">
+            If the page doesn&apos;t load within a few seconds, click here
+          </Link>
+        </div>
       </div>
+    )
+  }
 
-      {/* Step: Name */}
-      {step === 'name' && (
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">
-            First, tell us your name
-          </h1>
-          <p className="mt-1.5 text-[13px] text-muted-foreground">
-            This is how you&apos;ll appear to your team
-          </p>
+  // ── Paywall step (inline, full screen) ──
 
-          <div className="mt-6 space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="name" className="text-[13px]">Your name</Label>
-              <Input
-                id="name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Your name"
-                autoFocus
+  if (isPaywallStep) {
+    return (
+      <div className="flex min-h-screen flex-col bg-gradient-to-b from-emerald-600 to-emerald-800">
+        <div className="flex flex-1 flex-col items-center justify-center px-4 py-12">
+          <div className="w-full max-w-md text-center">
+            <h1 className="text-3xl font-bold text-white">
+              Everything you need for food safety
+            </h1>
+
+            <ul className="mt-8 space-y-4 text-left">
+              {PAYWALL_FEATURES.map((feature) => (
+                <li key={feature.title} className="flex items-start gap-3">
+                  <svg
+                    className="mt-0.5 h-5 w-5 flex-shrink-0 text-emerald-200"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                  <div>
+                    <p className="font-medium text-white">{feature.title}</p>
+                    <p className="text-sm text-emerald-100">{feature.subtitle}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+
+            {paywallError && (
+              <div className="mt-6 rounded-lg bg-red-500/20 px-4 py-3 text-sm text-white border border-red-400/30">
+                {paywallError}
+              </div>
+            )}
+
+            <button
+              onClick={handleStartTrial}
+              disabled={startingTrial}
+              className="mt-8 w-full rounded-xl bg-white px-6 py-4 text-lg font-semibold text-emerald-700 shadow-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {startingTrial ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="h-5 w-5 animate-spin rounded-full border-2 border-emerald-600 border-t-transparent" />
+                  Starting...
+                </span>
+              ) : (
+                'Start free trial'
+              )}
+            </button>
+            <p className="mt-2 text-sm text-emerald-100">
+              then &pound;14.99/mo after 14 days
+            </p>
+
+            <div className="mt-8 space-y-2">
+              <p className="text-sm text-emerald-200">
+                14-day free trial. Cancel anytime. No charge until trial ends.
+              </p>
+              <div className="flex items-center justify-center gap-3 text-xs text-emerald-300">
+                <a
+                  href="https://blueroll.app/terms.html"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline hover:text-white"
+                >
+                  Terms
+                </a>
+                <span>&middot;</span>
+                <a
+                  href="https://blueroll.app/privacy.html"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline hover:text-white"
+                >
+                  Privacy
+                </a>
+              </div>
+            </div>
+
+            {/* Temporary skip link */}
+            <Link
+              href="/dashboard"
+              className="mt-6 inline-block text-sm text-emerald-200 underline hover:text-white"
+            >
+              Continue to dashboard
+            </Link>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Wizard steps ──
+
+  return (
+    <div className="flex min-h-screen flex-col bg-gray-50 px-4 py-8">
+      <div className="mx-auto w-full max-w-md">
+        {/* Progress bar */}
+        <div className="mb-8">
+          <ProgressBar current={displayStep} total={totalSteps} />
+        </div>
+
+        {/* Step 1: Name */}
+        {step === 1 && (
+          <div className="space-y-6">
+            {step > 1 && (
+              <button onClick={handleBack} className="text-sm text-gray-500 hover:text-gray-700">
+                &larr; Back
+              </button>
+            )}
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">First, tell us your name</h1>
+              <p className="mt-1 text-sm text-gray-500">
+                This is how you&apos;ll appear to your team
+              </p>
+            </div>
+            <div>
+              <input
+                type="text"
                 autoCapitalize="words"
-                onKeyDown={(e) => e.key === 'Enter' && name.trim() && setStep('choice')}
+                autoComplete="name"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                placeholder="Your name"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
               />
             </div>
-
-            {name.trim() && (
-              <Button
-                onClick={() => setStep('choice')}
-                className="w-full bg-emerald-600 hover:bg-emerald-700"
+            {fullName.trim() && (
+              <button
+                onClick={() => setStep(2)}
+                className="w-full rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-emerald-700 transition-colors"
               >
                 Continue
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
+              </button>
             )}
+            <p className="text-center text-sm text-gray-500">
+              Already have an account?{' '}
+              <Link href="/login" className="font-medium text-emerald-600 hover:text-emerald-500">
+                Sign in
+              </Link>
+            </p>
           </div>
+        )}
 
-          <p className="mt-6 text-center text-[13px] text-muted-foreground">
-            Already have an account?{' '}
-            <Link
-              href="/login"
-              className="font-medium text-emerald-600 hover:text-emerald-700"
-            >
-              Sign in
-            </Link>
-          </p>
-        </div>
-      )}
-
-      {/* Step: Choice */}
-      {step === 'choice' && (
-        <div>
-          <button onClick={goBack} className="mb-4 flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground">
-            <ArrowLeft className="h-3.5 w-3.5" /> Back
-          </button>
-
-          <p className="text-[13px] text-muted-foreground">
-            Hey {name.split(' ')[0]}
-          </p>
-          <h1 className="mt-1 text-xl font-semibold tracking-tight">
-            What brings you here?
-          </h1>
-
-          <div className="mt-6 space-y-3">
-            <button
-              onClick={() => {
-                setIsJoinFlow(false)
-                setStep('postcode')
-              }}
-              className="flex w-full items-center gap-4 rounded-lg border border-border p-4 text-left transition-colors hover:border-emerald-300 hover:bg-emerald-50/50"
-            >
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
-                <Store className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-[14px] font-medium">Setting up a business</p>
-                <p className="text-[12px] text-muted-foreground">I&apos;m starting fresh</p>
-              </div>
+        {/* Step 2: Choice */}
+        {step === 2 && (
+          <div className="space-y-6">
+            <button onClick={handleBack} className="text-sm text-gray-500 hover:text-gray-700">
+              &larr; Back
             </button>
-
-            <button
-              onClick={() => {
-                setIsJoinFlow(true)
-                setStep('invite')
-              }}
-              className="flex w-full items-center gap-4 rounded-lg border border-border p-4 text-left transition-colors hover:border-emerald-300 hover:bg-emerald-50/50"
-            >
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
-                <Users className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-[14px] font-medium">Joining a team</p>
-                <p className="text-[12px] text-muted-foreground">I have an invite code</p>
-              </div>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Step: Invite code */}
-      {step === 'invite' && (
-        <div>
-          <button onClick={goBack} className="mb-4 flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground">
-            <ArrowLeft className="h-3.5 w-3.5" /> Back
-          </button>
-          <h1 className="text-xl font-semibold tracking-tight">
-            Enter your invite code
-          </h1>
-          <p className="mt-1.5 text-[13px] text-muted-foreground">
-            Your manager can create one in Team &rarr; Invite
-          </p>
-
-          <div className="mt-6 space-y-4">
-            <Input
-              value={inviteCode}
-              onChange={(e) => setInviteCode(e.target.value)}
-              placeholder="ABC123"
-              className="text-center font-mono tracking-widest"
-              autoFocus
-              onKeyDown={(e) => e.key === 'Enter' && inviteCode.trim() && setStep('pain-points')}
-            />
-
-            {inviteCode.trim() && (
-              <Button
-                onClick={() => setStep('pain-points')}
-                className="w-full bg-emerald-600 hover:bg-emerald-700"
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Hey {firstName}</h1>
+              <p className="mt-1 text-lg text-gray-600">What brings you here?</p>
+            </div>
+            <div className="space-y-3">
+              <button
+                onClick={() => {
+                  setScenario('new')
+                  setStep(3)
+                }}
+                className="flex w-full items-center gap-4 rounded-xl border border-gray-200 bg-white p-4 text-left shadow-sm hover:border-emerald-300 hover:shadow-md transition-all"
               >
-                Continue
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
-            )}
+                <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-emerald-50">
+                  <svg className="h-6 w-6 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 21v-7.5a.75.75 0 01.75-.75h3a.75.75 0 01.75.75V21m-4.5 0H2.36m11.14 0H18m0 0h3.64m-1.39 0V9.349m-16.5 11.65V9.35m0 0a3.001 3.001 0 003.75-.615A2.993 2.993 0 009.75 9.75c.896 0 1.7-.393 2.25-1.016a2.993 2.993 0 002.25 1.016c.896 0 1.7-.393 2.25-1.016A3.001 3.001 0 0021 9.349m-18 0h18" />
+                  </svg>
+                </div>
+                <div>
+                  <p className="font-medium text-gray-900">Setting up a business</p>
+                  <p className="text-sm text-gray-500">I&apos;m starting fresh</p>
+                </div>
+              </button>
+
+              <button
+                onClick={() => {
+                  setScenario('join')
+                  setStep(3)
+                }}
+                className="flex w-full items-center gap-4 rounded-xl border border-gray-200 bg-white p-4 text-left shadow-sm hover:border-emerald-300 hover:shadow-md transition-all"
+              >
+                <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-blue-50">
+                  <svg className="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+                  </svg>
+                </div>
+                <div>
+                  <p className="font-medium text-gray-900">Joining a team</p>
+                  <p className="text-sm text-gray-500">I have an invite code</p>
+                </div>
+              </button>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Step: Postcode search */}
-      {step === 'postcode' && (
-        <div>
-          <button onClick={goBack} className="mb-4 flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground">
-            <ArrowLeft className="h-3.5 w-3.5" /> Back
-          </button>
-          <h1 className="text-xl font-semibold tracking-tight">
-            Find your business
-          </h1>
-          <p className="mt-1.5 text-[13px] text-muted-foreground">
-            Enter your postcode to find your FSA food hygiene rating
-          </p>
-
-          <div className="mt-6 space-y-3">
+        {/* Step 3a: Postcode search (Scenario A) */}
+        {step === 3 && scenario === 'new' && (
+          <div className="space-y-6">
+            <button onClick={handleBack} className="text-sm text-gray-500 hover:text-gray-700">
+              &larr; Back
+            </button>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Find your business</h1>
+              <p className="mt-1 text-sm text-gray-500">
+                Enter your postcode to find your FSA food hygiene rating
+              </p>
+            </div>
             <div className="flex gap-2">
               <div className="relative flex-1">
-                <MapPin className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
+                <svg
+                  className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
+                </svg>
+                <input
+                  type="text"
                   value={postcode}
                   onChange={(e) => setPostcode(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') searchFsa()
+                  }}
                   placeholder="e.g. SW1A 1AA"
-                  className="pl-9"
-                  onKeyDown={(e) => e.key === 'Enter' && searchFsa()}
-                  autoFocus
+                  className="w-full rounded-lg border border-gray-300 py-2.5 pl-9 pr-3 text-sm text-gray-900 placeholder-gray-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                 />
               </div>
-              <Button
+              <button
                 onClick={searchFsa}
                 disabled={searching || !postcode.trim()}
-                className="bg-emerald-600 hover:bg-emerald-700"
+                className="rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {searching ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent inline-block" />
                 ) : (
-                  <Search className="h-4 w-4" />
+                  'Search'
                 )}
-              </Button>
+              </button>
             </div>
-
+            {searchError && (
+              <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 border border-red-200">
+                {searchError}
+              </div>
+            )}
             <button
-              onClick={() => setStep('pain-points')}
-              className="text-[13px] text-muted-foreground hover:text-foreground"
+              onClick={() => {
+                setSkippedFsa(true)
+                setSelectedBusiness(null)
+                setStep(6)
+              }}
+              className="w-full text-center text-sm text-gray-500 hover:text-gray-700"
             >
               Skip &mdash; I&apos;ll set up manually
             </button>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Step: Select business */}
-      {step === 'select' && (
-        <div>
-          <button onClick={() => setStep('postcode')} className="mb-4 flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground">
-            <ArrowLeft className="h-3.5 w-3.5" /> Back
-          </button>
-          <h1 className="text-xl font-semibold tracking-tight">
-            Select your business
-          </h1>
-          <p className="mt-1.5 text-[13px] text-muted-foreground">
-            {searchResults.length} businesses found near {postcode}
-          </p>
-
-          <div className="mt-4 max-h-[400px] space-y-2 overflow-y-auto">
-            {searchResults.map((est) => (
+        {/* Step 3b: Invite code (Scenario B) */}
+        {step === 3 && scenario === 'join' && (
+          <div className="space-y-6">
+            <button onClick={handleBack} className="text-sm text-gray-500 hover:text-gray-700">
+              &larr; Back
+            </button>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Enter your invite code</h1>
+              <p className="mt-1 text-sm text-gray-500">
+                Your manager can create one in Team &rarr; Invite
+              </p>
+            </div>
+            <input
+              type="text"
+              value={inviteCode}
+              onChange={(e) => setInviteCode(e.target.value)}
+              placeholder="Paste your code"
+              className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-center font-mono text-sm text-gray-900 placeholder-gray-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+            />
+            {inviteCode.trim() && (
               <button
-                key={est.FHRSID}
-                onClick={() => { setSelected(est); setStep('rating') }}
-                className="flex w-full items-center gap-3 rounded-lg border border-border p-3 text-left transition-colors hover:bg-accent"
+                onClick={() => setStep(4)}
+                className="w-full rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-emerald-700 transition-colors"
               >
-                <Building2 className="h-5 w-5 shrink-0 text-muted-foreground" />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[13px] font-medium">{est.BusinessName}</p>
-                  <p className="truncate text-[12px] text-muted-foreground">
-                    {[est.AddressLine1, est.PostCode].filter(Boolean).join(', ')}
-                  </p>
-                </div>
-                {est.RatingValue && !isNaN(parseInt(est.RatingValue)) && (
-                  <span className={cn('shrink-0 rounded-md border px-2 py-0.5 text-[12px] font-semibold', ratingColor(est.RatingValue))}>
-                    {est.RatingValue}/5
-                  </span>
-                )}
+                Continue
               </button>
-            ))}
+            )}
           </div>
+        )}
 
-          {searchResults.length === 0 && (
-            <div className="mt-8 text-center">
-              <p className="text-[13px] text-muted-foreground">No businesses found.</p>
-              <Button variant="outline" size="sm" className="mt-3" onClick={() => setStep('pain-points')}>
-                Set up manually
-              </Button>
+        {/* Step 4a: Select business (Scenario A) */}
+        {step === 4 && scenario === 'new' && (
+          <div className="space-y-6">
+            <button onClick={handleBack} className="text-sm text-gray-500 hover:text-gray-700">
+              &larr; Back
+            </button>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Select your business</h1>
+              <p className="mt-1 text-sm text-gray-500">
+                {fsaResults.length} business{fsaResults.length !== 1 ? 'es' : ''} found near{' '}
+                {postcode.trim()}
+              </p>
             </div>
-          )}
-        </div>
-      )}
-
-      {/* Step: Rating reveal */}
-      {step === 'rating' && selected && (
-        <div>
-          <button onClick={() => setStep('select')} className="mb-4 flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground">
-            <ArrowLeft className="h-3.5 w-3.5" /> Back
-          </button>
-
-          <div className="text-center">
-            <p className="text-[13px] font-medium text-muted-foreground">{selected.BusinessName}</p>
-            <div className="mt-6 flex justify-center">
-              <div className={cn('flex h-24 w-24 items-center justify-center rounded-2xl border-2 text-4xl font-bold', ratingColor(selected.RatingValue))}>
-                {selected.RatingValue}
+            {fsaResults.length === 0 ? (
+              <div className="space-y-4 text-center">
+                <p className="text-sm text-gray-500">No businesses found.</p>
+                <button
+                  onClick={() => {
+                    setSkippedFsa(true)
+                    setSelectedBusiness(null)
+                    setStep(6)
+                  }}
+                  className="rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-emerald-700 transition-colors"
+                >
+                  Set up manually
+                </button>
               </div>
-            </div>
-            <p className="mt-3 text-[13px] text-muted-foreground">Food Hygiene Rating</p>
-
-            {selected.scores && (
-              <div className="mx-auto mt-6 max-w-xs space-y-2">
-                {[
-                  { label: 'Hygiene', score: selected.scores.Hygiene },
-                  { label: 'Structural', score: selected.scores.Structural },
-                  { label: 'Confidence in Management', score: selected.scores.ConfidenceInManagement },
-                ].map((item) =>
-                  item.score !== null && (
-                    <div key={item.label} className="flex items-center justify-between">
-                      <span className="text-[12px] text-muted-foreground">{item.label}</span>
-                      <div className="h-1.5 w-24 overflow-hidden rounded-full bg-gray-100">
-                        <div className="h-full rounded-full bg-emerald-500" style={{ width: `${Math.max(0, 100 - (item.score / 25) * 100)}%` }} />
+            ) : (
+              <div className="max-h-96 space-y-2 overflow-y-auto">
+                {fsaResults.map((biz) => {
+                  const rating = parseInt(biz.RatingValue, 10)
+                  const hasRating = !isNaN(rating)
+                  return (
+                    <button
+                      key={biz.FHRSID}
+                      onClick={() => {
+                        setSelectedBusiness(biz)
+                        setSkippedFsa(false)
+                        setStep(5)
+                      }}
+                      className="flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white p-4 text-left shadow-sm hover:border-emerald-300 hover:shadow-md transition-all"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-gray-900 truncate">{biz.BusinessName}</p>
+                        <p className="text-sm text-gray-500 truncate">
+                          {[biz.AddressLine1, biz.AddressLine2, biz.AddressLine3]
+                            .filter(Boolean)
+                            .join(', ')}
+                        </p>
                       </div>
-                    </div>
+                      {hasRating && (
+                        <span
+                          className={`flex-shrink-0 rounded-md px-2 py-1 text-sm font-bold ${ratingBadgeColor(rating)}`}
+                        >
+                          {rating}/5
+                        </span>
+                      )}
+                    </button>
                   )
-                )}
+                })}
               </div>
             )}
-
-            <Button onClick={() => setStep('pain-points')} className="mt-8 bg-emerald-600 hover:bg-emerald-700">
-              Continue <ArrowRight className="ml-2 h-4 w-4" />
-            </Button>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Step: Pain points */}
-      {step === 'pain-points' && (
-        <div>
-          <button onClick={goBack} className="mb-4 flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground">
-            <ArrowLeft className="h-3.5 w-3.5" /> Back
-          </button>
-          <h1 className="text-xl font-semibold tracking-tight">
-            What are your biggest headaches?
-          </h1>
-          <p className="mt-1.5 text-[13px] text-muted-foreground">
-            Select all that apply &mdash; this helps us personalise your experience
-          </p>
+        {/* Step 5a: FSA Rating (Scenario A) */}
+        {step === 5 && scenario === 'new' && selectedBusiness && (
+          <div className="space-y-6">
+            <button onClick={handleBack} className="text-sm text-gray-500 hover:text-gray-700">
+              &larr; Back
+            </button>
 
-          <div className="mt-6 space-y-2">
-            {PAIN_POINTS.map((point) => (
-              <button
-                key={point}
-                onClick={() => togglePainPoint(point)}
-                className={cn(
-                  'flex w-full items-center gap-3 rounded-lg border p-3 text-left text-[13px] transition-colors',
-                  painPoints.has(point)
-                    ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
-                    : 'border-border hover:bg-accent'
-                )}
-              >
-                <div className={cn(
-                  'flex h-5 w-5 shrink-0 items-center justify-center rounded border',
-                  painPoints.has(point) ? 'border-emerald-500 bg-emerald-500' : 'border-gray-300'
-                )}>
-                  {painPoints.has(point) && <Check className="h-3 w-3 text-white" />}
+            <p className="text-sm font-medium text-gray-500">{selectedBusiness.BusinessName}</p>
+
+            {/* Large rating square */}
+            {(() => {
+              const rating = parseInt(selectedBusiness.RatingValue, 10)
+              const hasRating = !isNaN(rating)
+              return hasRating ? (
+                <div className="flex flex-col items-center gap-2">
+                  <div
+                    className={`flex h-28 w-28 items-center justify-center rounded-2xl text-white ${ratingColor(rating)}`}
+                  >
+                    <span className="text-5xl font-bold">{rating}</span>
+                  </div>
+                  <p className="text-sm font-medium text-gray-500">Food Hygiene Rating</p>
                 </div>
-                {point}
-              </button>
-            ))}
-          </div>
+              ) : (
+                <div className="flex flex-col items-center gap-2">
+                  <div className="flex h-28 w-28 items-center justify-center rounded-2xl bg-gray-200 text-gray-500">
+                    <span className="text-lg font-medium">N/A</span>
+                  </div>
+                  <p className="text-sm font-medium text-gray-500">Awaiting Inspection</p>
+                </div>
+              )
+            })()}
 
-          <Button onClick={() => setStep('signup')} className="mt-6 w-full bg-emerald-600 hover:bg-emerald-700">
-            Create my account <ArrowRight className="ml-2 h-4 w-4" />
-          </Button>
-        </div>
-      )}
-
-      {/* Step: Signup */}
-      {step === 'signup' && (
-        <div>
-          <button onClick={goBack} className="mb-4 flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground">
-            <ArrowLeft className="h-3.5 w-3.5" /> Back
-          </button>
-          <h1 className="text-xl font-semibold tracking-tight">Almost there</h1>
-          <p className="mt-1.5 text-[13px] text-muted-foreground">
-            {isJoinFlow
-              ? 'Create your account to join the team'
-              : selected
-                ? `Setting up ${selected.BusinessName}`
-                : 'Create your account to get started'}
-          </p>
-
-          <form onSubmit={handleSignup} className="mt-6 space-y-4">
-            {signupError && (
-              <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-[13px] text-red-700">
-                {signupError}
-              </div>
-            )}
-
-            <div className="space-y-1.5">
-              <Label htmlFor="signup-email" className="text-[13px]">Email</Label>
-              <Input
-                id="signup-email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@restaurant.com"
-                required
-                autoFocus
-              />
+            {/* Score breakdown */}
+            <div className="space-y-3">
+              {[
+                { label: 'Hygiene', score: selectedBusiness.scores.Hygiene, max: 25 },
+                { label: 'Structural', score: selectedBusiness.scores.Structural, max: 25 },
+                {
+                  label: 'Confidence in Management',
+                  score: selectedBusiness.scores.ConfidenceInManagement,
+                  max: 30,
+                },
+              ].map(({ label, score, max }) => (
+                <div key={label}>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-600">{label}</span>
+                    <span className="font-medium text-gray-900">
+                      {score !== null && score !== undefined ? score : '—'}
+                    </span>
+                  </div>
+                  <div className="mt-1 h-2 w-full rounded-full bg-gray-100">
+                    <div
+                      className="h-2 rounded-full bg-emerald-500 transition-all"
+                      style={{ width: `${scoreBarWidth(score, max)}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
             </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="signup-password" className="text-[13px]">Password</Label>
-              <Input
-                id="signup-password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Minimum 6 characters"
-                required
-                minLength={6}
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="confirm-password" className="text-[13px]">Confirm password</Label>
-              <Input
-                id="confirm-password"
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="Repeat your password"
-                required
-                minLength={6}
-              />
-            </div>
-
-            <Button
-              type="submit"
-              className="w-full bg-emerald-600 hover:bg-emerald-700"
-              disabled={signupLoading}
+            <button
+              onClick={() => setStep(6)}
+              className="w-full rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-emerald-700 transition-colors"
             >
-              {signupLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {signupLoading ? 'Creating account...' : 'Sign up'}
-            </Button>
-          </form>
+              Continue
+            </button>
+          </div>
+        )}
 
-          <p className="mt-6 text-center text-[13px] text-muted-foreground">
-            Already have an account?{' '}
-            <Link href="/login" className="font-medium text-emerald-600 hover:text-emerald-700">
-              Sign in
-            </Link>
-          </p>
-        </div>
-      )}
+        {/* Step 6 (Scenario A) / Step 4 (Scenario B): Signup */}
+        {((step === 6 && scenario === 'new') || (step === 4 && scenario === 'join')) && (
+          <div className="space-y-6">
+            <button onClick={handleBack} className="text-sm text-gray-500 hover:text-gray-700">
+              &larr; Back
+            </button>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Almost there</h1>
+              <p className="mt-1 text-sm text-gray-500">
+                {scenario === 'new'
+                  ? selectedBusiness
+                    ? `Setting up ${selectedBusiness.BusinessName}`
+                    : 'Create your account to get started'
+                  : 'Create your account to join the team'}
+              </p>
+            </div>
+
+            <form onSubmit={handleSignup} className="space-y-4">
+              {signupError && (
+                <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 border border-red-200">
+                  {signupError}
+                </div>
+              )}
+
+              <div>
+                <label htmlFor="signup-email" className="block text-sm font-medium text-gray-700 mb-1">
+                  Email
+                </label>
+                <input
+                  id="signup-email"
+                  type="email"
+                  required
+                  autoComplete="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  placeholder="you@example.com"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="signup-password" className="block text-sm font-medium text-gray-700 mb-1">
+                  Password
+                </label>
+                <input
+                  id="signup-password"
+                  type="password"
+                  required
+                  autoComplete="new-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  placeholder="At least 6 characters"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="signup-confirm" className="block text-sm font-medium text-gray-700 mb-1">
+                  Confirm password
+                </label>
+                <input
+                  id="signup-confirm"
+                  type="password"
+                  required
+                  autoComplete="new-password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  placeholder="Re-enter password"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={signingUp}
+                className="w-full rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {signingUp ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                    Creating account...
+                  </span>
+                ) : (
+                  'Sign up'
+                )}
+              </button>
+            </form>
+
+            <p className="text-center text-sm text-gray-500">
+              Already have an account?{' '}
+              <Link href="/login" className="font-medium text-emerald-600 hover:text-emerald-500">
+                Sign in
+              </Link>
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   )
-}
-
-// Seed default HACCP checklist templates for a new business
-async function seedDefaultChecklists(businessId: string) {
-  // Check if already seeded
-  const { data: existing } = await supabase
-    .from('checklist_templates')
-    .select('id')
-    .eq('business_id', businessId)
-    .eq('is_default', true)
-    .limit(1)
-
-  if (existing && existing.length > 0) return
-
-  const templates = [
-    {
-      name: 'Fridge & Freezer Temperatures',
-      description: 'Record fridge and freezer temperatures twice daily',
-      frequency: 'daily',
-      assigned_roles: ['owner', 'manager', 'chef', 'kitchen_staff'],
-      sfbb_section: 'chilling',
-      deadline_time: '10:00',
-      items: [
-        { name: 'Main fridge temperature', item_type: 'temperature', required: true, sort_order: 0, min_value: 1, max_value: 5, unit: '°C' },
-        { name: 'Prep fridge temperature', item_type: 'temperature', required: true, sort_order: 1, min_value: 1, max_value: 5, unit: '°C' },
-        { name: 'Walk-in fridge temperature', item_type: 'temperature', required: false, sort_order: 2, min_value: 1, max_value: 5, unit: '°C' },
-        { name: 'Freezer temperature', item_type: 'temperature', required: true, sort_order: 3, min_value: -23, max_value: -18, unit: '°C' },
-        { name: 'Food stored correctly and covered', item_type: 'yes_no', required: true, sort_order: 4 },
-      ],
-    },
-    {
-      name: 'Daily Opening Checks',
-      description: 'Morning checks before service begins',
-      frequency: 'daily',
-      assigned_roles: ['owner', 'manager', 'chef', 'kitchen_staff'],
-      sfbb_section: 'cleaning',
-      deadline_time: '09:00',
-      items: [
-        { name: 'All surfaces clean and sanitised', item_type: 'yes_no', required: true, sort_order: 0 },
-        { name: 'Handwash basin stocked (soap, paper towels)', item_type: 'yes_no', required: true, sort_order: 1 },
-        { name: 'Sanitiser spray available and in-date', item_type: 'yes_no', required: true, sort_order: 2 },
-        { name: 'No signs of pests', item_type: 'yes_no', required: true, sort_order: 3 },
-        { name: 'Staff wearing clean uniform', item_type: 'yes_no', required: true, sort_order: 4 },
-        { name: 'Issues or notes', item_type: 'text', required: false, sort_order: 5 },
-      ],
-    },
-    {
-      name: 'Delivery Acceptance',
-      description: 'Check deliveries on arrival',
-      frequency: 'daily',
-      assigned_roles: ['owner', 'manager', 'chef', 'kitchen_staff'],
-      sfbb_section: 'chilling',
-      items: [
-        { name: 'Chilled delivery temperature', item_type: 'temperature', required: true, sort_order: 0, min_value: 0, max_value: 5, unit: '°C' },
-        { name: 'Frozen delivery temperature', item_type: 'temperature', required: false, sort_order: 1, min_value: -25, max_value: -18, unit: '°C' },
-        { name: 'Packaging intact and undamaged', item_type: 'yes_no', required: true, sort_order: 2 },
-        { name: 'Use-by dates acceptable', item_type: 'yes_no', required: true, sort_order: 3 },
-        { name: 'Stored within 15 minutes', item_type: 'yes_no', required: true, sort_order: 4 },
-      ],
-    },
-    {
-      name: 'End of Day Closing',
-      description: 'Closing checks at end of service',
-      frequency: 'daily',
-      assigned_roles: ['owner', 'manager', 'chef', 'kitchen_staff'],
-      sfbb_section: 'cleaning',
-      deadline_time: '23:00',
-      items: [
-        { name: 'All surfaces cleaned and sanitised', item_type: 'yes_no', required: true, sort_order: 0 },
-        { name: 'Floors swept and mopped', item_type: 'yes_no', required: true, sort_order: 1 },
-        { name: 'All food covered and labelled with date', item_type: 'yes_no', required: true, sort_order: 2 },
-        { name: 'Bins emptied and replaced', item_type: 'yes_no', required: true, sort_order: 3 },
-        { name: 'Closing fridge temperature', item_type: 'temperature', required: true, sort_order: 4, min_value: 1, max_value: 5, unit: '°C' },
-      ],
-    },
-    {
-      name: 'Weekly Deep Clean & Calibration',
-      description: 'Weekly deep cleaning and equipment checks',
-      frequency: 'weekly',
-      assigned_roles: ['owner', 'manager', 'chef'],
-      sfbb_section: 'cleaning',
-      items: [
-        { name: 'Probe calibration (ice water test)', item_type: 'temperature', required: true, sort_order: 0, min_value: -1, max_value: 1, unit: '°C' },
-        { name: 'Fridge/freezer interior cleaned', item_type: 'yes_no', required: true, sort_order: 1 },
-        { name: 'Extraction hood/canopy cleaned', item_type: 'yes_no', required: true, sort_order: 2 },
-        { name: 'Drains checked and cleaned', item_type: 'yes_no', required: true, sort_order: 3 },
-        { name: 'Notes or issues', item_type: 'text', required: false, sort_order: 4 },
-      ],
-    },
-  ]
-
-  for (const t of templates) {
-    const { items, ...templateData } = t
-    const { data: tmpl } = await supabase
-      .from('checklist_templates')
-      .insert({
-        ...templateData,
-        business_id: businessId,
-        is_default: true,
-        active: false,
-      })
-      .select('id')
-      .single()
-
-    if (tmpl) {
-      const itemRows = items.map((item) => ({
-        ...item,
-        template_id: tmpl.id,
-      }))
-      await supabase.from('checklist_template_items').insert(itemRows)
-    }
-  }
 }

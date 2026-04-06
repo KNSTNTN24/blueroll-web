@@ -1,42 +1,25 @@
 'use client'
 
-import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useState, useRef } from 'react'
+import { useRouter } from 'next/navigation'
+import { useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
+import { toast } from 'sonner'
+import {
+  ArrowLeft, FileText, FileImage, Upload, Sparkles, Save, Loader2,
+} from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
-import { Label } from '@/components/ui/label'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import {
   RECIPE_CATEGORIES,
   RECIPE_CATEGORY_LABELS,
   EU_ALLERGENS,
   ALLERGEN_LABELS,
 } from '@/lib/constants'
-import { cn } from '@/lib/utils'
-import {
-  ArrowLeft,
-  Sparkles,
-  FileText,
-  FileImage,
-  Upload,
-  Loader2,
-  Trash2,
-  Plus,
-} from 'lucide-react'
-import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import { toast } from 'sonner'
+
+type TabId = 'text' | 'pdf' | 'photo'
 
 interface ParsedIngredient {
   name: string
@@ -54,59 +37,76 @@ interface ParsedRecipe {
   cooking_temp: string
   cooking_time: string
   cooking_time_unit: string
+  chilling_method: string
+  freezing_instructions: string
+  defrosting_instructions: string
+  reheating_instructions: string
+  hot_holding_required: boolean
+  extra_care_flags: string[]
   ingredients: ParsedIngredient[]
 }
 
-const EMPTY_PARSED: ParsedRecipe = {
+const emptyParsed: ParsedRecipe = {
   name: '',
   description: '',
-  category: '',
+  category: 'main',
   instructions: '',
   cooking_method: '',
   cooking_temp: '',
   cooking_time: '',
-  cooking_time_unit: 'mins',
+  cooking_time_unit: 'minutes',
+  chilling_method: '',
+  freezing_instructions: '',
+  defrosting_instructions: '',
+  reheating_instructions: '',
+  hot_holding_required: false,
+  extra_care_flags: [],
   ingredients: [],
 }
 
 export default function ImportRecipePage() {
-  const { profile, business } = useAuthStore()
   const router = useRouter()
   const queryClient = useQueryClient()
+  const business = useAuthStore((s) => s.business)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const [activeTab, setActiveTab] = useState('text')
+  const [tab, setTab] = useState<TabId>('text')
   const [textInput, setTextInput] = useState('')
-  const [pdfFile, setPdfFile] = useState<File | null>(null)
-  const [photoFile, setPhotoFile] = useState<File | null>(null)
+  const [file, setFile] = useState<File | null>(null)
+  const [importing, setImporting] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [parsed, setParsed] = useState<ParsedRecipe | null>(null)
 
-  const fileToBase64 = (file: File): Promise<string> =>
-    new Promise((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = () => {
-        const result = reader.result as string
-        // Remove data URL prefix
-        const base64 = result.split(',')[1]
-        resolve(base64)
-      }
-      reader.onerror = reject
-      reader.readAsDataURL(file)
-    })
+  const tabs: { id: TabId; label: string; icon: any }[] = [
+    { id: 'text', label: 'Text', icon: FileText },
+    { id: 'pdf', label: 'PDF', icon: FileText },
+    { id: 'photo', label: 'Photo', icon: FileImage },
+  ]
 
-  const importMutation = useMutation({
-    mutationFn: async () => {
-      const payload: Record<string, string> = {}
+  async function handleImport() {
+    if (tab === 'text' && !textInput.trim()) {
+      toast.error('Please paste recipe text')
+      return
+    }
+    if ((tab === 'pdf' || tab === 'photo') && !file) {
+      toast.error('Please select a file')
+      return
+    }
 
-      if (activeTab === 'text') {
-        if (!textInput.trim()) throw new Error('Please enter recipe text')
-        payload.text = textInput.trim()
-      } else if (activeTab === 'pdf') {
-        if (!pdfFile) throw new Error('Please select a PDF file')
-        payload.pdf_base64 = await fileToBase64(pdfFile)
-      } else if (activeTab === 'photo') {
-        if (!photoFile) throw new Error('Please select a photo')
-        payload.image_base64 = await fileToBase64(photoFile)
-        payload.image_mime = photoFile.type
+    setImporting(true)
+    try {
+      let payload: any = { type: tab }
+
+      if (tab === 'text') {
+        payload.text = textInput
+      } else if (file) {
+        const buffer = await file.arrayBuffer()
+        const base64 = btoa(
+          new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+        )
+        payload.file = base64
+        payload.filename = file.name
+        payload.mimetype = file.type
       }
 
       const { data, error } = await supabase.functions.invoke('import-recipe', {
@@ -114,124 +114,105 @@ export default function ImportRecipePage() {
       })
 
       if (error) throw error
-      return data as ParsedRecipe
-    },
-    onSuccess: (data) => {
+
+      // Map response to parsed recipe
+      const r = data.recipe ?? data
       setParsed({
-        ...data,
-        ingredients: data.ingredients ?? [],
-        cooking_time_unit: data.cooking_time_unit || 'mins',
+        name: r.name ?? '',
+        description: r.description ?? '',
+        category: r.category ?? 'main',
+        instructions: r.instructions ?? '',
+        cooking_method: r.cooking_method ?? '',
+        cooking_temp: r.cooking_temp?.toString() ?? '',
+        cooking_time: r.cooking_time?.toString() ?? '',
+        cooking_time_unit: r.cooking_time_unit ?? 'minutes',
+        chilling_method: r.chilling_method ?? '',
+        freezing_instructions: r.freezing_instructions ?? '',
+        defrosting_instructions: r.defrosting_instructions ?? '',
+        reheating_instructions: r.reheating_instructions ?? '',
+        hot_holding_required: r.hot_holding_required ?? false,
+        extra_care_flags: r.extra_care_flags ?? [],
+        ingredients: (r.ingredients ?? []).map((i: any) => ({
+          name: i.name ?? '',
+          quantity: i.quantity?.toString() ?? '',
+          unit: i.unit ?? '',
+          allergens: i.allergens ?? [],
+        })),
       })
       toast.success('Recipe parsed successfully')
-    },
-    onError: (err) => toast.error(err.message),
-  })
-
-  const updateParsedField = (field: keyof ParsedRecipe, value: string) => {
-    if (!parsed) return
-    setParsed((prev) => (prev ? { ...prev, [field]: value } : null))
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to import recipe')
+    } finally {
+      setImporting(false)
+    }
   }
 
-  const updateParsedIngredient = (
-    index: number,
-    field: keyof ParsedIngredient,
-    value: string | string[]
-  ) => {
+  function updateParsed(field: keyof ParsedRecipe, value: any) {
     if (!parsed) return
-    setParsed((prev) => {
-      if (!prev) return null
-      return {
-        ...prev,
-        ingredients: prev.ingredients.map((ing, i) =>
-          i === index ? { ...ing, [field]: value } : ing
-        ),
-      }
-    })
+    setParsed({ ...parsed, [field]: value })
   }
 
-  const toggleParsedAllergen = (index: number, allergen: string) => {
+  function updateIngredient(idx: number, field: keyof ParsedIngredient, value: any) {
     if (!parsed) return
-    setParsed((prev) => {
-      if (!prev) return null
-      return {
-        ...prev,
-        ingredients: prev.ingredients.map((ing, i) => {
-          if (i !== index) return ing
-          const has = ing.allergens.includes(allergen)
-          return {
-            ...ing,
-            allergens: has
-              ? ing.allergens.filter((a) => a !== allergen)
-              : [...ing.allergens, allergen],
-          }
-        }),
-      }
-    })
+    const updated = parsed.ingredients.map((ing, i) =>
+      i === idx ? { ...ing, [field]: value } : ing
+    )
+    setParsed({ ...parsed, ingredients: updated })
   }
 
-  const addParsedIngredient = () => {
+  function toggleIngredientAllergen(idx: number, allergen: string) {
     if (!parsed) return
-    setParsed((prev) =>
-      prev
-        ? {
-            ...prev,
-            ingredients: [
-              ...prev.ingredients,
-              { name: '', quantity: '', unit: '', allergens: [] },
-            ],
-          }
-        : null
+    const ing = parsed.ingredients[idx]
+    const has = ing.allergens.includes(allergen)
+    updateIngredient(
+      idx,
+      'allergens',
+      has ? ing.allergens.filter((a) => a !== allergen) : [...ing.allergens, allergen]
     )
   }
 
-  const removeParsedIngredient = (index: number) => {
-    if (!parsed) return
-    setParsed((prev) =>
-      prev
-        ? { ...prev, ingredients: prev.ingredients.filter((_, i) => i !== index) }
-        : null
-    )
-  }
+  async function handleSave() {
+    if (!parsed || !parsed.name.trim()) {
+      toast.error('Recipe name is required')
+      return
+    }
+    if (!business?.id) {
+      toast.error('No business found')
+      return
+    }
 
-  const saveMutation = useMutation({
-    mutationFn: async () => {
-      if (!parsed || !business?.id || !profile?.id)
-        throw new Error('Not ready to save')
-      if (!parsed.name.trim()) throw new Error('Name is required')
-      if (!parsed.category) throw new Error('Category is required')
-
-      const validIngredients = parsed.ingredients.filter((i) => i.name.trim())
-
+    setSaving(true)
+    try {
       // Upsert ingredients
-      const ingredientIds: string[] = []
+      const validIngredients = parsed.ingredients.filter((i) => i.name.trim())
+      const ingredientIds: Record<string, string> = {}
+
       for (const ing of validIngredients) {
-        const normalizedName = ing.name.trim().toLowerCase()
         const { data: existing } = await supabase
           .from('ingredients')
           .select('id')
           .eq('business_id', business.id)
-          .ilike('name', normalizedName)
-          .limit(1)
-          .maybeSingle()
+          .ilike('name', ing.name.trim())
+          .single()
 
         if (existing) {
           await supabase
             .from('ingredients')
             .update({ allergens: ing.allergens })
             .eq('id', existing.id)
-          ingredientIds.push(existing.id)
+          ingredientIds[ing.name] = existing.id
         } else {
           const { data: created, error } = await supabase
             .from('ingredients')
             .insert({
+              business_id: business.id,
               name: ing.name.trim(),
               allergens: ing.allergens,
-              business_id: business.id,
             })
             .select('id')
             .single()
           if (error) throw error
-          ingredientIds.push(created.id)
+          ingredientIds[ing.name] = created.id
         }
       }
 
@@ -239,59 +220,64 @@ export default function ImportRecipePage() {
       const { data: recipe, error: recipeError } = await supabase
         .from('recipes')
         .insert({
+          business_id: business.id,
           name: parsed.name.trim(),
           description: parsed.description.trim() || null,
           category: parsed.category,
-          instructions: parsed.instructions.trim(),
+          instructions: parsed.instructions.trim() || null,
           cooking_method: parsed.cooking_method.trim() || null,
-          cooking_temp: parsed.cooking_temp
-            ? parseFloat(parsed.cooking_temp)
-            : null,
-          cooking_time: parsed.cooking_time
-            ? parseInt(parsed.cooking_time, 10)
-            : null,
-          cooking_time_unit: parsed.cooking_time_unit || null,
-          business_id: business.id,
-          created_by: profile.id,
+          cooking_temp: parsed.cooking_temp ? Number(parsed.cooking_temp) : null,
+          cooking_time: parsed.cooking_time ? Number(parsed.cooking_time) : null,
+          cooking_time_unit: parsed.cooking_time_unit,
+          chilling_method: parsed.chilling_method.trim() || null,
+          freezing_instructions: parsed.freezing_instructions.trim() || null,
+          defrosting_instructions: parsed.defrosting_instructions.trim() || null,
+          reheating_instructions: parsed.reheating_instructions.trim() || null,
+          hot_holding_required: parsed.hot_holding_required,
+          extra_care_flags: parsed.extra_care_flags,
+          active: true,
         })
         .select('id')
         .single()
 
       if (recipeError) throw recipeError
 
-      if (ingredientIds.length > 0) {
-        const links = validIngredients.map((ing, idx) => ({
-          recipe_id: recipe.id,
-          ingredient_id: ingredientIds[idx],
-          quantity: ing.quantity.trim() || null,
-          unit: ing.unit.trim() || null,
-        }))
-        const { error: linkError } = await supabase
+      // Create recipe_ingredients
+      const recipeIngredients = validIngredients.map((ing) => ({
+        recipe_id: recipe.id,
+        ingredient_id: ingredientIds[ing.name],
+        quantity: ing.quantity ? Number(ing.quantity) : null,
+        unit: ing.unit.trim() || null,
+      }))
+
+      if (recipeIngredients.length > 0) {
+        const { error: riError } = await supabase
           .from('recipe_ingredients')
-          .insert(links)
-        if (linkError) throw linkError
+          .insert(recipeIngredients)
+        if (riError) throw riError
       }
 
-      return recipe.id
-    },
-    onSuccess: (recipeId) => {
-      queryClient.invalidateQueries({ queryKey: ['recipes'] })
       toast.success('Recipe saved')
-      router.push(`/recipes/${recipeId}`)
-    },
-    onError: (err) => toast.error(err.message),
-  })
+      queryClient.invalidateQueries({ queryKey: ['recipes'] })
+      router.push(`/recipes/${recipe.id}`)
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to save recipe')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   return (
     <div className="space-y-6">
-      <div>
-        <Link
-          href="/recipes"
-          className="mb-3 inline-flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground"
+      <div className="flex items-center gap-3">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 w-7 p-0"
+          onClick={() => router.push('/recipes')}
         >
-          <ArrowLeft className="h-3.5 w-3.5" />
-          Back to Recipes
-        </Link>
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
         <PageHeader
           title="AI Recipe Import"
           description="Import a recipe from text, PDF, or photo using AI"
@@ -300,355 +286,293 @@ export default function ImportRecipePage() {
 
       {!parsed ? (
         <div className="max-w-2xl space-y-6">
-          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v ?? "")}>
-            <TabsList>
-              <TabsTrigger value="text">
-                <FileText className="mr-1.5 h-3.5 w-3.5" />
-                Text
-              </TabsTrigger>
-              <TabsTrigger value="pdf">
-                <FileText className="mr-1.5 h-3.5 w-3.5" />
-                PDF
-              </TabsTrigger>
-              <TabsTrigger value="photo">
-                <FileImage className="mr-1.5 h-3.5 w-3.5" />
-                Photo
-              </TabsTrigger>
-            </TabsList>
+          {/* Tabs */}
+          <div className="flex gap-1 rounded-lg border border-border p-1 bg-muted/30">
+            {tabs.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                className={`flex items-center gap-1.5 rounded-md px-4 py-2 text-[13px] font-medium transition-colors ${
+                  tab === t.id
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <t.icon className="h-3.5 w-3.5" />
+                {t.label}
+              </button>
+            ))}
+          </div>
 
-            <TabsContent value="text" className="mt-4">
-              <div className="space-y-3">
-                <Label className="text-[13px]">Paste recipe text</Label>
-                <Textarea
-                  value={textInput}
-                  onChange={(e) => setTextInput(e.target.value)}
-                  placeholder="Paste the full recipe text here including ingredients, method, and any allergen information..."
-                  className="min-h-[240px] text-[13px]"
-                />
-              </div>
-            </TabsContent>
+          {/* Input area */}
+          {tab === 'text' && (
+            <div className="space-y-3">
+              <textarea
+                value={textInput}
+                onChange={(e) => setTextInput(e.target.value)}
+                placeholder="Paste your recipe text here..."
+                rows={12}
+                className="w-full rounded-lg border border-border bg-background px-4 py-3 text-[13px] text-foreground outline-none resize-none"
+              />
+            </div>
+          )}
 
-            <TabsContent value="pdf" className="mt-4">
-              <div className="space-y-3">
-                <Label className="text-[13px]">Upload PDF</Label>
-                <div className="rounded-lg border-2 border-dashed border-border p-8 text-center">
-                  <Upload className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
-                  <p className="mb-2 text-[13px] text-muted-foreground">
-                    Select a PDF file containing a recipe
-                  </p>
-                  <input
-                    type="file"
-                    accept=".pdf"
-                    onChange={(e) => setPdfFile(e.target.files?.[0] ?? null)}
-                    className="text-[13px]"
-                  />
-                  {pdfFile && (
-                    <p className="mt-2 text-[12px] text-emerald-600">
-                      Selected: {pdfFile.name}
-                    </p>
-                  )}
-                </div>
+          {(tab === 'pdf' || tab === 'photo') && (
+            <div
+              onClick={() => fileInputRef.current?.click()}
+              className="flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed border-border bg-muted/20 py-16 cursor-pointer hover:border-emerald-300 transition-colors"
+            >
+              <Upload className="h-8 w-8 text-muted-foreground" />
+              <div className="text-center">
+                <p className="text-[13px] font-medium text-foreground">
+                  {file ? file.name : `Click to upload ${tab === 'pdf' ? 'a PDF' : 'a photo'}`}
+                </p>
+                <p className="text-[12px] text-muted-foreground mt-1">
+                  {tab === 'pdf' ? 'PDF files up to 10MB' : 'JPG, PNG, or HEIC up to 10MB'}
+                </p>
               </div>
-            </TabsContent>
-
-            <TabsContent value="photo" className="mt-4">
-              <div className="space-y-3">
-                <Label className="text-[13px]">Upload Photo</Label>
-                <div className="rounded-lg border-2 border-dashed border-border p-8 text-center">
-                  <FileImage className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
-                  <p className="mb-2 text-[13px] text-muted-foreground">
-                    Take a photo or upload an image of a recipe
-                  </p>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) => setPhotoFile(e.target.files?.[0] ?? null)}
-                    className="text-[13px]"
-                  />
-                  {photoFile && (
-                    <p className="mt-2 text-[12px] text-emerald-600">
-                      Selected: {photoFile.name}
-                    </p>
-                  )}
-                </div>
-              </div>
-            </TabsContent>
-          </Tabs>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept={tab === 'pdf' ? '.pdf' : 'image/*'}
+                className="hidden"
+                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              />
+            </div>
+          )}
 
           <Button
-            onClick={() => importMutation.mutate()}
-            disabled={importMutation.isPending}
-            className="bg-emerald-600 hover:bg-emerald-700"
+            onClick={handleImport}
+            disabled={importing}
+            className="gap-1.5 bg-emerald-600 hover:bg-emerald-700"
           >
-            {importMutation.isPending ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            {importing ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
-              <Sparkles className="mr-2 h-4 w-4" />
+              <Sparkles className="h-3.5 w-3.5" />
             )}
-            {importMutation.isPending ? 'Parsing...' : 'Import with AI'}
+            {importing ? 'Importing...' : 'Import with AI'}
           </Button>
         </div>
       ) : (
-        <div className="space-y-6 max-w-2xl">
-          <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3">
-            <Sparkles className="h-4 w-4 text-emerald-600" />
-            <p className="text-[13px] text-emerald-800">
-              AI parsed the recipe below. Review and edit before saving.
-            </p>
+        /* ── Parsed result form ── */
+        <div className="max-w-3xl space-y-6">
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-3 text-[13px] text-emerald-800">
+            Recipe parsed successfully. Review and edit the fields below, then save.
           </div>
 
-          {/* Editable parsed fields */}
-          <div className="rounded-lg border border-border bg-white p-4 space-y-4">
-            <h3 className="text-[14px] font-medium">Basic Information</h3>
-            <div className="space-y-3">
-              <div>
-                <Label className="text-[13px]">Name *</Label>
+          <Section title="Basic Information">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Field label="Name" required>
                 <Input
                   value={parsed.name}
-                  onChange={(e) => updateParsedField('name', e.target.value)}
-                  className="mt-1 text-[13px]"
+                  onChange={(e) => updateParsed('name', e.target.value)}
+                  className="text-[13px]"
                 />
-              </div>
-              <div>
-                <Label className="text-[13px]">Description</Label>
-                <Input
-                  value={parsed.description}
-                  onChange={(e) =>
-                    updateParsedField('description', e.target.value)
-                  }
-                  className="mt-1 text-[13px]"
-                />
-              </div>
-              <div>
-                <Label className="text-[13px]">Category *</Label>
-                <div className="mt-1">
-                  <Select
-                    value={parsed.category}
-                    onValueChange={(v) => updateParsedField('category', v ?? '')}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Select category" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {RECIPE_CATEGORIES.map((cat) => (
-                        <SelectItem key={cat} value={cat}>
-                          {RECIPE_CATEGORY_LABELS[cat]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div>
-                <Label className="text-[13px]">Instructions</Label>
-                <Textarea
-                  value={parsed.instructions}
-                  onChange={(e) =>
-                    updateParsedField('instructions', e.target.value)
-                  }
-                  className="mt-1 min-h-[120px] text-[13px]"
-                />
-              </div>
+              </Field>
+              <Field label="Category">
+                <select
+                  value={parsed.category}
+                  onChange={(e) => updateParsed('category', e.target.value)}
+                  className="h-9 w-full rounded-md border border-border bg-background px-3 text-[13px] text-foreground outline-none"
+                >
+                  {RECIPE_CATEGORIES.map((c) => (
+                    <option key={c} value={c}>
+                      {RECIPE_CATEGORY_LABELS[c]}
+                    </option>
+                  ))}
+                </select>
+              </Field>
             </div>
-          </div>
+            <Field label="Description">
+              <textarea
+                value={parsed.description}
+                onChange={(e) => updateParsed('description', e.target.value)}
+                rows={2}
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-[13px] text-foreground outline-none resize-none"
+              />
+            </Field>
+            <Field label="Instructions">
+              <textarea
+                value={parsed.instructions}
+                onChange={(e) => updateParsed('instructions', e.target.value)}
+                rows={4}
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-[13px] text-foreground outline-none resize-none"
+              />
+            </Field>
+          </Section>
 
-          {/* Cooking details */}
-          <div className="rounded-lg border border-border bg-white p-4 space-y-4">
-            <h3 className="text-[14px] font-medium">Cooking Details</h3>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <Label className="text-[13px]">Cooking Method</Label>
+          <Section title="Cooking Information">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Field label="Cooking Method">
                 <Input
                   value={parsed.cooking_method}
-                  onChange={(e) =>
-                    updateParsedField('cooking_method', e.target.value)
-                  }
-                  className="mt-1 text-[13px]"
+                  onChange={(e) => updateParsed('cooking_method', e.target.value)}
+                  className="text-[13px]"
                 />
-              </div>
-              <div>
-                <Label className="text-[13px]">Temperature (&deg;C)</Label>
+              </Field>
+              <Field label="Temperature">
                 <Input
                   type="number"
                   value={parsed.cooking_temp}
-                  onChange={(e) =>
-                    updateParsedField('cooking_temp', e.target.value)
-                  }
-                  className="mt-1 text-[13px]"
+                  onChange={(e) => updateParsed('cooking_temp', e.target.value)}
+                  className="text-[13px]"
                 />
-              </div>
-              <div>
-                <Label className="text-[13px]">Cooking Time</Label>
+              </Field>
+              <Field label="Cooking Time">
                 <Input
                   type="number"
                   value={parsed.cooking_time}
-                  onChange={(e) =>
-                    updateParsedField('cooking_time', e.target.value)
-                  }
-                  className="mt-1 text-[13px]"
+                  onChange={(e) => updateParsed('cooking_time', e.target.value)}
+                  className="text-[13px]"
                 />
-              </div>
-              <div>
-                <Label className="text-[13px]">Time Unit</Label>
-                <div className="mt-1">
-                  <Select
-                    value={parsed.cooking_time_unit}
-                    onValueChange={(v) =>
-                      updateParsedField('cooking_time_unit', v ?? '')
-                    }
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="mins">Minutes</SelectItem>
-                      <SelectItem value="hours">Hours</SelectItem>
-                      <SelectItem value="secs">Seconds</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
+              </Field>
+              <Field label="Time Unit">
+                <select
+                  value={parsed.cooking_time_unit}
+                  onChange={(e) => updateParsed('cooking_time_unit', e.target.value)}
+                  className="h-9 w-full rounded-md border border-border bg-background px-3 text-[13px] text-foreground outline-none"
+                >
+                  <option value="minutes">Minutes</option>
+                  <option value="hours">Hours</option>
+                </select>
+              </Field>
             </div>
-          </div>
+          </Section>
 
           {/* Ingredients */}
-          <div className="rounded-lg border border-border bg-white p-4 space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-[14px] font-medium">Ingredients</h3>
-              <Button
-                type="button"
-                onClick={addParsedIngredient}
-                size="sm"
-                variant="outline"
-              >
-                <Plus className="mr-1.5 h-3.5 w-3.5" />
-                Add Ingredient
-              </Button>
-            </div>
-
-            <div className="space-y-4">
-              {parsed.ingredients.map((ing, index) => (
-                <div
-                  key={index}
-                  className="rounded-md border border-border p-3 space-y-3"
-                >
-                  <div className="flex items-start gap-3">
-                    <div className="flex-1 grid gap-3 sm:grid-cols-3">
-                      <div>
-                        <Label className="text-[12px] text-muted-foreground">
-                          Name
-                        </Label>
-                        <Input
-                          value={ing.name}
-                          onChange={(e) =>
-                            updateParsedIngredient(
-                              index,
-                              'name',
-                              e.target.value
-                            )
-                          }
-                          className="mt-1 text-[13px]"
-                        />
-                      </div>
-                      <div>
-                        <Label className="text-[12px] text-muted-foreground">
-                          Quantity
-                        </Label>
-                        <Input
-                          value={ing.quantity}
-                          onChange={(e) =>
-                            updateParsedIngredient(
-                              index,
-                              'quantity',
-                              e.target.value
-                            )
-                          }
-                          className="mt-1 text-[13px]"
-                        />
-                      </div>
-                      <div>
-                        <Label className="text-[12px] text-muted-foreground">
-                          Unit
-                        </Label>
-                        <Input
-                          value={ing.unit}
-                          onChange={(e) =>
-                            updateParsedIngredient(
-                              index,
-                              'unit',
-                              e.target.value
-                            )
-                          }
-                          className="mt-1 text-[13px]"
-                        />
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => removeParsedIngredient(index)}
-                      className="mt-5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-red-50 hover:text-red-600"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+          <Section title="Ingredients">
+            <div className="space-y-3">
+              {parsed.ingredients.map((ing, idx) => (
+                <div key={idx} className="rounded-lg border border-border p-3 space-y-2">
+                  <div className="grid grid-cols-3 gap-3">
+                    <Input
+                      value={ing.name}
+                      onChange={(e) => updateIngredient(idx, 'name', e.target.value)}
+                      placeholder="Name"
+                      className="text-[13px]"
+                    />
+                    <Input
+                      value={ing.quantity}
+                      onChange={(e) => updateIngredient(idx, 'quantity', e.target.value)}
+                      placeholder="Quantity"
+                      className="text-[13px]"
+                    />
+                    <Input
+                      value={ing.unit}
+                      onChange={(e) => updateIngredient(idx, 'unit', e.target.value)}
+                      placeholder="Unit"
+                      className="text-[13px]"
+                    />
                   </div>
-
-                  <div>
-                    <Label className="text-[12px] text-muted-foreground">
-                      Allergens
-                    </Label>
-                    <div className="mt-1.5 flex flex-wrap gap-1.5">
-                      {EU_ALLERGENS.map((allergen) => {
-                        const selected = ing.allergens.includes(allergen)
-                        return (
-                          <button
-                            key={allergen}
-                            type="button"
-                            onClick={() =>
-                              toggleParsedAllergen(index, allergen)
-                            }
-                            className={cn(
-                              'rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors',
-                              selected
-                                ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
-                                : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300 hover:bg-gray-50'
-                            )}
-                          >
-                            {ALLERGEN_LABELS[allergen]}
-                          </button>
-                        )
-                      })}
-                    </div>
+                  <div className="flex flex-wrap gap-1">
+                    {EU_ALLERGENS.map((a) => {
+                      const selected = ing.allergens.includes(a)
+                      return (
+                        <button
+                          key={a}
+                          type="button"
+                          onClick={() => toggleIngredientAllergen(idx, a)}
+                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium border transition-colors ${
+                            selected
+                              ? 'bg-red-50 text-red-700 border-red-300'
+                              : 'bg-muted/50 text-muted-foreground border-border hover:border-red-200'
+                          }`}
+                        >
+                          {ALLERGEN_LABELS[a]}
+                        </button>
+                      )
+                    })}
                   </div>
                 </div>
               ))}
             </div>
-          </div>
+          </Section>
 
-          {/* Actions */}
-          <div className="flex items-center justify-end gap-3">
+          {/* Safety */}
+          <Section title="Safety & Storage">
+            <Field label="Chilling Method">
+              <textarea
+                value={parsed.chilling_method}
+                onChange={(e) => updateParsed('chilling_method', e.target.value)}
+                rows={2}
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-[13px] text-foreground outline-none resize-none"
+              />
+            </Field>
+            <Field label="Freezing Instructions">
+              <textarea
+                value={parsed.freezing_instructions}
+                onChange={(e) => updateParsed('freezing_instructions', e.target.value)}
+                rows={2}
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-[13px] text-foreground outline-none resize-none"
+              />
+            </Field>
+            <Field label="Defrosting Instructions">
+              <textarea
+                value={parsed.defrosting_instructions}
+                onChange={(e) => updateParsed('defrosting_instructions', e.target.value)}
+                rows={2}
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-[13px] text-foreground outline-none resize-none"
+              />
+            </Field>
+            <Field label="Reheating Instructions">
+              <textarea
+                value={parsed.reheating_instructions}
+                onChange={(e) => updateParsed('reheating_instructions', e.target.value)}
+                rows={2}
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-[13px] text-foreground outline-none resize-none"
+              />
+            </Field>
+          </Section>
+
+          <div className="flex items-center gap-3 pt-2">
             <Button
-              variant="outline"
-              onClick={() => setParsed(null)}
+              onClick={handleSave}
+              disabled={saving}
+              className="gap-1.5 bg-emerald-600 hover:bg-emerald-700"
             >
-              Start Over
+              <Save className="h-3.5 w-3.5" />
+              {saving ? 'Saving...' : 'Save Recipe'}
             </Button>
-            <Button
-              onClick={() => saveMutation.mutate()}
-              disabled={
-                saveMutation.isPending ||
-                !parsed.name.trim() ||
-                !parsed.category
-              }
-              className="bg-emerald-600 hover:bg-emerald-700"
-            >
-              {saveMutation.isPending && (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              )}
-              Save Recipe
+            <Button variant="outline" onClick={() => setParsed(null)}>
+              Re-import
+            </Button>
+            <Button variant="outline" onClick={() => router.push('/recipes')}>
+              Cancel
             </Button>
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+/* ── Layout helpers ── */
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-lg border border-border p-5 space-y-4">
+      <h2 className="text-[14px] font-semibold text-foreground">{title}</h2>
+      {children}
+    </div>
+  )
+}
+
+function Field({
+  label,
+  required,
+  children,
+}: {
+  label: string
+  required?: boolean
+  children: React.ReactNode
+}) {
+  return (
+    <div className="space-y-1.5">
+      <label className="text-[12px] font-medium text-muted-foreground">
+        {label}
+        {required && <span className="text-red-500 ml-0.5">*</span>}
+      </label>
+      {children}
     </div>
   )
 }

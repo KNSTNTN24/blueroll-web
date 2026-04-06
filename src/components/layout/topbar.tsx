@@ -1,107 +1,123 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Bell, Search, LogOut, User, ChevronDown } from 'lucide-react'
 import { useAuthStore } from '@/stores/auth-store'
-import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/hooks/use-auth'
+import { cn } from '@/lib/utils'
+import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
   DropdownMenu,
+  DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuTrigger,
+  DropdownMenuLabel,
 } from '@/components/ui/dropdown-menu'
-import { Badge } from '@/components/ui/badge'
 import { CommandPalette } from '@/components/layout/command-palette'
-import { cn } from '@/lib/utils'
+import { Bell, Search, ChevronDown, User, Settings, LogOut } from 'lucide-react'
+
+function getInitials(name: string | null | undefined): string {
+  if (!name) return '?'
+  return name
+    .split(' ')
+    .map((w) => w[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join('')
+    .toUpperCase()
+}
+
+function getFsaBadgeVariant(rating: string | null | undefined) {
+  if (!rating) return 'neutral' as const
+  const n = parseInt(rating, 10)
+  if (n >= 4) return 'success' as const
+  if (n === 3) return 'warning' as const
+  return 'error' as const
+}
 
 export function Topbar() {
-  const { profile, business } = useAuthStore()
   const router = useRouter()
+  const { profile, business } = useAuthStore()
+  const { signOut } = useAuth()
   const [commandOpen, setCommandOpen] = useState(false)
 
-  const initials = profile?.full_name
-    ? profile.full_name
-        .split(' ')
-        .map((n) => n[0])
-        .join('')
-        .toUpperCase()
-        .slice(0, 2)
-    : profile?.email?.[0]?.toUpperCase() ?? '?'
-
-  const handleSignOut = async () => {
-    await supabase.auth.signOut()
-    router.push('/login')
-  }
+  const handleSignOut = useCallback(async () => {
+    await signOut()
+    router.replace('/login')
+  }, [signOut, router])
 
   return (
     <>
-      <header className="sticky top-0 z-20 flex h-[53px] items-center justify-between border-b border-border bg-white/80 px-6 backdrop-blur-sm">
-        {/* Left — Business name */}
-        <div className="flex items-center gap-2">
+      <header className="flex h-[53px] shrink-0 items-center justify-between border-b border-border bg-white/80 px-4 backdrop-blur">
+        {/* Left: Business name + FSA badge */}
+        <div className="flex items-center gap-2.5">
           <span className="text-[13px] font-medium text-foreground">
-            {business?.name ?? 'Blueroll'}
+            {business?.name ?? 'My Business'}
           </span>
           {business?.fsa_rating && (
-            <Badge
-              variant="outline"
-              className="border-emerald-200 bg-emerald-50 text-[11px] font-medium text-emerald-700"
-            >
-              FSA {business.fsa_rating}
+            <Badge variant={getFsaBadgeVariant(business.fsa_rating)}>
+              FSA {business.fsa_rating}/5
             </Badge>
           )}
         </div>
 
-        {/* Centre — Search */}
+        {/* Center: Search bar */}
         <button
           onClick={() => setCommandOpen(true)}
-          className="flex h-8 w-[280px] items-center gap-2 rounded-md border border-border bg-muted/50 px-3 text-[13px] text-muted-foreground transition-colors hover:bg-muted"
+          className="flex h-8 w-full max-w-[360px] items-center gap-2 rounded-md border border-input bg-background px-3 text-[13px] text-muted-foreground transition-colors hover:bg-accent"
         >
           <Search className="h-3.5 w-3.5" />
-          <span>Search...</span>
-          <kbd className="ml-auto hidden rounded border border-border bg-white px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground sm:inline">
-            ⌘K
+          <span className="flex-1 text-left">Search...</span>
+          <kbd className="pointer-events-none hidden rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground sm:inline-block">
+            &#8984;K
           </kbd>
         </button>
 
-        {/* Right — Notifications + User */}
+        {/* Right: Notifications + User menu */}
         <div className="flex items-center gap-1">
-          <button
-            onClick={() => router.push('/notifications')}
-            className="relative flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          {/* Notifications */}
+          <Link
+            href="/notifications"
+            className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
           >
             <Bell className="h-4 w-4" strokeWidth={1.5} />
-          </button>
+          </Link>
 
+          {/* User dropdown */}
           <DropdownMenu>
-            <DropdownMenuTrigger>
-              <button className="flex items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-accent">
-                <Avatar className="h-6 w-6">
-                  <AvatarFallback className="bg-emerald-100 text-[10px] font-medium text-emerald-700">
-                    {initials}
-                  </AvatarFallback>
-                </Avatar>
-                <span className="hidden text-[13px] font-medium text-foreground sm:inline">
-                  {profile?.full_name ?? profile?.email}
-                </span>
-                <ChevronDown className="h-3 w-3 text-muted-foreground" />
-              </button>
+            <DropdownMenuTrigger className="flex items-center gap-2 rounded-md px-2 py-1 text-[13px] transition-colors hover:bg-accent">
+              <Avatar className="h-6 w-6">
+                <AvatarFallback className="text-[10px]">
+                  {getInitials(profile?.full_name)}
+                </AvatarFallback>
+              </Avatar>
+              <span className="hidden font-medium text-foreground sm:inline-block">
+                {profile?.full_name ?? 'User'}
+              </span>
+              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              <div className="px-2 py-1.5">
-                <p className="text-[13px] font-medium">{profile?.full_name}</p>
-                <p className="text-[12px] text-muted-foreground">{profile?.email}</p>
-              </div>
+            <DropdownMenuContent align="end" sideOffset={8}>
+              <DropdownMenuLabel>
+                {profile?.full_name ?? 'User'}
+                <div className="text-[11px] font-normal text-muted-foreground">
+                  {profile?.email}
+                </div>
+              </DropdownMenuLabel>
               <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => router.push('/settings/profile')}>
+                <User className="h-4 w-4" />
+                Profile &amp; Settings
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={() => router.push('/settings')}>
-                <User className="mr-2 h-3.5 w-3.5" />
-                Profile & Settings
+                <Settings className="h-4 w-4" />
+                Settings
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handleSignOut} className="text-destructive">
-                <LogOut className="mr-2 h-3.5 w-3.5" />
+              <DropdownMenuItem onClick={handleSignOut}>
+                <LogOut className="h-4 w-4" />
                 Sign out
               </DropdownMenuItem>
             </DropdownMenuContent>

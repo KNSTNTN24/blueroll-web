@@ -1,11 +1,11 @@
 'use client'
 
 import { useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 
-async function loadProfileAndBusiness(userId: string, store: ReturnType<typeof useAuthStore.getState>) {
+async function loadProfileAndBusiness(userId: string) {
+  const store = useAuthStore.getState()
   try {
     const { data: profile } = await supabase
       .from('profiles')
@@ -19,7 +19,6 @@ async function loadProfileAndBusiness(userId: string, store: ReturnType<typeof u
       return
     }
 
-    // Fetch business in parallel with setting profile
     store.setProfile(profile)
 
     if (profile.business_id) {
@@ -38,131 +37,64 @@ async function loadProfileAndBusiness(userId: string, store: ReturnType<typeof u
 
 export function useAuth() {
   const store = useAuthStore()
-  const router = useRouter()
 
   useEffect(() => {
     let mounted = true
     let initialLoaded = false
 
-    // Timeout — if nothing loads in 2s, stop loading
     const timeoutId = setTimeout(() => {
-      if (mounted && store.isLoading) {
-        store.setLoading(false)
-      }
+      if (mounted && store.isLoading) store.setLoading(false)
     }, 2000)
 
-    // Listen for auth changes (login/logout events after initial load)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        if (!mounted) return
-        // Skip the initial SIGNED_IN event — handled by getSession below
-        if (!initialLoaded && event === 'INITIAL_SESSION') return
-
+        if (!mounted || (!initialLoaded && event === 'INITIAL_SESSION')) return
         const user = session?.user ?? null
-        store.setUser(user)
-
-        if (user) {
-          await loadProfileAndBusiness(user.id, store)
-        } else {
-          store.setProfile(null)
-          store.setBusiness(null)
-        }
-        store.setLoading(false)
+        useAuthStore.getState().setUser(user)
+        if (user) await loadProfileAndBusiness(user.id)
+        else { useAuthStore.getState().setProfile(null); useAuthStore.getState().setBusiness(null) }
+        useAuthStore.getState().setLoading(false)
       }
     )
 
-    // Initial session — fast path
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (!mounted) return
       initialLoaded = true
       clearTimeout(timeoutId)
-
       const user = session?.user ?? null
-      store.setUser(user)
-
-      if (user) {
-        await loadProfileAndBusiness(user.id, store)
-      }
-
-      store.setLoading(false)
+      useAuthStore.getState().setUser(user)
+      if (user) await loadProfileAndBusiness(user.id)
+      useAuthStore.getState().setLoading(false)
     }).catch(() => {
-      if (!mounted) return
-      initialLoaded = true
-      clearTimeout(timeoutId)
-      store.setLoading(false)
+      if (mounted) { initialLoaded = true; clearTimeout(timeoutId); useAuthStore.getState().setLoading(false) }
     })
 
-    return () => {
-      mounted = false
-      clearTimeout(timeoutId)
-      subscription.unsubscribe()
-    }
+    return () => { mounted = false; clearTimeout(timeoutId); subscription.unsubscribe() }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) throw error
-  }
-
-  const signUp = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signUp({ email, password })
-    if (error) throw error
-  }
-
-  const signOut = async () => {
-    await supabase.auth.signOut()
-    store.reset()
-    router.push('/login')
-  }
-
-  const setupBusiness = async (params: {
-    businessName: string
-    ownerName: string
-    businessAddress?: string
-    fhrsId?: number
-    fsaRating?: string
-    postCode?: string
-  }) => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (supabase.rpc as any)('setup_business', {
-      business_name: params.businessName,
-      owner_name: params.ownerName,
-      business_address: params.businessAddress,
-      p_fhrs_id: params.fhrsId,
-      p_fsa_rating: params.fsaRating,
-      p_post_code: params.postCode,
-    })
-    if (error) throw error
-    await loadProfileAndBusiness(store.user!.id, store)
-  }
-
-  const joinWithInvite = async (token: string, memberName: string) => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (supabase.rpc as any)('join_with_invite', {
-      invite_token: token,
-      member_name: memberName,
-    })
-    if (error) throw error
-    await loadProfileAndBusiness(store.user!.id, store)
-  }
-
-  const refreshProfile = async () => {
-    if (!store.user) return
-    await loadProfileAndBusiness(store.user.id, store)
-  }
+  const isSubscribed = store.business?.subscription_status === 'active' ||
+    store.business?.subscription_status === 'trialing'
 
   return {
     ...store,
-    signIn,
-    signUp,
-    signOut,
-    setupBusiness,
-    joinWithInvite,
-    refreshProfile,
+    isSubscribed,
     isManager: store.profile?.role === 'owner' || store.profile?.role === 'manager',
-    canManageRecipes:
-      store.profile?.role === 'owner' ||
-      store.profile?.role === 'manager' ||
-      store.profile?.role === 'chef',
+    canManageRecipes: ['owner', 'manager', 'chef'].includes(store.profile?.role ?? ''),
+    signIn: async (email: string, password: string) => {
+      const { error } = await supabase.auth.signInWithPassword({ email, password })
+      if (error) throw error
+    },
+    signUp: async (email: string, password: string) => {
+      const { error } = await supabase.auth.signUp({ email, password })
+      if (error) throw error
+    },
+    signOut: async () => {
+      await supabase.auth.signOut()
+      useAuthStore.getState().reset()
+    },
+    refreshProfile: async () => {
+      const u = useAuthStore.getState().user
+      if (u) await loadProfileAndBusiness(u.id)
+    },
   }
 }

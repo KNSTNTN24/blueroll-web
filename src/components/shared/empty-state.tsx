@@ -1,19 +1,16 @@
-import { type ReactNode } from 'react'
 import { type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { type ReactNode } from 'react'
 
-interface EmptyStateProps {
+interface Props {
   icon: LucideIcon
   title: string
   description: string
-  action?: {
-    label: string
-    onClick: () => void
-  }
+  action?: { label: string; onClick: () => void }
   children?: ReactNode
 }
 
-export function EmptyState({ icon: Icon, title, description, action, children }: EmptyStateProps) {
+export function EmptyState({ icon: Icon, title, description, action, children }: Props) {
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
       <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl border border-border bg-muted/50">

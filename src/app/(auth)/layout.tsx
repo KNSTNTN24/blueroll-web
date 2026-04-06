@@ -1,36 +1,34 @@
-export default function AuthLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
+import type { ReactNode } from 'react'
+
+export default function AuthLayout({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-screen">
-      {/* Left — Brand panel */}
-      <div className="hidden w-[480px] shrink-0 flex-col justify-between bg-emerald-600 p-10 lg:flex">
+      {/* Left branding panel */}
+      <div className="hidden w-1/2 flex-col justify-between bg-emerald-600 p-10 text-white lg:flex">
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/20 text-sm font-bold text-white">
+          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-white/20 text-[14px] font-semibold">
             B
           </div>
-          <span className="text-lg font-semibold text-white">Blueroll</span>
+          <span className="text-lg font-semibold">Blueroll</span>
         </div>
         <div>
-          <h2 className="text-2xl font-semibold leading-tight text-white">
-            Digital food safety
+          <h2 className="text-2xl font-semibold tracking-tight">
+            HACCP management,
             <br />
-            for modern kitchens
+            simplified.
           </h2>
-          <p className="mt-3 text-sm leading-relaxed text-white/70">
-            Replace paper HACCP records with smart checklists, AI recipe import,
-            allergen tracking, and EHO-ready compliance reports.
+          <p className="mt-2 text-[14px] text-emerald-100">
+            Digital checklists, allergen tracking, AI recipe import, and compliance reports
+            — all in one place.
           </p>
         </div>
-        <p className="text-[12px] text-white/50">
+        <p className="text-[12px] text-emerald-200">
           Trusted by restaurants across the UK
         </p>
       </div>
 
-      {/* Right — Auth form */}
-      <div className="flex flex-1 items-center justify-center px-6">
+      {/* Right form content */}
+      <div className="flex flex-1 items-center justify-center p-6">
         <div className="w-full max-w-[400px]">{children}</div>
       </div>
     </div>

@@ -1,55 +1,59 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   CommandDialog,
+  CommandInput,
+  CommandList,
   CommandEmpty,
   CommandGroup,
-  CommandInput,
   CommandItem,
-  CommandList,
+  CommandSeparator,
 } from '@/components/ui/command'
 import {
   LayoutDashboard,
   ClipboardCheck,
   ChefHat,
   UtensilsCrossed,
-  AlertTriangle as TriangleAlert,
-  FileText,
+  ShieldAlert,
+  BarChart3,
   Users,
-  AlertCircle,
+  AlertTriangle,
   Truck,
-  Building2,
-  FolderOpen,
+  Factory,
+  FileText,
   BookOpen,
+  ShieldCheck,
   Settings,
   Plus,
-  Sparkles,
+  Camera,
+  Upload,
 } from 'lucide-react'
 
-const PAGES = [
+const pages = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { label: 'Checklists', href: '/checklists', icon: ClipboardCheck },
   { label: 'Recipes', href: '/recipes', icon: ChefHat },
   { label: 'Menu', href: '/menu', icon: UtensilsCrossed },
-  { label: 'Allergen Matrix', href: '/allergens', icon: TriangleAlert },
-  { label: 'Reports', href: '/reports', icon: FileText },
+  { label: 'Allergens', href: '/allergens', icon: ShieldAlert },
+  { label: 'Reports', href: '/reports', icon: BarChart3 },
   { label: 'Team', href: '/team', icon: Users },
-  { label: 'Incidents', href: '/incidents', icon: AlertCircle },
+  { label: 'Incidents', href: '/incidents', icon: AlertTriangle },
   { label: 'Deliveries', href: '/deliveries', icon: Truck },
-  { label: 'Suppliers', href: '/suppliers', icon: Building2 },
-  { label: 'Documents', href: '/documents', icon: FolderOpen },
+  { label: 'Suppliers', href: '/suppliers', icon: Factory },
+  { label: 'Documents', href: '/documents', icon: FileText },
   { label: 'Diary', href: '/diary', icon: BookOpen },
+  { label: 'HACCP Pack', href: '/haccp-pack', icon: ShieldCheck },
   { label: 'Settings', href: '/settings', icon: Settings },
 ]
 
-const ACTIONS = [
-  { label: 'New Recipe', href: '/recipes/new', icon: Plus },
-  { label: 'AI Recipe Import', href: '/recipes/import', icon: Sparkles },
-  { label: 'New Checklist', href: '/checklists/new', icon: Plus },
-  { label: 'Upload Document', href: '/documents/upload', icon: Plus },
-  { label: 'New Delivery', href: '/deliveries/new', icon: Plus },
+const quickActions = [
+  { label: 'New recipe', href: '/recipes/new', icon: Plus },
+  { label: 'AI import recipe', href: '/recipes/import', icon: Camera },
+  { label: 'New checklist', href: '/checklists/new', icon: Plus },
+  { label: 'Upload document', href: '/documents?upload=true', icon: Upload },
+  { label: 'New delivery', href: '/deliveries/new', icon: Plus },
 ]
 
 interface CommandPaletteProps {
@@ -60,6 +64,15 @@ interface CommandPaletteProps {
 export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const router = useRouter()
 
+  const handleSelect = useCallback(
+    (href: string) => {
+      onOpenChange(false)
+      router.push(href)
+    },
+    [router, onOpenChange]
+  )
+
+  // Global keyboard shortcut
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
       if (e.key === 'k' && (e.metaKey || e.ctrlKey)) {
@@ -71,31 +84,44 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     return () => document.removeEventListener('keydown', down)
   }, [open, onOpenChange])
 
-  const navigate = (href: string) => {
-    onOpenChange(false)
-    router.push(href)
-  }
-
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange}>
-      <CommandInput placeholder="Search pages, actions..." />
+      <CommandInput placeholder="Search pages and actions..." />
       <CommandList>
         <CommandEmpty>No results found.</CommandEmpty>
+
         <CommandGroup heading="Pages">
-          {PAGES.map((page) => (
-            <CommandItem key={page.href} onSelect={() => navigate(page.href)}>
-              <page.icon className="mr-2 h-4 w-4 text-muted-foreground" />
-              {page.label}
-            </CommandItem>
-          ))}
+          {pages.map((page) => {
+            const Icon = page.icon
+            return (
+              <CommandItem
+                key={page.href}
+                value={page.label}
+                onSelect={() => handleSelect(page.href)}
+              >
+                <Icon className="h-4 w-4" />
+                <span>{page.label}</span>
+              </CommandItem>
+            )
+          })}
         </CommandGroup>
+
+        <CommandSeparator />
+
         <CommandGroup heading="Quick Actions">
-          {ACTIONS.map((action) => (
-            <CommandItem key={action.href} onSelect={() => navigate(action.href)}>
-              <action.icon className="mr-2 h-4 w-4 text-muted-foreground" />
-              {action.label}
-            </CommandItem>
-          ))}
+          {quickActions.map((action) => {
+            const Icon = action.icon
+            return (
+              <CommandItem
+                key={action.href}
+                value={action.label}
+                onSelect={() => handleSelect(action.href)}
+              >
+                <Icon className="h-4 w-4" />
+                <span>{action.label}</span>
+              </CommandItem>
+            )
+          })}
         </CommandGroup>
       </CommandList>
     </CommandDialog>
