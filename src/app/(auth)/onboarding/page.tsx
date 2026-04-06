@@ -366,16 +366,20 @@ export default function OnboardingPage() {
       })
 
       if (error) {
-        setPaywallError('Failed to start trial. Please try again.')
+        console.error('create-subscription error:', error)
+        setPaywallError(typeof error === 'object' ? JSON.stringify(error) : String(error))
         setStartingTrial(false)
         return
       }
 
-      const checkoutUrl = data?.checkoutUrl || data?.url
+      // Edge Function returns JSON, but supabase.functions.invoke may wrap it
+      const result = typeof data === 'string' ? JSON.parse(data) : data
+      const checkoutUrl = result?.checkoutUrl || result?.url
       if (checkoutUrl) {
         window.location.href = checkoutUrl
       } else {
-        setPaywallError('Failed to start trial. Please try again.')
+        console.error('No checkout URL in response:', data)
+        setPaywallError(result?.error || 'Failed to get checkout URL. Please try again.')
         setStartingTrial(false)
       }
     } catch {
