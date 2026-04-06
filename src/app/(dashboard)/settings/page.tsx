@@ -42,7 +42,7 @@ export default function SettingsPage() {
   async function handleSignOut() {
     await supabase.auth.signOut()
     reset()
-    router.replace('/login')
+    window.location.href = '/onboarding'
   }
 
   const manageSubscriptionMutation = useMutation({

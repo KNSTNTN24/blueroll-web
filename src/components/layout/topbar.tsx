@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAuth } from '@/hooks/use-auth'
+import { supabase } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -44,10 +45,11 @@ export function Topbar() {
   const { signOut } = useAuth()
   const [commandOpen, setCommandOpen] = useState(false)
 
-  const handleSignOut = useCallback(async () => {
-    await signOut()
-    window.location.href = '/onboarding'
-  }, [signOut])
+  const handleSignOut = useCallback(() => {
+    supabase.auth.signOut().finally(() => {
+      window.location.href = '/onboarding'
+    })
+  }, [])
 
   return (
     <>
