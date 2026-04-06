@@ -46,8 +46,8 @@ export function Topbar() {
 
   const handleSignOut = useCallback(async () => {
     await signOut()
-    router.replace('/login')
-  }, [signOut, router])
+    window.location.href = '/onboarding'
+  }, [signOut])
 
   return (
     <>
