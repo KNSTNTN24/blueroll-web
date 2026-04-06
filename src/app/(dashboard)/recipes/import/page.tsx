@@ -95,7 +95,7 @@ export default function ImportRecipePage() {
 
     setImporting(true)
     try {
-      let payload: any = { type: tab }
+      let payload: any = {}
 
       if (tab === 'text') {
         payload.text = textInput
@@ -104,9 +104,14 @@ export default function ImportRecipePage() {
         const base64 = btoa(
           new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
         )
-        payload.file = base64
-        payload.filename = file.name
-        payload.mimetype = file.type
+        if (tab === 'pdf') {
+          payload.pdf_base64 = base64
+          payload.filename = file.name
+        } else {
+          payload.image_base64 = base64
+          payload.image_mime = file.type
+          payload.filename = file.name
+        }
       }
 
       const { data, error } = await supabase.functions.invoke('import-recipe', {
@@ -115,23 +120,24 @@ export default function ImportRecipePage() {
 
       if (error) throw error
 
-      // Map response to parsed recipe
-      const r = data.recipe ?? data
+      // Map response — Edge Function returns camelCase
+      const result = typeof data === 'string' ? JSON.parse(data) : data
+      const r = result.recipe ?? result
       setParsed({
         name: r.name ?? '',
         description: r.description ?? '',
         category: r.category ?? 'main',
         instructions: r.instructions ?? '',
-        cooking_method: r.cooking_method ?? '',
-        cooking_temp: r.cooking_temp?.toString() ?? '',
-        cooking_time: r.cooking_time?.toString() ?? '',
-        cooking_time_unit: r.cooking_time_unit ?? 'minutes',
-        chilling_method: r.chilling_method ?? '',
-        freezing_instructions: r.freezing_instructions ?? '',
-        defrosting_instructions: r.defrosting_instructions ?? '',
-        reheating_instructions: r.reheating_instructions ?? '',
-        hot_holding_required: r.hot_holding_required ?? false,
-        extra_care_flags: r.extra_care_flags ?? [],
+        cooking_method: r.cookingMethod ?? r.cooking_method ?? '',
+        cooking_temp: (r.cookingTemp ?? r.cooking_temp ?? '').toString(),
+        cooking_time: (r.cookingTime ?? r.cooking_time ?? '').toString(),
+        cooking_time_unit: r.cookingTimeUnit ?? r.cooking_time_unit ?? 'minutes',
+        chilling_method: r.chillingMethod ?? r.chilling_method ?? '',
+        freezing_instructions: r.freezingInstructions ?? r.freezing_instructions ?? '',
+        defrosting_instructions: r.defrostingInstructions ?? r.defrosting_instructions ?? '',
+        reheating_instructions: r.reheatingInstructions ?? r.reheating_instructions ?? '',
+        hot_holding_required: r.hotHoldingRequired ?? r.hot_holding_required ?? false,
+        extra_care_flags: r.extraCareFlags ?? r.extra_care_flags ?? [],
         ingredients: (r.ingredients ?? []).map((i: any) => ({
           name: i.name ?? '',
           quantity: i.quantity?.toString() ?? '',
