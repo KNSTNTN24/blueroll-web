@@ -324,7 +324,29 @@ export default function OnboardingPage() {
           return
         }
 
-        // Go to paywall step
+        // Check if business already has active subscription — skip paywall
+        const { data: joinProfile } = await supabase
+          .from('profiles')
+          .select('business_id')
+          .eq('id', (await supabase.auth.getUser()).data.user!.id)
+          .single()
+
+        if (joinProfile?.business_id) {
+          const { data: biz } = await supabase
+            .from('businesses')
+            .select('subscription_status')
+            .eq('id', joinProfile.business_id)
+            .single()
+
+          const status = biz?.subscription_status
+          if (status === 'active' || status === 'trialing') {
+            // Business already paid — go straight to dashboard
+            window.location.href = '/dashboard'
+            return
+          }
+        }
+
+        // Business not subscribed — show paywall
         setSettingUp(false)
         setSigningUp(false)
         setStep(5)
