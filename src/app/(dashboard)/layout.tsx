@@ -19,14 +19,8 @@ export default function DashboardLayout({
     if (isLoading) return
     if (!user) {
       router.replace('/login')
-    } else if (!profile) {
-      router.replace('/onboarding')
     }
-    // TODO: re-enable subscription gating when Stripe is fully configured
-    // else if (!isSubscribed) {
-    //   router.replace('/paywall')
-    // }
-  }, [isLoading, user, profile, router])
+  }, [isLoading, user, router])
 
   if (isLoading) {
     return (
@@ -36,9 +30,7 @@ export default function DashboardLayout({
     )
   }
 
-  if (!user || !profile) {
-    return null
-  }
+  if (!user) return null
 
   return (
     <div className="flex h-screen overflow-hidden">
