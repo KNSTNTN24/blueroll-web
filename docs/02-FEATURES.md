@@ -1,8 +1,4 @@
-# Blueroll Web v2 — Описание функционала (ЧЕРНОВИК ДЛЯ РЕВЬЮ)
-
-> Это описание каждой фичи как она работает в мобильной версии.
-> Костя, внеси правки — что не так, что добавить, что убрать.
-> После утверждения перепишу в финальный МД.
+# Blueroll Web v2 — Описание функционала
 
 ---
 
@@ -103,12 +99,13 @@
 - Показывает flagged пункты
 
 ### Дефолтные шаблоны
-При создании нового бизнеса автоматически засеиваются 5 шаблонов (active: false):
+При создании нового бизнеса автоматически засеиваются 6 шаблонов (active: false):
 1. Fridge & Freezer Temperatures (daily, 10:00)
 2. Daily Opening Checks (daily, 09:00)
 3. Delivery Acceptance (daily)
 4. End of Day Closing (daily, 23:00)
 5. Weekly Deep Clean & Calibration (weekly)
+6. 4-Weekly HACCP Review (four_weekly) — ревью актуальности HACCP Pack
 
 ---
 
@@ -127,17 +124,20 @@
 - Dietary labels (вычисляются из ингредиентов): Vegan, Vegetarian, Gluten-Free, Dairy-Free
 - Extra care flags (eggs, rice, pulses, shellfish)
 - Reheating instructions, hot holding, chilling method
+- **Freezing instructions** — как замораживать
+- **Defrosting instructions** — как размораживать
 - Кнопки менеджера: Edit, Activate/Deactivate, Delete
 
 ### Создание рецепта
 - Поля: название, описание, категория, инструкции, метод, температура, время, единица
+- Дополнительные поля: reheating_instructions, chilling_method, **freezing_instructions**, **defrosting_instructions**, hot_holding_required, extra_care_flags
 - Динамический список ингредиентов: название, количество, единица, аллергены (14 EU)
 - При сохранении: проверка существования ингредиента по имени → создание если нет → создание recipe + recipe_ingredients
 
 ### AI Import
 - Три таба: Text (вставка текста), PDF (загрузка файла), Photo (загрузка фото)
 - Отправка на Edge Function `import-recipe` (Claude API)
-- Результат: распарсенный рецепт с редактируемыми полями
+- Результат: распарсенный рецепт с редактируемыми полями (включая freezing/defrosting)
 - Кнопка "Save Recipe" → стандартная логика создания
 
 ### Логика Active/Inactive
@@ -270,12 +270,12 @@
 ## 14. Уведомления (Notifications)
 
 - Список: иконка по типу, заголовок, сообщение, relative timestamp
-- Типы: checklist, incident, team, checkin, document
+- Типы: checklist, incident, team, checkin, document, haccp
 - Mark as read по клику
 - "Mark all as read" кнопка
 - Лимит: 50 последних
 
-### 9 типов уведомлений (создаются автоматически):
+### 10 типов уведомлений (создаются автоматически):
 1. Check-in → менеджерам
 2. Check-out → менеджерам
 3. Новый инцидент → менеджерам
@@ -285,6 +285,7 @@
 7. Sign-off required → supervisor role
 8. Истекающий документ (30/7/1 день) → менеджерам
 9. Новый член команды → менеджерам
+10. HACCP Review overdue (4-week check просрочен) → owner + managers
 
 ---
 
@@ -315,3 +316,108 @@
 - Триал: 14 дней бесплатно
 - Подписка: £15/мес
 - Гейтинг: без подписки → paywall после онбординга
+
+---
+
+## 17. HACCP Pack
+
+### Концепция
+Интерактивный генератор SFBB-документации (Safer Food, Better Business) для EHO-инспекций. Документ **автоматически заполняется из данных, которые бизнес уже ведёт в Blueroll** — рецепты, чеклисты, документы, поставщики, команда. Менеджер дозаполняет вручную то, что система не покрывает.
+
+### Режим автозаполнения
+- **Toggle "Auto-fill from Blueroll data"** — включен по умолчанию
+- Когда включен: поля с данными из системы обновляются live, помечены бейджем "Auto"
+- Когда выключен: все поля ручные, auto-данные не перезаписывают введённое
+- Если менеджер руками переписал auto-поле — его версия приоритетнее (override)
+
+### Источники автозаполнения
+
+| Источник в Blueroll | Что заполняется в HACCP Pack |
+|---------------------|------------------------------|
+| Чеклисты (templates) | Opening & Closing Checks, Cleaning Schedule, Daily Diary, Temperature Probes |
+| Рецепты (cooking_method, cooking_temp) | Cooking Safely — список блюд и методов, Menu Checks |
+| Рецепты (extra_care_flags) | Extra Care Foods — яйца, рис, бобовые, моллюски |
+| Рецепты (reheating_instructions) | Reheating — какие блюда разогреваются и как |
+| Рецепты (hot_holding_required) | Hot Holding — какие блюда на горячем |
+| Рецепты (chilling_method) | Chilling Down Hot Food — методы охлаждения |
+| Рецепты (freezing_instructions) | Freezing — как замораживаются продукты |
+| Рецепты (defrosting_instructions) | Defrosting — как размораживаются продукты |
+| Рецепты (ингредиенты: мясо, рыба, птица) | Separating Foods — какие сырые продукты от чего отделять |
+| Рецепты (ингредиенты: ready-to-eat) | Ready-to-Eat — список RTE-продуктов |
+| Аллергены из рецептов | Food Allergies — аллергенная матрица + список по блюдам |
+| Документы (category=certificate, training) | Training — сертификаты персонала |
+| Документы (category=contract, inspection) | Pest Control — контракт на дезинсекцию |
+| Документы (category=policy, instruction) | Cleaning Schedule — расписание уборки |
+| Поставщики (suppliers) | Suppliers — список с контактами |
+| Поставщики (delivery_days) | Separating Foods — расписание доставок |
+| Команда (profiles + roles) | Training — ответственные лица и роли |
+| Доставки (product_temperature) | Chilled Storage — история температур при приёмке |
+
+### 5 разделов
+
+**1. Cross-Contamination** (красный) — 6 методов:
+- Personal Hygiene — toggles + тексты (одежда, раздевалка)
+- Cloths — toggles + тексты (грязные/чистые)
+- Separating Foods — тексты (**авто: расписание доставок из Suppliers, сырые продукты из Recipes**)
+- Food Allergies — тексты + файл (**авто: аллергенная матрица, список ингредиентов-аллергенов по блюдам**)
+- Contamination Prevention — toggles + тексты
+- Pest Control — тексты + файл (**авто: контракт из Documents**)
+
+**2. Cleaning** (фиолетовый) — 4 метода:
+- Handwashing — toggles
+- Cleaning Effectively — toggles
+- Clear & Clean As You Go — toggles + текст
+- Cleaning Schedule — toggle + файл (**авто: шаблон чеклиста cleaning + документ**)
+
+**3. Chilling** (бирюзовый) — 4 метода:
+- Chilled Storage — toggles + текст + select (**авто: метод проверки из чеклиста температуры**)
+- Chilling Down Hot Food — toggles + текст (**авто: из рецептов с chilling_method**)
+- Defrosting — toggles + тексты (**авто: из рецептов с defrosting_instructions**)
+- Freezing — toggles (**авто: из рецептов с freezing_instructions**)
+
+**4. Cooking** (оранжевый) — 6 методов:
+- Cooking Safely — toggles (**авто: список блюд с cooking_method и cooking_temp**)
+- Extra Care Foods — toggles + тексты (**авто: из рецептов с extra_care_flags**)
+- Reheating — toggles + тексты (**авто: из рецептов с reheating_instructions**)
+- Menu Checks — тексты (**авто: ключевые блюда с методами проверки**)
+- Hot Holding — toggles + текст (**авто: из рецептов с hot_holding_required**)
+- Ready-to-Eat — toggles + текст (**авто: RTE-продукты из рецептов**)
+
+**5. Management** (пурпурный) — 6 методов:
+- Opening & Closing Checks — toggles + файл (**авто: из шаблонов чеклистов**)
+- Suppliers — тексты + файл (**авто: из таблицы suppliers**)
+- Stock Control — toggles
+- Training — тексты + файл (**авто: команда из profiles + сертификаты из documents**)
+- Temperature Probes — toggles + текст (**авто: из чеклиста калибровки**)
+- Daily Diary — toggle + файл (**авто: из чеклистов daily**)
+
+### 4-Week Check
+- Обязательная процедура SFBB: каждые 4 недели менеджер подтверждает актуальность HACCP Pack
+- Реализация через дефолтный шаблон чеклиста "4-Weekly HACCP Review" (frequency: four_weekly)
+- Пункты: по одному на каждую секцию — "Cross-Contamination procedures up to date", "Cleaning up to date" и т.д.
+- Баннер в HACCP Pack: "Last reviewed: {date}" / "Review overdue — due {date}"
+- Уведомления: за 3 дня до срока + в день + если просрочен
+- При заполнении 4-week check обновляется дата последнего ревью
+
+### Геймификация
+- XP: toggle = +10, text = +20, file = +50, select = +20
+- 5 уровней: Kitchen Starter (0) → Safety Aware (100) → Hygiene Pro (300) → Compliance Expert (600) → HACCP Master (1000)
+- Celebration при завершении секции на 100%
+- Progress bar: X/Y tasks, Z% по каждой секции и общий
+
+### Экспорт
+- Кнопка Export → PDF со всеми заполненными данными
+- Формат готовый для EHO-инспектора
+- Включает: все тексты, отмеченные процедуры, приложенные документы
+
+### Хранение
+- Ручные данные (toggles, texts, overrides) хранятся в Supabase, привязаны к business_id
+- Автоданные вычисляются на лету из существующих таблиц
+- Поле `haccp_last_reviewed_at` в businesses — дата последнего 4-week check
+
+### Изменения в БД для HACCP Pack
+- Новые поля в recipes: `freezing_instructions` (TEXT), `defrosting_instructions` (TEXT)
+- Новая таблица или JSON-поле для хранения ручных данных HACCP Pack
+- Поле `haccp_last_reviewed_at` (TIMESTAMPTZ) в businesses
+- 6-й дефолтный шаблон чеклиста: "4-Weekly HACCP Review"
+- 10-й тип уведомления: HACCP Review overdue
