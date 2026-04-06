@@ -1,82 +1,75 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
+import { Loader2, ArrowRight } from 'lucide-react'
+import { useBrand } from '../layout'
 
 export default function LoginPage() {
   const router = useRouter()
+  const { setContent } = useBrand()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [checkingSession, setCheckingSession] = useState(true)
 
-  // Check session on mount
   useEffect(() => {
-    let mounted = true
-    const timeout = setTimeout(() => {
-      if (mounted) setCheckingSession(false)
-    }, 3000)
-
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (!mounted || !session?.user) {
-        if (mounted) setCheckingSession(false)
-        return
-      }
-
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('business_id')
-        .eq('id', session.user.id)
-        .single()
-
-      if (!mounted) return
-
-      if (!profile) {
-        setCheckingSession(false)
-        return
-      }
-
-      // TODO: re-enable subscription check when Stripe is fully configured
-      router.replace('/dashboard')
-    }).catch(() => {
-      if (mounted) setCheckingSession(false)
+    setContent({
+      headline: 'Your kitchen is waiting for you.',
+      subtitle: 'Pick up right where you left off — checklists, team updates, and compliance reports.',
     })
+  }, [setContent])
 
-    return () => {
-      mounted = false
-      clearTimeout(timeout)
-    }
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        supabase
+          .from('profiles')
+          .select('id')
+          .eq('id', session.user.id)
+          .single()
+          .then(({ data: profile }) => {
+            if (profile) {
+              router.replace('/dashboard')
+            } else {
+              setCheckingSession(false)
+            }
+          })
+      } else {
+        setCheckingSession(false)
+      }
+    }).catch(() => {
+      setCheckingSession(false)
+    })
   }, [router])
 
-  async function handleSubmit(e: React.FormEvent) {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setError(null)
+    setError('')
     setLoading(true)
 
     try {
-      const { error: signInError } = await supabase.auth.signInWithPassword({
-        email,
+      const { data, error: authError } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
         password,
       })
 
-      if (signInError) {
-        if (signInError.message.includes('Invalid login credentials')) {
+      if (authError) {
+        if (authError.message.includes('Invalid login')) {
           setError('Invalid email or password')
-        } else if (signInError.message.includes('Email not confirmed')) {
-          setError('Email not confirmed')
+        } else if (authError.message.includes('Email not confirmed')) {
+          setError('Please check your email to confirm your account')
         } else {
-          setError(signInError.message)
+          setError(authError.message)
         }
         setLoading(false)
         return
       }
 
-      // Get the session to check profile
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.user) {
+      if (!data.user) {
         setError('Something went wrong. Please try again.')
         setLoading(false)
         return
@@ -84,17 +77,15 @@ export default function LoginPage() {
 
       const { data: profile } = await supabase
         .from('profiles')
-        .select('business_id')
-        .eq('id', session.user.id)
+        .select('id')
+        .eq('id', data.user.id)
         .single()
 
-      if (!profile) {
-        router.replace('/onboarding')
-        return
+      if (profile) {
+        router.push('/dashboard')
+      } else {
+        router.push('/onboarding')
       }
-
-      // TODO: re-enable subscription check when Stripe is fully configured
-      router.replace('/dashboard')
     } catch {
       setError('Something went wrong. Please try again.')
       setLoading(false)
@@ -103,87 +94,100 @@ export default function LoginPage() {
 
   if (checkingSession) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50">
-        <div className="flex flex-col items-center gap-3">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-emerald-600 border-t-transparent" />
-          <p className="text-sm text-gray-500">Loading...</p>
-        </div>
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="h-6 w-6 animate-spin text-emerald-600" />
       </div>
     )
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
-      <div className="w-full max-w-sm">
-        <div className="mb-8 text-center">
-          <h1 className="text-2xl font-bold text-gray-900">Sign in</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            Welcome back to Blueroll
-          </p>
+    <div>
+      <h1 className="text-[30px] font-bold tracking-tight text-gray-900">
+        Welcome back
+      </h1>
+      <p className="mt-2 text-[15px] text-gray-400">
+        Sign in to your account to continue.
+      </p>
+
+      <form onSubmit={handleSubmit} className="mt-10 space-y-5">
+        {error && (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700">
+            {error}
+          </div>
+        )}
+
+        <div>
+          <label htmlFor="email" className="mb-2 block text-[13px] font-medium text-gray-700">
+            Email
+          </label>
+          <input
+            id="email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@restaurant.com"
+            required
+            autoFocus
+            className="w-full rounded-xl border-[1.5px] border-gray-200 bg-white px-4 py-3.5 text-[16px] text-gray-900 outline-none transition-all placeholder:text-gray-300 focus:border-emerald-600 focus:ring-4 focus:ring-emerald-600/[0.08]"
+          />
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {error && (
-            <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 border border-red-200">
-              {error}
-            </div>
+        <div>
+          <label htmlFor="password" className="mb-2 block text-[13px] font-medium text-gray-700">
+            Password
+          </label>
+          <input
+            id="password"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Enter your password"
+            required
+            className="w-full rounded-xl border-[1.5px] border-gray-200 bg-white px-4 py-3.5 text-[16px] text-gray-900 outline-none transition-all placeholder:text-gray-300 focus:border-emerald-600 focus:ring-4 focus:ring-emerald-600/[0.08]"
+          />
+          <div className="mt-1.5 flex justify-end">
+            <Link href="/forgot-password" className="text-[13px] font-medium text-emerald-600 hover:underline">
+              Forgot password?
+            </Link>
+          </div>
+        </div>
+
+        <button
+          type="submit"
+          disabled={loading}
+          className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-6 py-3.5 text-[15px] font-semibold text-white transition-colors hover:bg-emerald-700 disabled:opacity-60"
+        >
+          {loading ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Signing in...
+            </>
+          ) : (
+            <>
+              Sign in
+              <ArrowRight className="h-[18px] w-[18px]" strokeWidth={2.5} />
+            </>
           )}
+        </button>
+      </form>
 
-          <div>
-            <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
-              Email
-            </label>
-            <input
-              id="email"
-              type="email"
-              required
-              autoComplete="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-              placeholder="you@example.com"
-            />
-          </div>
-
-          <div>
-            <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
-              Password
-            </label>
-            <input
-              id="password"
-              type="password"
-              required
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-              placeholder="Your password"
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            {loading ? (
-              <span className="flex items-center justify-center gap-2">
-                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                Signing in...
-              </span>
-            ) : (
-              'Sign in'
-            )}
-          </button>
-        </form>
-
-        <p className="mt-6 text-center text-sm text-gray-500">
-          Don&apos;t have an account?{' '}
-          <Link href="/onboarding" className="font-medium text-emerald-600 hover:text-emerald-500">
-            Create account
-          </Link>
-        </p>
+      <div className="my-7 flex items-center gap-4">
+        <div className="h-px flex-1 bg-gray-200" />
+        <span className="text-[12px] font-medium uppercase tracking-wider text-gray-300">or</span>
+        <div className="h-px flex-1 bg-gray-200" />
       </div>
+
+      <p className="text-center text-[14px] text-gray-500">
+        Don&apos;t have an account?{' '}
+        <Link href="/onboarding" className="font-semibold text-emerald-600 hover:underline">
+          Start your free trial
+        </Link>
+      </p>
+
+      <p className="mt-4 text-center text-[11px] text-gray-400">
+        By signing in you accept our{' '}
+        <a href="https://blueroll.app/terms.html" target="_blank" rel="noopener noreferrer" className="text-gray-500 underline hover:text-gray-700">Terms&nbsp;of&nbsp;Service</a>.
+      </p>
     </div>
   )
 }
