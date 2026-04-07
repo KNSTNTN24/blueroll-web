@@ -4,47 +4,46 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  /* ── Emerald primary ── */
-  --primary: oklch(0.52 0.14 160);
-  --primary-foreground: oklch(0.985 0 0);
+  /* ── Everything in neutral hue 264 (cool gray) ── */
+  --primary: oklch(0.27 0.01 264);
+  --primary-foreground: oklch(0.99 0 0);
 
-  /* ── Warm gray neutrals ── */
-  --background: oklch(0.995 0 0);
-  --foreground: oklch(0.145 0.005 285);
+  --background: oklch(0.955 0.003 264);
+  --foreground: oklch(0.14 0.005 264);
 
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0.005 285);
+  --card: oklch(0.995 0 0);
+  --card-foreground: oklch(0.14 0.005 264);
 
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0.005 285);
+  --popover: oklch(0.995 0 0);
+  --popover-foreground: oklch(0.14 0.005 264);
 
-  --secondary: oklch(0.965 0.002 285);
-  --secondary-foreground: oklch(0.205 0.005 285);
+  --secondary: oklch(0.94 0.003 264);
+  --secondary-foreground: oklch(0.2 0.005 264);
 
-  --muted: oklch(0.965 0.002 285);
-  --muted-foreground: oklch(0.52 0.005 285);
+  --muted: oklch(0.94 0.003 264);
+  --muted-foreground: oklch(0.5 0.005 264);
 
-  --accent: oklch(0.965 0.002 285);
-  --accent-foreground: oklch(0.205 0.005 285);
+  --accent: oklch(0.92 0.004 264);
+  --accent-foreground: oklch(0.14 0.005 264);
 
   --destructive: oklch(0.55 0.22 29);
-  --destructive-foreground: oklch(0.985 0 0);
+  --destructive-foreground: oklch(0.99 0 0);
 
-  --border: oklch(0.91 0 0);
-  --input: oklch(0.91 0 0);
-  --ring: oklch(0.52 0.14 160);
+  --border: oklch(0.91 0.003 264);
+  --input: oklch(0.91 0.003 264);
+  --ring: oklch(0.27 0.01 264);
 
-  --radius: 0.375rem;
+  --radius: 0.5rem;
 
-  /* ── Sidebar ── */
-  --sidebar-background: oklch(0.995 0 0);
-  --sidebar-foreground: oklch(0.52 0.005 285);
-  --sidebar-primary: oklch(0.52 0.14 160);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.965 0.002 285);
-  --sidebar-accent-foreground: oklch(0.205 0.005 285);
-  --sidebar-border: oklch(0.91 0 0);
-  --sidebar-ring: oklch(0.52 0.14 160);
+  /* ── Sidebar: dark version of same gray ── */
+  --sidebar-background: oklch(0.2 0.01 264);
+  --sidebar-foreground: oklch(0.72 0.005 264);
+  --sidebar-primary: oklch(0.99 0 0);
+  --sidebar-primary-foreground: oklch(0.2 0.01 264);
+  --sidebar-accent: oklch(0.35 0.015 264);
+  --sidebar-accent-foreground: oklch(0.95 0.003 264);
+  --sidebar-border: oklch(0.27 0.01 264);
+  --sidebar-ring: oklch(0.27 0.01 264);
 }
 
 @theme inline {
@@ -75,56 +74,31 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
-  --radius-sm: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) * 0.75);
   --radius-md: var(--radius);
-  --radius-lg: calc(var(--radius) + 2px);
-  --radius-xl: calc(var(--radius) + 6px);
+  --radius-lg: calc(var(--radius) * 1.5);
+  --radius-xl: calc(var(--radius) * 2);
   --font-sans: var(--font-inter);
 }
 
-/* ── Base ── */
 @layer base {
-  * {
-    @apply border-border;
-  }
-
+  * { @apply border-border; }
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: 'rlig' 1, 'calt' 1;
   }
 }
 
-/* ── Tabular nums for data ── */
-.tabular-nums {
+.tabular-nums, [data-slot='table'] td, [data-slot='metric'] {
   font-variant-numeric: tabular-nums;
 }
 
-[data-slot='table'] td,
-[data-slot='metric'] {
-  font-variant-numeric: tabular-nums;
-}
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: oklch(0.82 0 0); border-radius: 9px; }
+* { scrollbar-width: thin; scrollbar-color: oklch(0.82 0 0) transparent; }
 
-/* ── Custom scrollbar ── */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background: oklch(0.82 0 0);
-  border-radius: 3px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: oklch(0.7 0 0);
-}
-
-/* ── Firefox scrollbar ── */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: oklch(0.82 0 0) transparent;
+@keyframes shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
 }
