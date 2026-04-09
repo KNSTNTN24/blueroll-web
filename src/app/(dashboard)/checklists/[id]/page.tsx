@@ -34,7 +34,6 @@ interface ItemResponse {
   value: string
   notes: string
   flagged: boolean
-  photo_url?: string
 }
 
 export default function ChecklistDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -171,7 +170,6 @@ export default function ChecklistDetailPage({ params }: { params: Promise<{ id: 
           value: resp.value,
           notes: resp.notes || null,
           flagged,
-          photo_url: resp.photo_url || null,
         }
       })
 
@@ -223,18 +221,30 @@ export default function ChecklistDetailPage({ params }: { params: Promise<{ id: 
     onError: () => toast.error('Failed to sign off'),
   })
 
-  // ── Photo upload ──
+  // ── Photo upload (matches mobile: stores storage path in `value`) ──
   async function handlePhotoUpload(itemId: string, file: File) {
     if (!business?.id) return
-    const filePath = `${business.id}/checklists/${id}/${itemId}_${Date.now()}_${file.name}`
-    const { error } = await supabase.storage.from('checklist-photos').upload(filePath, file)
+    const storagePath = `${business.id}/checklist-photos/${Date.now()}_${file.name}`
+    const { error } = await supabase.storage
+      .from('documents')
+      .upload(storagePath, file, { contentType: file.type || 'image/jpeg' })
     if (error) {
       toast.error('Failed to upload photo')
       return
     }
-    const { data: urlData } = supabase.storage.from('checklist-photos').getPublicUrl(filePath)
-    setResponse(itemId, { photo_url: urlData.publicUrl })
+    setResponse(itemId, { value: storagePath })
     toast.success('Photo uploaded')
+  }
+
+  async function openPhoto(storagePath: string) {
+    const { data, error } = await supabase.storage
+      .from('documents')
+      .createSignedUrl(storagePath, 3600)
+    if (error || !data) {
+      toast.error('Failed to open photo')
+      return
+    }
+    window.open(data.signedUrl, '_blank')
   }
 
   if (loadingTemplate) {
@@ -425,10 +435,14 @@ export default function ChecklistDetailPage({ params }: { params: Promise<{ id: 
               {item.item_type === 'photo' && (
                 <div>
                   {readOnly ? (
-                    existingResp?.photo_url ? (
-                      <a href={existingResp.photo_url} target="_blank" rel="noopener noreferrer" className="text-[13px] text-emerald-600 hover:underline">
+                    existingResp?.value ? (
+                      <button
+                        type="button"
+                        onClick={() => openPhoto(existingResp.value)}
+                        className="text-[13px] text-emerald-600 hover:underline"
+                      >
                         View photo
-                      </a>
+                      </button>
                     ) : (
                       <span className="text-[12px] text-muted-foreground">No photo uploaded</span>
                     )
@@ -454,7 +468,7 @@ export default function ChecklistDetailPage({ params }: { params: Promise<{ id: 
                           if (file) handlePhotoUpload(item.id, file)
                         }}
                       />
-                      {getResponse(item.id).photo_url && (
+                      {getResponse(item.id).value && (
                         <span className="text-[12px] text-emerald-600">Photo uploaded</span>
                       )}
                     </div>

@@ -18,7 +18,7 @@ interface Delivery {
   product_temperature: number | null
   notes: string | null
   photos: string[] | null
-  delivered_at: string
+  received_at: string
   created_at: string
   supplier?: { name: string }
   receiver?: { full_name: string | null; email: string }
@@ -50,7 +50,7 @@ export default function DeliveriesPage() {
         .from('deliveries')
         .select('*, supplier:suppliers(name), receiver:profiles!deliveries_received_by_fkey(full_name, email)')
         .eq('business_id', business.id)
-        .order('delivered_at', { ascending: false })
+        .order('received_at', { ascending: false })
       if (error) throw error
       return (data ?? []) as Delivery[]
     },
@@ -101,7 +101,7 @@ export default function DeliveriesPage() {
               {deliveries.map((d) => (
                 <tr key={d.id} className="hover:bg-accent/50">
                   <td className="px-4 py-2.5 text-[13px] tabular-nums text-muted-foreground">
-                    {format(new Date(d.delivered_at || d.created_at), 'dd MMM yyyy HH:mm')}
+                    {format(new Date(d.received_at || d.created_at), 'dd MMM yyyy HH:mm')}
                   </td>
                   <td className="px-4 py-2.5 text-[13px] font-medium text-foreground">
                     {d.supplier?.name ?? 'Unknown'}

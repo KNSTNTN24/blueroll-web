@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useRouter } from 'next/navigation'
-import { FileText, Plus, Search, Download } from 'lucide-react'
+import { FileText, Plus, Search, Eye } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { EmptyState } from '@/components/shared/empty-state'
 import { Button } from '@/components/ui/button'
@@ -18,9 +18,10 @@ interface Document {
   title: string
   description: string | null
   category: string
-  file_path: string
+  file_url: string
   file_name: string
   file_size: number | null
+  file_type: string | null
   access_level: string
   expires_at: string | null
   uploaded_by: string
@@ -187,7 +188,7 @@ export default function DocumentsPage() {
                     <td className="px-4 py-2.5">
                       <div className="flex items-center justify-end gap-1">
                         <Button variant="ghost" size="icon" onClick={() => router.push(`/documents/${doc.id}`)} title="View">
-                          <Download className="h-3.5 w-3.5" />
+                          <Eye className="h-3.5 w-3.5" />
                         </Button>
                       </div>
                     </td>

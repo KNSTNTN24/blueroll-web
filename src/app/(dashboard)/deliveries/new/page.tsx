@@ -45,7 +45,7 @@ export default function NewDeliveryPage() {
         business_id: business.id,
         supplier_id: supplierId,
         received_by: profile.id,
-        delivered_at: new Date(deliveredAt).toISOString(),
+        received_at: new Date(deliveredAt).toISOString(),
         product_temperature: temperature ? parseFloat(temperature) : null,
         notes: notes || null,
       })

@@ -462,13 +462,21 @@ export default function HaccpPackPage() {
   const { data: recipes } = useQuery({
     queryKey: ['haccp-recipes', businessId],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('recipes')
-        .select('id, name, cooking_method, cooking_temp, extra_care_flags, reheating_instructions, hot_holding_required, chilling_method, freezing_instructions, defrosting_instructions, allergens, ingredients')
+        .select(
+          `id, name, cooking_method, cooking_temp, extra_care_flags,
+           reheating_instructions, hot_holding_required, chilling_method,
+           freezing_instructions, defrosting_instructions, haccp_methods,
+           recipe_ingredients(ingredient:ingredients(name, allergens))`,
+        )
         .eq('business_id', businessId)
+      if (error) console.error('[haccp-pack] recipes query error:', error)
       return data ?? []
     },
     enabled: !!businessId && autoFillEnabled,
+    staleTime: 0,
+    refetchOnMount: 'always',
   })
 
   const { data: suppliersData } = useQuery({
@@ -524,67 +532,142 @@ export default function HaccpPackPage() {
     if (!autoFillEnabled) return {}
     const auto: Record<string, string> = {}
 
-    // Recipes-based
+    // Recipes-based (driven by the haccp_methods multi-select on each recipe)
     if (recipes?.length) {
-      const cookingDishes = recipes
-        .filter((r: any) => r.cooking_method)
-        .map((r: any) => `${r.name}: ${r.cooking_method}${r.cooking_temp ? ` at ${r.cooking_temp}\u00b0C` : ''}`)
-      if (cookingDishes.length) auto['ck_dishes'] = cookingDishes.join('\n')
+      // Helper: recipes that declared a given HACCP method
+      const withMethod = (methodId: string) =>
+        (recipes as any[]).filter((r) => Array.isArray(r.haccp_methods) && r.haccp_methods.includes(methodId))
 
-      const extraCare = recipes.filter((r: any) => r.extra_care_flags && r.extra_care_flags.length > 0)
-      if (extraCare.length) auto['ec_items'] = extraCare.map((r: any) => `${r.name}: ${Array.isArray(r.extra_care_flags) ? r.extra_care_flags.join(', ') : r.extra_care_flags}`).join('\n')
+      // Helper: format one recipe row with optional trailing detail
+      const fmt = (r: any, detail?: string | null) =>
+        detail ? `${r.name}: ${detail}` : r.name
 
-      const reheating = recipes.filter((r: any) => r.reheating_instructions)
-      if (reheating.length) auto['rh_items'] = reheating.map((r: any) => `${r.name}: ${r.reheating_instructions}`).join('\n')
+      // Cooking Safely → ck_dishes
+      const cooking = withMethod('cooking_safely')
+      if (cooking.length) {
+        auto['ck_dishes'] = cooking
+          .map((r) => {
+            const parts = [r.cooking_method, r.cooking_temp ? `${r.cooking_temp}°C` : null].filter(Boolean)
+            return fmt(r, parts.length ? parts.join(' @ ') : null)
+          })
+          .join('\n')
+      }
 
-      const hotHold = recipes.filter((r: any) => r.hot_holding_required)
-      if (hotHold.length) auto['hh_items'] = hotHold.map((r: any) => r.name).join(', ')
+      // Reheating → rh_items
+      const reheating = withMethod('reheating')
+      if (reheating.length) {
+        auto['rh_items'] = reheating.map((r) => fmt(r, r.reheating_instructions)).join('\n')
+      }
 
-      const chilling = recipes.filter((r: any) => r.chilling_method)
-      if (chilling.length) auto['cd_method'] = chilling.map((r: any) => `${r.name}: ${r.chilling_method}`).join('\n')
+      // Hot Holding → hh_items
+      const hotHold = withMethod('hot_holding')
+      if (hotHold.length) auto['hh_items'] = hotHold.map((r) => r.name).join(', ')
 
-      const freezing = recipes.filter((r: any) => r.freezing_instructions)
-      if (freezing.length) auto['fz_method'] = freezing.map((r: any) => `${r.name}: ${r.freezing_instructions}`).join('\n')
+      // Chilling Down Hot Food → cd_method
+      const chillingDown = withMethod('chilling_down')
+      if (chillingDown.length) {
+        auto['cd_method'] = chillingDown.map((r) => fmt(r, r.chilling_method)).join('\n')
+      }
 
-      const defrosting = recipes.filter((r: any) => r.defrosting_instructions)
+      // Freezing → fz_method
+      const freezing = withMethod('freezing')
+      if (freezing.length) {
+        auto['fz_method'] = freezing.map((r) => fmt(r, r.freezing_instructions)).join('\n')
+      }
+
+      // Defrosting → df_method + df_products
+      const defrosting = withMethod('defrosting')
       if (defrosting.length) {
-        auto['df_method'] = defrosting.map((r: any) => `${r.name}: ${r.defrosting_instructions}`).join('\n')
-        auto['df_products'] = defrosting.map((r: any) => r.name).join(', ')
+        auto['df_method'] = defrosting.map((r) => fmt(r, r.defrosting_instructions)).join('\n')
+        auto['df_products'] = defrosting.map((r) => r.name).join(', ')
       }
 
-      // Raw products from ingredients
-      const rawKeywords = ['chicken', 'beef', 'pork', 'lamb', 'fish', 'salmon', 'prawns', 'mince', 'turkey', 'duck', 'veal']
+      // Extra Care Foods → ec_items
+      const extraCare = withMethod('extra_care')
+      if (extraCare.length) {
+        auto['ec_items'] = extraCare
+          .map((r) => {
+            const flags = Array.isArray(r.extra_care_flags) ? r.extra_care_flags.join(', ') : r.extra_care_flags
+            return fmt(r, flags || null)
+          })
+          .join('\n')
+      }
+
+      // Ready-to-Eat → rte_items
+      const rte = withMethod('ready_to_eat')
+      if (rte.length) auto['rte_items'] = rte.map((r) => r.name).join(', ')
+
+      // Menu Checks → mc_items (all recipes that have any cooking-side method)
+      const menuCooking = (recipes as any[]).filter(
+        (r) =>
+          Array.isArray(r.haccp_methods) &&
+          r.haccp_methods.some((m: string) =>
+            ['cooking_safely', 'reheating', 'hot_holding', 'extra_care'].includes(m),
+          ),
+      )
+      if (menuCooking.length) {
+        auto['mc_items'] = menuCooking
+          .map((r) => {
+            const parts = [r.cooking_method, r.cooking_temp ? `${r.cooking_temp}°C` : null].filter(Boolean)
+            return parts.length ? `${r.name} — ${parts.join(' @ ')}` : r.name
+          })
+          .join('\n')
+      }
+
+      // ── Ingredient-driven fields ──
+      // Keywords for raw meat / poultry / fish / offal. Lowercase substrings.
+      const RAW_KEYWORDS = [
+        'chicken', 'beef', 'pork', 'lamb', 'mutton', 'veal', 'turkey', 'duck', 'goose', 'rabbit', 'venison',
+        'mince', 'sausage', 'bacon', 'ham', 'gammon', 'chorizo', 'steak', 'brisket', 'ribeye', 'sirloin',
+        'liver', 'kidney', 'offal',
+        'fish', 'salmon', 'tuna', 'cod', 'haddock', 'mackerel', 'trout', 'seabass', 'sea bass', 'anchov', 'sardine', 'plaice', 'pollock',
+        'prawn', 'shrimp', 'lobster', 'crab', 'crayfish', 'langoustine',
+        'mussel', 'oyster', 'clam', 'scallop', 'squid', 'octopus', 'cockle', 'whelk',
+      ]
+      // Allergens that always imply a raw protein product to handle as "raw"
+      const SEAFOOD_ALLERGENS = new Set(['fish', 'crustaceans', 'molluscs'])
+
       const rawProducts = new Set<string>()
+      const allergensPresent = new Set<string>()
+      const recipeAllergenMap = new Map<string, Set<string>>()
+
       for (const r of recipes as any[]) {
-        if (!r.ingredients) continue
-        const ings = Array.isArray(r.ingredients) ? r.ingredients : []
+        const ings: Array<{ name?: string; allergens?: string[] }> = (r.recipe_ingredients ?? [])
+          .map((ri: any) => ri?.ingredient)
+          .filter(Boolean)
+
         for (const ing of ings) {
-          const name = typeof ing === 'string' ? ing : ing?.name ?? ''
-          if (rawKeywords.some((kw) => name.toLowerCase().includes(kw))) rawProducts.add(name)
+          const name = (ing.name ?? '').trim()
+          if (!name) continue
+          const lower = name.toLowerCase()
+          const ingAllergens: string[] = Array.isArray(ing.allergens) ? ing.allergens : []
+
+          // Raw detection: by keyword OR by seafood allergen
+          const isRaw =
+            RAW_KEYWORDS.some((kw) => lower.includes(kw)) ||
+            ingAllergens.some((a) => SEAFOOD_ALLERGENS.has(a))
+          if (isRaw) rawProducts.add(name)
+
+          // Collect allergens
+          for (const a of ingAllergens) {
+            allergensPresent.add(a)
+            if (!recipeAllergenMap.has(r.name)) recipeAllergenMap.set(r.name, new Set())
+            recipeAllergenMap.get(r.name)!.add(a)
+          }
         }
       }
-      if (rawProducts.size) auto['sf_raw_products'] = Array.from(rawProducts).join(', ')
 
-      // RTE products
-      const rteProducts = recipes
-        .filter((r: any) => r.cooking_method === null || r.cooking_method === 'none' || r.cooking_method === 'no_cook')
-        .map((r: any) => r.name)
-      if (rteProducts.length) auto['rte_items'] = rteProducts.join(', ')
-
-      // Allergens
-      const allergenSet = new Set<string>()
-      for (const r of recipes as any[]) {
-        if (r.allergens && Array.isArray(r.allergens)) {
-          for (const a of r.allergens) allergenSet.add(a)
-        }
+      if (rawProducts.size) {
+        auto['sf_raw_products'] = Array.from(rawProducts).sort().join(', ')
       }
-      if (allergenSet.size) auto['fa_allergens_list'] = `Allergens present: ${Array.from(allergenSet).join(', ')}\n\n${recipes.filter((r: any) => r.allergens?.length).map((r: any) => `${r.name}: ${r.allergens.join(', ')}`).join('\n')}`
 
-      // Menu checks
-      const menuChecks = recipes
-        .filter((r: any) => r.cooking_method)
-        .map((r: any) => `${r.name} \u2014 ${r.cooking_method}`)
-      if (menuChecks.length) auto['mc_items'] = menuChecks.join('\n')
+      if (allergensPresent.size) {
+        const header = `Allergens present: ${Array.from(allergensPresent).sort().join(', ')}`
+        const perRecipe = Array.from(recipeAllergenMap.entries())
+          .map(([recipeName, set]) => `${recipeName}: ${Array.from(set).sort().join(', ')}`)
+          .join('\n')
+        auto['fa_allergens_list'] = perRecipe ? `${header}\n\n${perRecipe}` : header
+      }
     }
 
     // Suppliers-based
