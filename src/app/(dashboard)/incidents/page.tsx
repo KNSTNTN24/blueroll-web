@@ -26,7 +26,7 @@ interface Incident {
   resolved_by: string | null
   resolved_at: string | null
   resolved_notes: string | null
-  incident_date: string
+  date: string
   created_at: string
   reporter?: { full_name: string | null; email: string }
 }
@@ -92,7 +92,7 @@ export default function IncidentsPage() {
         follow_up: cFollowUp || null,
         status: 'open',
         reported_by: profile.id,
-        incident_date: cDate,
+        date: cDate,
       })
       if (error) throw error
       await notifyNewIncident(business.id, cDesc.substring(0, 100))
@@ -395,7 +395,7 @@ export default function IncidentsPage() {
               {filtered.map((inc) => (
                 <tr key={inc.id} className="hover:bg-accent/50">
                   <td className="px-4 py-2.5 text-[13px] tabular-nums text-muted-foreground">
-                    {format(new Date(inc.incident_date || inc.created_at), 'dd MMM yyyy')}
+                    {format(new Date(inc.date || inc.created_at), 'dd MMM yyyy')}
                   </td>
                   <td className="px-4 py-2.5">
                     <span className={cn(

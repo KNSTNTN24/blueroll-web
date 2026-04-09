@@ -1,15 +1,14 @@
 'use client'
 
-import { use } from 'react'
+import { use, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { ArrowLeft, Download, Trash2, FileText } from 'lucide-react'
+import { ArrowLeft, Download, Trash2, FileText, Eye, EyeOff } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
 import { format, differenceInDays } from 'date-fns'
 
 interface Document {
@@ -17,9 +16,10 @@ interface Document {
   title: string
   description: string | null
   category: string
-  file_path: string
+  file_url: string
   file_name: string
   file_size: number | null
+  file_type: string | null
   access_level: string
   expires_at: string | null
   uploaded_by: string
@@ -41,6 +41,9 @@ export default function DocumentDetailPage({ params }: { params: Promise<{ id: s
   const queryClient = useQueryClient()
   const isManager = profile?.role === 'owner' || profile?.role === 'manager'
 
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
+
   const { data: doc, isLoading } = useQuery({
     queryKey: ['document', id],
     queryFn: async () => {
@@ -58,7 +61,7 @@ export default function DocumentDetailPage({ params }: { params: Promise<{ id: s
     mutationFn: async () => {
       if (!doc) throw new Error('No document')
       // Delete file from storage
-      await supabase.storage.from('documents').remove([doc.file_path])
+      await supabase.storage.from('documents').remove([doc.file_url])
       // Delete record
       const { error } = await supabase.from('documents').delete().eq('id', id)
       if (error) throw error
@@ -75,12 +78,65 @@ export default function DocumentDetailPage({ params }: { params: Promise<{ id: s
     if (!doc) return
     const { data, error } = await supabase.storage
       .from('documents')
-      .createSignedUrl(doc.file_path, 60)
+      .createSignedUrl(doc.file_url, 3600)
     if (error) {
       toast.error('Failed to generate download link')
       return
     }
     window.open(data.signedUrl, '_blank')
+  }
+
+  async function handleTogglePreview() {
+    if (!doc) return
+    if (previewUrl) {
+      setPreviewUrl(null)
+      return
+    }
+    setPreviewLoading(true)
+    const { data, error } = await supabase.storage
+      .from('documents')
+      .createSignedUrl(doc.file_url, 3600)
+    setPreviewLoading(false)
+    if (error) {
+      toast.error('Failed to generate preview link')
+      return
+    }
+    setPreviewUrl(data.signedUrl)
+  }
+
+  function renderPreview() {
+    if (!doc || !previewUrl) return null
+    const type = (doc.file_type ?? '').toLowerCase()
+    const isPdf = type.includes('pdf') || doc.file_name.toLowerCase().endsWith('.pdf')
+    const isImage = type.startsWith('image/') || /\.(png|jpe?g|gif|webp|svg|bmp)$/i.test(doc.file_name)
+
+    if (isPdf) {
+      return (
+        <iframe
+          src={previewUrl}
+          title={doc.title}
+          className="h-[70vh] w-full rounded-md border border-border bg-white"
+        />
+      )
+    }
+    if (isImage) {
+      return (
+        <div className="flex items-center justify-center rounded-md border border-border bg-gray-50 p-4">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={previewUrl} alt={doc.title} className="max-h-[70vh] max-w-full object-contain" />
+        </div>
+      )
+    }
+    return (
+      <div className="flex flex-col items-center justify-center gap-2 rounded-md border border-dashed border-border bg-gray-50 p-8 text-center">
+        <FileText className="h-8 w-8 text-muted-foreground" />
+        <p className="text-[13px] text-muted-foreground">Inline preview not available for this file type.</p>
+        <Button size="sm" variant="outline" onClick={handleDownload}>
+          <Download className="h-3.5 w-3.5" />
+          Open in new tab
+        </Button>
+      </div>
+    )
   }
 
   if (isLoading) {
@@ -163,7 +219,11 @@ export default function DocumentDetailPage({ params }: { params: Promise<{ id: s
         </div>
 
         <div className="flex gap-2">
-          <Button size="sm" onClick={handleDownload}>
+          <Button size="sm" onClick={handleTogglePreview} disabled={previewLoading}>
+            {previewUrl ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+            {previewLoading ? 'Loading...' : previewUrl ? 'Hide preview' : 'Preview'}
+          </Button>
+          <Button size="sm" variant="outline" onClick={handleDownload}>
             <Download className="h-3.5 w-3.5" />
             Download
           </Button>
@@ -180,6 +240,8 @@ export default function DocumentDetailPage({ params }: { params: Promise<{ id: s
             </Button>
           )}
         </div>
+
+        {previewUrl && <div className="mt-2">{renderPreview()}</div>}
       </div>
     </div>
   )

@@ -16,6 +16,7 @@ import {
   EU_ALLERGENS,
   ALLERGEN_LABELS,
 } from '@/lib/constants'
+import { HACCP_RECIPE_METHODS } from '@/lib/haccp-methods'
 
 interface IngredientRow {
   name: string
@@ -55,6 +56,7 @@ export default function EditRecipePage({ params }: { params: Promise<{ id: strin
   const [reheatingInstructions, setReheatingInstructions] = useState('')
   const [hotHoldingRequired, setHotHoldingRequired] = useState(false)
   const [extraCareFlags, setExtraCareFlags] = useState<string[]>([])
+  const [haccpMethods, setHaccpMethods] = useState<string[]>([])
   const [ingredients, setIngredients] = useState<IngredientRow[]>([])
 
   const { data: recipe, isLoading } = useQuery({
@@ -94,6 +96,7 @@ export default function EditRecipePage({ params }: { params: Promise<{ id: strin
       setReheatingInstructions(recipe.reheating_instructions ?? '')
       setHotHoldingRequired(recipe.hot_holding_required ?? false)
       setExtraCareFlags(recipe.extra_care_flags ?? [])
+      setHaccpMethods(recipe.haccp_methods ?? [])
       setIngredients(
         recipe.recipe_ingredients?.map((ri: any) => ({
           name: ri.ingredient?.name ?? '',
@@ -197,6 +200,7 @@ export default function EditRecipePage({ params }: { params: Promise<{ id: strin
           reheating_instructions: reheatingInstructions.trim() || null,
           hot_holding_required: hotHoldingRequired,
           extra_care_flags: extraCareFlags,
+          haccp_methods: haccpMethods,
         })
         .eq('id', id)
 
@@ -222,6 +226,7 @@ export default function EditRecipePage({ params }: { params: Promise<{ id: strin
       toast.success('Recipe updated')
       queryClient.invalidateQueries({ queryKey: ['recipes'] })
       queryClient.invalidateQueries({ queryKey: ['recipe', id] })
+      queryClient.invalidateQueries({ queryKey: ['haccp-recipes'] })
       router.push(`/recipes/${id}`)
     } catch (err: any) {
       toast.error(err.message || 'Failed to update recipe')
@@ -424,6 +429,43 @@ export default function EditRecipePage({ params }: { params: Promise<{ id: strin
               <Plus className="h-3.5 w-3.5" />
               Add Ingredient
             </Button>
+          </div>
+        </Section>
+
+        {/* HACCP Control Methods */}
+        <Section title="HACCP Control Methods">
+          <p className="mb-2 text-[12px] text-muted-foreground">
+            Select all FSA SFBB control methods that apply to this recipe. Used to auto-fill your HACCP Pack.
+          </p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            {(['Chilling', 'Cooking'] as const).map((section) => (
+              <div key={section}>
+                <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{section}</p>
+                <div className="space-y-1.5">
+                  {HACCP_RECIPE_METHODS.filter((m) => m.section === section).map((m) => {
+                    const checked = haccpMethods.includes(m.id)
+                    return (
+                      <label key={m.id} className="flex cursor-pointer items-start gap-2 rounded-md border border-border bg-background px-2.5 py-1.5 hover:border-emerald-300">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) =>
+                            setHaccpMethods((prev) =>
+                              e.target.checked ? [...prev, m.id] : prev.filter((x) => x !== m.id),
+                            )
+                          }
+                          className="mt-0.5 h-4 w-4 rounded border-border accent-emerald-600"
+                        />
+                        <div className="min-w-0">
+                          <div className="text-[13px] font-medium text-foreground">{m.label}</div>
+                          <div className="text-[11px] text-muted-foreground">{m.description}</div>
+                        </div>
+                      </label>
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
         </Section>
 

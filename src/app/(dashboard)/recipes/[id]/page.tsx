@@ -18,6 +18,7 @@ import {
   ALLERGEN_LABELS,
   type EUAllergen,
 } from '@/lib/constants'
+import { HACCP_RECIPE_METHODS } from '@/lib/haccp-methods'
 
 /* ── dietary helpers ── */
 const DIETARY_RULES: Record<string, (allergens: string[]) => boolean> = {
@@ -290,6 +291,41 @@ export default function RecipeDetailPage({ params }: { params: Promise<{ id: str
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* HACCP control methods */}
+      {recipe.haccp_methods && recipe.haccp_methods.length > 0 && (
+        <div className="rounded-lg border border-border bg-white p-4">
+          <h3 className="mb-2 text-[13px] font-medium text-foreground">HACCP Control Methods</h3>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {(['Chilling', 'Cooking'] as const).map((section) => {
+              const selected = HACCP_RECIPE_METHODS.filter(
+                (m) => m.section === section && recipe.haccp_methods.includes(m.id),
+              )
+              if (selected.length === 0) return null
+              return (
+                <div key={section}>
+                  <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{section}</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {selected.map((m) => (
+                      <span
+                        key={m.id}
+                        title={m.description}
+                        className={
+                          section === 'Cooking'
+                            ? 'inline-flex items-center rounded-full border border-orange-200 bg-orange-50 px-2.5 py-0.5 text-[11px] font-medium text-orange-800'
+                            : 'inline-flex items-center rounded-full border border-cyan-200 bg-cyan-50 px-2.5 py-0.5 text-[11px] font-medium text-cyan-800'
+                        }
+                      >
+                        {m.label}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
         </div>
       )}
 

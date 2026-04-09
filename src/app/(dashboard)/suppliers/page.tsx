@@ -17,7 +17,7 @@ interface Supplier {
   contact_name: string | null
   phone: string | null
   address: string | null
-  goods: string | null
+  goods_supplied: string | null
   delivery_days: string[] | null
   business_id: string
   created_at: string
@@ -99,7 +99,7 @@ export default function SuppliersPage() {
     setFContact(s.contact_name ?? '')
     setFPhone(s.phone ?? '')
     setFAddress(s.address ?? '')
-    setFGoods(s.goods ?? '')
+    setFGoods(s.goods_supplied ?? '')
     setFDays(s.delivery_days ?? [])
     setShowDialog(true)
   }
@@ -112,7 +112,7 @@ export default function SuppliersPage() {
         contact_name: fContact || null,
         phone: fPhone || null,
         address: fAddress || null,
-        goods: fGoods || null,
+        goods_supplied: fGoods || null,
         delivery_days: fDays.length > 0 ? fDays : null,
         business_id: business.id,
       }
@@ -265,7 +265,7 @@ export default function SuppliersPage() {
                   <td className="px-4 py-2.5 text-[13px] text-muted-foreground">{s.contact_name || '-'}</td>
                   <td className="px-4 py-2.5 text-[13px] text-muted-foreground">{s.phone || '-'}</td>
                   <td className="max-w-[200px] truncate px-4 py-2.5 text-[13px] text-muted-foreground">{s.address || '-'}</td>
-                  <td className="max-w-[150px] truncate px-4 py-2.5 text-[13px] text-muted-foreground">{s.goods || '-'}</td>
+                  <td className="max-w-[150px] truncate px-4 py-2.5 text-[13px] text-muted-foreground">{s.goods_supplied || '-'}</td>
                   <td className="px-4 py-2.5">
                     {s.delivery_days && s.delivery_days.length > 0 ? (
                       <div className="flex flex-wrap gap-1">
