@@ -71,25 +71,32 @@ export function useAuth() {
     }, 8000)
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      (event, session) => {
         if (!mounted) return
-        // Skip INITIAL_SESSION — handled by getSession() below
         if (event === 'INITIAL_SESSION') return
         const user = session?.user ?? null
         useAuthStore.getState().setUser(user)
-        if (user) await loadProfileAndBusiness(user.id)
-        else { useAuthStore.getState().setProfile(null); useAuthStore.getState().setBusiness(null) }
         useAuthStore.getState().setLoading(false)
+        if (user) {
+          // Load profile/business in background — don't block UI
+          void loadProfileAndBusiness(user.id)
+        } else {
+          useAuthStore.getState().setProfile(null)
+          useAuthStore.getState().setBusiness(null)
+        }
       }
     )
 
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
       if (!mounted) return
       clearTimeout(timeoutId)
       const user = session?.user ?? null
       useAuthStore.getState().setUser(user)
-      if (user) await loadProfileAndBusiness(user.id)
-      useAuthStore.getState().setLoading(false)
+      useAuthStore.getState().setLoading(false) // unblock UI immediately
+      if (user) {
+        // Load profile/business in background
+        void loadProfileAndBusiness(user.id)
+      }
     }).catch(() => {
       if (mounted) { clearTimeout(timeoutId); useAuthStore.getState().setLoading(false) }
     })

@@ -15,16 +15,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     if (isLoading) return
     if (!user) {
       router.replace('/onboarding')
-      return
     }
-    // Profile exists but no business → onboarding not finished
-    if (profile && !profile.business_id) {
-      router.replace('/onboarding')
-    }
-  }, [isLoading, user, profile, business, router])
+  }, [isLoading, user, router])
 
-  // Show spinner while auth/profile/business are loading
-  if (isLoading || (user && !business)) return (
+  // Show spinner only while the initial auth check is in flight.
+  // Profile / business load asynchronously in the background — Topbar and
+  // Dashboard components handle their own loading states without blocking
+  // the whole layout.
+  if (isLoading) return (
     <div className="flex h-screen items-center justify-center bg-background">
       <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
     </div>
