@@ -40,7 +40,6 @@ export function useAuth() {
 
   useEffect(() => {
     let mounted = true
-    let initialLoaded = false
 
     const timeoutId = setTimeout(() => {
       if (mounted && store.isLoading) store.setLoading(false)
@@ -48,7 +47,9 @@ export function useAuth() {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        if (!mounted || (!initialLoaded && event === 'INITIAL_SESSION')) return
+        if (!mounted) return
+        // Skip INITIAL_SESSION — handled by getSession() below
+        if (event === 'INITIAL_SESSION') return
         const user = session?.user ?? null
         useAuthStore.getState().setUser(user)
         if (user) await loadProfileAndBusiness(user.id)
@@ -59,14 +60,13 @@ export function useAuth() {
 
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (!mounted) return
-      initialLoaded = true
       clearTimeout(timeoutId)
       const user = session?.user ?? null
       useAuthStore.getState().setUser(user)
       if (user) await loadProfileAndBusiness(user.id)
       useAuthStore.getState().setLoading(false)
     }).catch(() => {
-      if (mounted) { initialLoaded = true; clearTimeout(timeoutId); useAuthStore.getState().setLoading(false) }
+      if (mounted) { clearTimeout(timeoutId); useAuthStore.getState().setLoading(false) }
     })
 
     return () => { mounted = false; clearTimeout(timeoutId); subscription.unsubscribe() }
@@ -89,8 +89,8 @@ export function useAuth() {
       if (error) throw error
     },
     signOut: async () => {
-      await supabase.auth.signOut()
       useAuthStore.getState().reset()
+      await supabase.auth.signOut()
     },
     refreshProfile: async () => {
       const u = useAuthStore.getState().user

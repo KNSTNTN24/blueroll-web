@@ -16,6 +16,7 @@ import {
   UserPlus,
 } from 'lucide-react'
 import { useBrand } from '../layout'
+import { useAuthStore } from '@/stores/auth-store'
 import { loadStripe } from '@stripe/stripe-js'
 import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js'
 
@@ -459,21 +460,36 @@ export default function OnboardingPage() {
           p_post_code: selected?.PostCode,
         })
         if (setupError) throw setupError
-
-        // Fire-and-forget: seed checklists in background, don't block user
-        void (async () => {
-          try {
-            const { data: { user } } = await supabase.auth.getUser()
-            if (!user) return
-            const { data: profile } = await supabase
-              .from('profiles')
-              .select('business_id')
-              .eq('id', user.id)
-              .single()
-            if (profile?.business_id) await seedDefaultChecklists(profile.business_id)
-          } catch { /* Non-critical */ }
-        })()
       }
+
+      // Load profile + business into store so Topbar and Dashboard have data ready
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', user.id)
+            .single()
+          if (profile) {
+            const store = useAuthStore.getState()
+            store.setUser(user)
+            store.setProfile(profile)
+            if (profile.business_id) {
+              const { data: biz } = await supabase
+                .from('businesses')
+                .select('*')
+                .eq('id', profile.business_id)
+                .single()
+              if (biz) store.setBusiness(biz)
+            }
+            // Fire-and-forget: seed checklists in background for new business
+            if (!isJoinFlow && profile.business_id) {
+              void seedDefaultChecklists(profile.business_id).catch(() => {})
+            }
+          }
+        }
+      } catch { /* Non-critical — dashboard will re-fetch */ }
 
       setStep('card')
       setSignupLoading(false)
