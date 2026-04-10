@@ -199,6 +199,7 @@ const CARD_ELEMENT_OPTIONS = {
 }
 
 function CardForm() {
+  const router = useRouter()
   const stripe = useStripe()
   const elements = useElements()
   const [loading, setLoading] = useState(false)
@@ -227,7 +228,9 @@ function CardForm() {
 
     // TODO: send paymentMethod.id to backend to create subscription
     console.log('PaymentMethod created:', paymentMethod.id)
-    window.location.href = '/dashboard'
+    // Let Supabase persist session before navigating
+    await new Promise((r) => setTimeout(r, 200))
+    router.push('/dashboard')
   }
 
   return (
