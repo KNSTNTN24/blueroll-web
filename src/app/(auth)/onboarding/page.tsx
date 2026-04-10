@@ -183,7 +183,8 @@ const BRAND_COPY: Record<Step, { headline: string; subtitle: string }> = {
 
 // --- Stripe ---
 
-const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? '')
+const stripeKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? ''
+const stripePromise = stripeKey ? loadStripe(stripeKey) : null
 
 const CARD_ELEMENT_OPTIONS = {
   style: {
@@ -228,9 +229,8 @@ function CardForm() {
 
     // TODO: send paymentMethod.id to backend to create subscription
     console.log('PaymentMethod created:', paymentMethod.id)
-    // Let Supabase persist session before navigating
-    await new Promise((r) => setTimeout(r, 200))
-    router.push('/dashboard')
+    // Full page reload to reinitialize auth store with fresh profile/business
+    window.location.href = '/dashboard'
   }
 
   return (

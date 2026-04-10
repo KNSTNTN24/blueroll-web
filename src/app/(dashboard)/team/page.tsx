@@ -14,8 +14,8 @@ import { cn } from '@/lib/utils'
 import { ROLE_LABELS, ROLE_COLORS, USER_ROLES, type UserRole } from '@/lib/constants'
 import { format } from 'date-fns'
 
-function generateToken(length = 32): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+function generateToken(length = 6): string {
+  const chars = '0123456789'
   const arr = new Uint8Array(length)
   crypto.getRandomValues(arr)
   return Array.from(arr, (b) => chars[b % chars.length]).join('')
@@ -81,7 +81,7 @@ export default function TeamPage() {
   const inviteMutation = useMutation({
     mutationFn: async () => {
       if (!business?.id || !profile?.id) throw new Error('No business')
-      const token = generateToken(32)
+      const token = generateToken(6)
       const expiresAt = new Date()
       expiresAt.setDate(expiresAt.getDate() + 7)
 

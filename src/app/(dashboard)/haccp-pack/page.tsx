@@ -11,8 +11,9 @@ import { toast } from 'sonner'
 import {
   Shield, Sparkles, Download, CheckCircle2, AlertTriangle, Clock,
   ChevronDown, ChevronUp, FileText, Upload, Trophy, Star, Zap,
-  X, Info,
+  X, Info, Eye, Link2,
 } from 'lucide-react'
+import { DocumentPickerModal, type PickedDocument } from '@/components/shared/document-picker-modal'
 
 // ═══════════════════════════════════════════════════════════════
 // Types
@@ -1116,6 +1117,45 @@ export default function HaccpPackPage() {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// File field helpers
+// ═══════════════════════════════════════════════════════════════
+
+function parseFileRef(raw: string | undefined): PickedDocument | null {
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw)
+    if (parsed?.id && parsed?.title) return parsed
+  } catch {
+    // Old placeholder format — treat as unknown
+  }
+  return null
+}
+
+function serializeFileRef(doc: PickedDocument): string {
+  return JSON.stringify({ id: doc.id, title: doc.title })
+}
+
+async function viewDocument(docId: string) {
+  const { data: doc, error } = await supabase
+    .from('documents')
+    .select('file_url')
+    .eq('id', docId)
+    .single()
+  if (error || !doc?.file_url) {
+    toast.error('Document not found')
+    return
+  }
+  const { data: signed, error: urlError } = await supabase.storage
+    .from('documents')
+    .createSignedUrl(doc.file_url, 3600)
+  if (urlError || !signed) {
+    toast.error('Failed to generate link')
+    return
+  }
+  window.open(signed.signedUrl, '_blank')
+}
+
+// ═══════════════════════════════════════════════════════════════
 // Field Renderer
 // ═══════════════════════════════════════════════════════════════
 
@@ -1227,43 +1267,16 @@ function FieldRenderer({
         </div>
       )
 
-    case 'file':
+    case 'file': {
+      const fileRef = parseFileRef(data.files[field.id])
       return (
-        <div className="space-y-1.5">
-          <label className="text-[13px] font-medium">{field.label}</label>
-          {data.files[field.id] ? (
-            <div className="flex items-center gap-2 rounded-md border border-border bg-gray-50 px-3 py-2">
-              <FileText className="h-4 w-4 text-muted-foreground" />
-              <span className="flex-1 truncate text-[13px]">{data.files[field.id]}</span>
-              <button
-                onClick={() => onUpdate(field.id, 'file', '')}
-                className="text-muted-foreground hover:text-foreground"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={() => {
-                // In production, this would open a file picker / connect to documents
-                const ref = `file_${field.id}_${Date.now()}`
-                onUpdate(field.id, 'file', ref)
-                toast.success('File reference saved')
-              }}
-              className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border py-3 text-[13px] text-muted-foreground hover:border-gray-400 hover:text-foreground"
-            >
-              <Upload className="h-4 w-4" />
-              Upload or link document
-            </button>
-          )}
-          {field.autoSource && (
-            <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
-              <Info className="h-3 w-3" />
-              Source: {field.autoSource}
-            </p>
-          )}
-        </div>
+        <FileFieldRenderer
+          field={field}
+          fileRef={fileRef}
+          onUpdate={onUpdate}
+        />
       )
+    }
 
     case 'select':
       return (
@@ -1304,4 +1317,66 @@ function FieldRenderer({
     default:
       return null
   }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// File field with document picker (needs own state for modal)
+// ═══════════════════════════════════════════════════════════════
+
+function FileFieldRenderer({
+  field,
+  fileRef,
+  onUpdate,
+}: {
+  field: HaccpField
+  fileRef: PickedDocument | null
+  onUpdate: (fieldId: string, type: FieldType, value: any) => void
+}) {
+  const [pickerOpen, setPickerOpen] = useState(false)
+
+  return (
+    <div className="space-y-1.5">
+      <label className="text-[13px] font-medium">{field.label}</label>
+      {fileRef ? (
+        <div className="flex items-center gap-2 rounded-md border border-border bg-gray-50 px-3 py-2">
+          <FileText className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+          <span className="flex-1 truncate text-[13px] font-medium">{fileRef.title}</span>
+          <button
+            onClick={() => viewDocument(fileRef.id)}
+            className="text-emerald-600 hover:text-emerald-700"
+            title="View document"
+          >
+            <Eye className="h-3.5 w-3.5" />
+          </button>
+          <button
+            onClick={() => onUpdate(field.id, 'file', '')}
+            className="text-muted-foreground hover:text-foreground"
+            title="Remove"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={() => setPickerOpen(true)}
+          className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border py-3 text-[13px] text-muted-foreground hover:border-emerald-300 hover:text-foreground transition-colors"
+        >
+          <Link2 className="h-4 w-4" />
+          Choose or upload document
+        </button>
+      )}
+      {field.autoSource && (
+        <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
+          <Info className="h-3 w-3" />
+          Source: {field.autoSource}
+        </p>
+      )}
+      <DocumentPickerModal
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        onSelect={(doc) => onUpdate(field.id, 'file', serializeFileRef(doc))}
+        label={field.label}
+      />
+    </div>
+  )
 }
