@@ -18,6 +18,7 @@ import {
   EU_ALLERGENS,
   ALLERGEN_LABELS,
 } from '@/lib/constants'
+import { HACCP_RECIPE_METHODS } from '@/lib/haccp-methods'
 
 type TabId = 'text' | 'pdf' | 'photo'
 
@@ -43,6 +44,7 @@ interface ParsedRecipe {
   reheating_instructions: string
   hot_holding_required: boolean
   extra_care_flags: string[]
+  haccp_methods: string[]
   ingredients: ParsedIngredient[]
 }
 
@@ -61,6 +63,7 @@ const emptyParsed: ParsedRecipe = {
   reheating_instructions: '',
   hot_holding_required: false,
   extra_care_flags: [],
+  haccp_methods: [],
   ingredients: [],
 }
 
@@ -139,6 +142,7 @@ export default function ImportRecipePage() {
         reheating_instructions: r.reheatingInstructions ?? r.reheating_instructions ?? '',
         hot_holding_required: r.hotHoldingRequired ?? r.hot_holding_required ?? false,
         extra_care_flags: r.extraCareFlags ?? r.extra_care_flags ?? [],
+        haccp_methods: [],
         ingredients: (r.ingredients ?? []).map((i: any) => ({
           name: i.name ?? '',
           quantity: i.quantity?.toString() ?? '',
@@ -243,6 +247,7 @@ export default function ImportRecipePage() {
           reheating_instructions: parsed.reheating_instructions.trim() || null,
           hot_holding_required: parsed.hot_holding_required,
           extra_care_flags: parsed.extra_care_flags,
+          haccp_methods: parsed.haccp_methods,
           active: true,
         })
         .select('id')
@@ -267,6 +272,7 @@ export default function ImportRecipePage() {
 
       toast.success('Recipe saved')
       queryClient.invalidateQueries({ queryKey: ['recipes'] })
+      queryClient.invalidateQueries({ queryKey: ['haccp-recipes'] })
       router.push(`/recipes/${recipe.id}`)
     } catch (err: any) {
       toast.error(err.message || 'Failed to save recipe')
@@ -497,6 +503,46 @@ export default function ImportRecipePage() {
             </div>
           </Section>
 
+          {/* HACCP Control Methods */}
+          <Section title="HACCP Control Methods">
+            <p className="mb-2 text-[12px] text-muted-foreground">
+              Select all FSA SFBB control methods that apply to this recipe. Used to auto-fill your HACCP Pack.
+            </p>
+            <div className="grid gap-4 sm:grid-cols-2">
+              {(['Chilling', 'Cooking'] as const).map((section) => (
+                <div key={section}>
+                  <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{section}</p>
+                  <div className="space-y-1.5">
+                    {HACCP_RECIPE_METHODS.filter((m) => m.section === section).map((m) => {
+                      const checked = parsed.haccp_methods.includes(m.id)
+                      return (
+                        <label key={m.id} className="flex cursor-pointer items-start gap-2 rounded-md border border-border bg-background px-2.5 py-1.5 hover:border-emerald-300">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) =>
+                              updateParsed(
+                                'haccp_methods',
+                                e.target.checked
+                                  ? [...parsed.haccp_methods, m.id]
+                                  : parsed.haccp_methods.filter((x: string) => x !== m.id),
+                              )
+                            }
+                            className="mt-0.5 h-4 w-4 rounded border-border accent-emerald-600"
+                          />
+                          <div className="min-w-0">
+                            <div className="text-[13px] font-medium text-foreground">{m.label}</div>
+                            <div className="text-[11px] text-muted-foreground">{m.description}</div>
+                          </div>
+                        </label>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Section>
+
           {/* Safety */}
           <Section title="Safety & Storage">
             <Field label="Chilling Method">
@@ -531,6 +577,53 @@ export default function ImportRecipePage() {
                 className="w-full rounded-md border border-border bg-background px-3 py-2 text-[13px] text-foreground outline-none resize-none"
               />
             </Field>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="hotHolding"
+                checked={parsed.hot_holding_required}
+                onChange={(e) => updateParsed('hot_holding_required', e.target.checked)}
+                className="h-4 w-4 rounded border-border accent-emerald-600"
+              />
+              <label htmlFor="hotHolding" className="text-[13px] text-foreground">
+                Hot holding required
+              </label>
+            </div>
+          </Section>
+
+          {/* Extra Care Flags */}
+          <Section title="Extra Care Flags">
+            <div className="flex flex-wrap gap-2">
+              {[
+                { value: 'eggs', label: 'Eggs' },
+                { value: 'rice', label: 'Rice' },
+                { value: 'pulses', label: 'Pulses' },
+                { value: 'shellfish', label: 'Shellfish' },
+              ].map((opt) => {
+                const selected = parsed.extra_care_flags.includes(opt.value)
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() =>
+                      updateParsed(
+                        'extra_care_flags',
+                        selected
+                          ? parsed.extra_care_flags.filter((f: string) => f !== opt.value)
+                          : [...parsed.extra_care_flags, opt.value],
+                      )
+                    }
+                    className={`inline-flex items-center rounded-full px-3 py-1 text-[12px] font-medium border transition-colors ${
+                      selected
+                        ? 'bg-amber-50 text-amber-700 border-amber-300'
+                        : 'bg-muted/50 text-muted-foreground border-border hover:border-amber-200'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                )
+              })}
+            </div>
           </Section>
 
           <div className="flex items-center gap-3 pt-2">

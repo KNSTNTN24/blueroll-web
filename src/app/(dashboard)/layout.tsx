@@ -8,15 +8,23 @@ import { Topbar } from '@/components/layout/topbar'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
-  const { user, isLoading } = useAuth()
+  const { user, profile, business, isLoading } = useAuth()
   const [collapsed, setCollapsed] = useState(false)
 
   useEffect(() => {
     if (isLoading) return
-    if (!user) router.replace('/onboarding')
-  }, [isLoading, user, router])
+    if (!user) {
+      router.replace('/onboarding')
+      return
+    }
+    // Profile exists but no business → onboarding not finished
+    if (profile && !profile.business_id) {
+      router.replace('/onboarding')
+    }
+  }, [isLoading, user, profile, business, router])
 
-  if (isLoading) return (
+  // Show spinner while auth/profile/business are loading
+  if (isLoading || (user && !business)) return (
     <div className="flex h-screen items-center justify-center bg-background">
       <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
     </div>

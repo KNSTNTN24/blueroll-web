@@ -29,7 +29,8 @@ export default function DocumentUploadPage() {
       if (!business?.id || !profile?.id || !file) throw new Error('Missing data')
 
       const timestamp = Date.now()
-      const filePath = `${business.id}/${timestamp}_${file.name}`
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+      const filePath = `${business.id}/${timestamp}_${safeName}`
 
       const { error: uploadError } = await supabase.storage
         .from('documents')

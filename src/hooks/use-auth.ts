@@ -6,6 +6,9 @@ import { useAuthStore } from '@/stores/auth-store'
 
 async function loadProfileAndBusiness(userId: string, retry = 0): Promise<void> {
   const store = useAuthStore.getState()
+  const MAX_RETRIES = 5
+  const BACKOFF_MS = 500
+
   try {
     const { data: profile, error } = await supabase
       .from('profiles')
@@ -15,31 +18,41 @@ async function loadProfileAndBusiness(userId: string, retry = 0): Promise<void> 
 
     if (error) throw error
 
-    if (!profile) {
-      // Retry up to 3 times with backoff — profile may be in-flight during signup
-      if (retry < 3) {
-        await new Promise((r) => setTimeout(r, 400 * (retry + 1)))
+    if (!profile || !profile.business_id) {
+      // Profile missing or business_id not set yet (onboarding in progress).
+      // Retry with backoff — the signup flow may still be writing.
+      if (retry < MAX_RETRIES) {
+        await new Promise((r) => setTimeout(r, BACKOFF_MS * (retry + 1)))
         return loadProfileAndBusiness(userId, retry + 1)
       }
-      store.setProfile(null)
+      // Give up — set whatever we have (profile without business is valid for onboarding redirect)
+      if (profile) store.setProfile(profile)
+      else store.setProfile(null)
       store.setBusiness(null)
       return
     }
 
     store.setProfile(profile)
 
-    if (profile.business_id) {
-      const { data: business } = await supabase
-        .from('businesses')
-        .select('*')
-        .eq('id', profile.business_id)
-        .maybeSingle()
-      if (business) store.setBusiness(business)
+    const { data: business } = await supabase
+      .from('businesses')
+      .select('*')
+      .eq('id', profile.business_id)
+      .maybeSingle()
+
+    if (business) {
+      store.setBusiness(business)
+    } else if (retry < MAX_RETRIES) {
+      // Business row might not be committed yet
+      await new Promise((r) => setTimeout(r, BACKOFF_MS * (retry + 1)))
+      return loadProfileAndBusiness(userId, retry + 1)
+    } else {
+      store.setBusiness(null)
     }
   } catch (e) {
     console.error('[useAuth] loadProfileAndBusiness error:', e)
-    if (retry < 2) {
-      await new Promise((r) => setTimeout(r, 400 * (retry + 1)))
+    if (retry < MAX_RETRIES) {
+      await new Promise((r) => setTimeout(r, BACKOFF_MS * (retry + 1)))
       return loadProfileAndBusiness(userId, retry + 1)
     }
     store.setProfile(null)
@@ -55,7 +68,7 @@ export function useAuth() {
 
     const timeoutId = setTimeout(() => {
       if (mounted && store.isLoading) store.setLoading(false)
-    }, 2000)
+    }, 8000)
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
