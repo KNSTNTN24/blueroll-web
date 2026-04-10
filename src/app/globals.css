@@ -87,6 +87,12 @@
     @apply bg-background text-foreground antialiased;
     font-feature-settings: 'rlig' 1, 'calt' 1;
   }
+  /* Pointer cursor on all interactive elements */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  a {
+    cursor: pointer;
+  }
 }
 
 .tabular-nums, [data-slot='table'] td, [data-slot='metric'] {

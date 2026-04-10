@@ -16,7 +16,10 @@ function getInitials(name: string | null | undefined): string {
 
 export function Topbar() {
   const router = useRouter()
-  const { profile, business } = useAuthStore()
+  const { profile, business, user } = useAuthStore()
+  const displayName = profile?.full_name || user?.email?.split('@')[0] || 'User'
+  const displayEmail = profile?.email || user?.email || ''
+  const businessName = business?.name || 'My Business'
   const [commandOpen, setCommandOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -48,7 +51,7 @@ export function Topbar() {
       <header className="flex h-16 shrink-0 items-center justify-between border-b border-border bg-card px-5">
         {/* Left */}
         <div className="flex items-center gap-2.5 shrink-0">
-          <h1 className="text-[13px] font-semibold text-foreground">{business?.name ?? 'My Business'}</h1>
+          <h1 className="text-[13px] font-semibold text-foreground">{businessName}</h1>
           {business?.fsa_rating && (
             <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
               {business.fsa_rating}/5
@@ -77,17 +80,17 @@ export function Topbar() {
               className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[13px] transition-colors hover:bg-muted"
             >
               <Avatar className="h-7 w-7">
-                <AvatarFallback className="bg-primary text-[10px] font-bold text-primary-foreground">{getInitials(profile?.full_name)}</AvatarFallback>
+                <AvatarFallback className="bg-primary text-[10px] font-bold text-primary-foreground">{getInitials(displayName)}</AvatarFallback>
               </Avatar>
-              <span className="hidden font-medium text-foreground sm:inline">{profile?.full_name ?? 'User'}</span>
+              <span className="hidden font-medium text-foreground sm:inline">{displayName}</span>
               <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
             </button>
 
             {menuOpen && (
               <div className="absolute right-0 top-full mt-2 w-56 overflow-hidden rounded-xl border border-border bg-card shadow-lg z-50">
                 <div className="border-b border-border px-3 py-2.5">
-                  <p className="text-[13px] font-semibold text-foreground truncate">{profile?.full_name ?? 'User'}</p>
-                  <p className="text-[11px] text-muted-foreground truncate">{profile?.email ?? ''}</p>
+                  <p className="text-[13px] font-semibold text-foreground truncate">{displayName}</p>
+                  <p className="text-[11px] text-muted-foreground truncate">{displayEmail}</p>
                 </div>
                 <button
                   onClick={() => { setMenuOpen(false); router.push('/settings') }}
