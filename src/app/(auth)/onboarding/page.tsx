@@ -460,14 +460,19 @@ export default function OnboardingPage() {
         })
         if (setupError) throw setupError
 
-        try {
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('business_id')
-            .eq('id', (await supabase.auth.getUser()).data.user!.id)
-            .single()
-          if (profile?.business_id) await seedDefaultChecklists(profile.business_id)
-        } catch { /* Non-critical */ }
+        // Fire-and-forget: seed checklists in background, don't block user
+        void (async () => {
+          try {
+            const { data: { user } } = await supabase.auth.getUser()
+            if (!user) return
+            const { data: profile } = await supabase
+              .from('profiles')
+              .select('business_id')
+              .eq('id', user.id)
+              .single()
+            if (profile?.business_id) await seedDefaultChecklists(profile.business_id)
+          } catch { /* Non-critical */ }
+        })()
       }
 
       setStep('card')
@@ -951,17 +956,25 @@ async function seedDefaultChecklists(businessId: string) {
     },
   ]
 
-  for (const t of templates) {
-    const { items, ...templateData } = t
-    const { data: tmpl } = await supabase
-      .from('checklist_templates')
-      .insert({ ...templateData, business_id: businessId, is_default: true, active: false })
-      .select('id')
-      .single()
+  // Batch insert all templates at once
+  const templateRows = templates.map(({ items, ...t }) => ({
+    ...t, business_id: businessId, is_default: true, active: false,
+  }))
+  const { data: inserted } = await supabase
+    .from('checklist_templates')
+    .insert(templateRows)
+    .select('id, name')
 
-    if (tmpl) {
-      const itemRows = items.map((item) => ({ ...item, template_id: tmpl.id }))
-      await supabase.from('checklist_template_items').insert(itemRows)
-    }
+  if (!inserted) return
+
+  // Batch insert all items across templates in a single call
+  const allItems = inserted.flatMap((tmpl) => {
+    const src = templates.find((t) => t.name === tmpl.name)
+    if (!src) return []
+    return src.items.map((item) => ({ ...item, template_id: tmpl.id }))
+  })
+
+  if (allItems.length > 0) {
+    await supabase.from('checklist_template_items').insert(allItems)
   }
 }
