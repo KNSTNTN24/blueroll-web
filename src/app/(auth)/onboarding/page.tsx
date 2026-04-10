@@ -229,8 +229,10 @@ function CardForm() {
 
     // TODO: send paymentMethod.id to backend to create subscription
     console.log('PaymentMethod created:', paymentMethod.id)
-    // Full page reload to reinitialize auth store with fresh profile/business
-    window.location.href = '/dashboard'
+    // Force Supabase to refresh + persist session to localStorage before navigating
+    try { await supabase.auth.refreshSession() } catch {}
+    await new Promise((r) => setTimeout(r, 300))
+    window.location.assign('/dashboard')
   }
 
   return (
@@ -366,13 +368,26 @@ export default function OnboardingPage() {
     setContent(BRAND_COPY[step])
   }, [step, setContent])
 
-  // Sign out any existing session when landing on onboarding
+  // If user is already logged in with a full profile, redirect to dashboard
+  // Otherwise stay on onboarding (covers case where signup created user but profile is incomplete)
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        supabase.auth.signOut()
-      }
-    }).catch(() => {})
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (cancelled || !session?.user) return
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('id, business_id')
+          .eq('id', session.user.id)
+          .maybeSingle()
+        if (cancelled) return
+        if (profile?.business_id) {
+          window.location.assign('/dashboard')
+        }
+      } catch { /* ignore */ }
+    })()
+    return () => { cancelled = true }
   }, [])
 
   // State
