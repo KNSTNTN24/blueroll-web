@@ -4,16 +4,23 @@ import { useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 
-async function loadProfileAndBusiness(userId: string) {
+async function loadProfileAndBusiness(userId: string, retry = 0): Promise<void> {
   const store = useAuthStore.getState()
   try {
-    const { data: profile } = await supabase
+    const { data: profile, error } = await supabase
       .from('profiles')
       .select('*')
       .eq('id', userId)
-      .single()
+      .maybeSingle()
+
+    if (error) throw error
 
     if (!profile) {
+      // Retry up to 3 times with backoff — profile may be in-flight during signup
+      if (retry < 3) {
+        await new Promise((r) => setTimeout(r, 400 * (retry + 1)))
+        return loadProfileAndBusiness(userId, retry + 1)
+      }
       store.setProfile(null)
       store.setBusiness(null)
       return
@@ -26,10 +33,15 @@ async function loadProfileAndBusiness(userId: string) {
         .from('businesses')
         .select('*')
         .eq('id', profile.business_id)
-        .single()
-      store.setBusiness(business)
+        .maybeSingle()
+      if (business) store.setBusiness(business)
     }
-  } catch {
+  } catch (e) {
+    console.error('[useAuth] loadProfileAndBusiness error:', e)
+    if (retry < 2) {
+      await new Promise((r) => setTimeout(r, 400 * (retry + 1)))
+      return loadProfileAndBusiness(userId, retry + 1)
+    }
     store.setProfile(null)
     store.setBusiness(null)
   }
