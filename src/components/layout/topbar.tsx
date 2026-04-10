@@ -25,7 +25,17 @@ export function Topbar() {
   const [commandOpen, setCommandOpen] = useState(false)
 
   const handleSignOut = useCallback(() => {
-    supabase.auth.signOut().finally(() => { window.location.href = '/onboarding' })
+    // Clear local storage immediately, then sign out + redirect
+    try {
+      Object.keys(localStorage).forEach((k) => {
+        if (k.startsWith('sb-') || k.includes('supabase')) localStorage.removeItem(k)
+      })
+    } catch {}
+    supabase.auth.signOut().finally(() => {
+      window.location.href = '/onboarding'
+    })
+    // Fallback: if signOut hangs, redirect anyway after 500ms
+    setTimeout(() => { window.location.href = '/onboarding' }, 500)
   }, [])
 
   return (
@@ -75,6 +85,14 @@ export function Topbar() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+
+          <button
+            onClick={handleSignOut}
+            title="Sign out"
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-destructive"
+          >
+            <LogOut className="h-[18px] w-[18px]" strokeWidth={1.5} />
+          </button>
         </div>
       </header>
       <CommandPalette open={commandOpen} onOpenChange={setCommandOpen} />
