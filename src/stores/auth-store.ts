@@ -22,6 +22,7 @@ export interface Business {
   trial_ends_at: string | null
   haccp_auto_fill: boolean
   haccp_last_reviewed_at: string | null
+  equipment: string[]
   created_at: string
 }
 

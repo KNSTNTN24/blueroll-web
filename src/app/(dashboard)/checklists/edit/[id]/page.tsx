@@ -2,7 +2,7 @@
 
 import { use, useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useForm, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -51,6 +51,7 @@ const ITEM_TYPE_LABELS: Record<string, string> = {
 export default function EditChecklistPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const router = useRouter()
+  const queryClient = useQueryClient()
   const business = useAuthStore((s) => s.business)
   const [submitting, setSubmitting] = useState(false)
   const [loaded, setLoaded] = useState(false)
@@ -176,6 +177,9 @@ export default function EditChecklistPage({ params }: { params: Promise<{ id: st
       if (iErr) throw iErr
 
       toast.success('Template updated')
+      queryClient.invalidateQueries({ queryKey: ['all-checklists'] })
+      queryClient.invalidateQueries({ queryKey: ['my-checklists'] })
+      queryClient.invalidateQueries({ queryKey: ['checklist-template', id] })
       router.push('/checklists')
     } catch (err: any) {
       toast.error(err?.message ?? 'Failed to update template')

@@ -33,6 +33,24 @@ export const ROLE_COLORS: Record<UserRole, string> = {
 export const CHECKLIST_FREQUENCIES = ['daily', 'weekly', 'monthly', 'four_weekly', 'custom'] as const
 export const CHECKLIST_ITEM_TYPES = ['tick', 'temperature', 'text', 'yes_no', 'photo'] as const
 
+export const CHECKLIST_TYPES = [
+  { id: 'opening', label: 'Opening', icon: '🌅', description: 'Start-of-day checks' },
+  { id: 'closing', label: 'Closing', icon: '🌙', description: 'End-of-day checks' },
+  { id: 'temperature_log', label: 'Temperature Log', icon: '🌡️', description: 'Fridge & freezer temps' },
+  { id: 'cleaning', label: 'Cleaning', icon: '🧹', description: 'Cleaning schedule' },
+  { id: 'haccp_review', label: 'HACCP Review', icon: '📋', description: 'Periodic safety review' },
+  { id: 'custom', label: 'Custom', icon: '✏️', description: 'Describe your own' },
+] as const
+
+// ── Kitchen Equipment ──
+export const DEFAULT_EQUIPMENT = [
+  'Fridge', 'Fridge 2', 'Fridge 3', 'Walk-in fridge',
+  'Freezer', 'Freezer 2', 'Walk-in freezer',
+  'Deep fryer', 'Oven', 'Combi oven', 'Grill',
+  'Bain-marie', 'Blast chiller', 'Hot holding unit',
+  'Dishwasher', 'Ice machine', 'Probe thermometer',
+] as const
+
 // ── Recipe ──
 export const RECIPE_CATEGORIES = [
   'starter', 'main', 'dessert', 'side', 'sauce', 'drink', 'cocktail', 'beverage', 'other',

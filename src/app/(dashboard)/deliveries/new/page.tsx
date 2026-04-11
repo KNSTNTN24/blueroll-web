@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useRouter } from 'next/navigation'
@@ -15,6 +15,7 @@ export default function NewDeliveryPage() {
   const profile = useAuthStore((s) => s.profile)
   const business = useAuthStore((s) => s.business)
   const router = useRouter()
+  const queryClient = useQueryClient()
 
   const [supplierId, setSupplierId] = useState('')
   const [deliveredAt, setDeliveredAt] = useState(format(new Date(), "yyyy-MM-dd'T'HH:mm"))
@@ -53,6 +54,7 @@ export default function NewDeliveryPage() {
     },
     onSuccess: () => {
       toast.success('Delivery recorded')
+      queryClient.invalidateQueries({ queryKey: ['deliveries'] })
       router.push('/deliveries')
     },
     onError: (err: Error) => toast.error(err.message),
