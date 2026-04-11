@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useRouter } from 'next/navigation'
@@ -15,6 +15,7 @@ export default function DocumentUploadPage() {
   const profile = useAuthStore((s) => s.profile)
   const business = useAuthStore((s) => s.business)
   const router = useRouter()
+  const queryClient = useQueryClient()
   const fileRef = useRef<HTMLInputElement>(null)
 
   const [file, setFile] = useState<File | null>(null)
@@ -54,6 +55,7 @@ export default function DocumentUploadPage() {
     },
     onSuccess: () => {
       toast.success('Document uploaded')
+      queryClient.invalidateQueries({ queryKey: ['documents'] })
       router.push('/documents')
     },
     onError: (err: Error) => toast.error(err.message),

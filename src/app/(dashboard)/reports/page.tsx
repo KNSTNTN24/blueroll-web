@@ -6,8 +6,9 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { format, startOfMonth, endOfDay, parseISO } from 'date-fns'
 import {
-  FileBarChart, Printer, AlertTriangle, CheckCircle2, ClipboardList, Flag,
+  FileBarChart, Download, AlertTriangle, CheckCircle2, ClipboardList, Flag,
 } from 'lucide-react'
+import { toast } from 'sonner'
 import { PageHeader } from '@/components/layout/page-header'
 import { EmptyState } from '@/components/shared/empty-state'
 import { StatusBadge } from '@/components/shared/status-badge'
@@ -21,6 +22,7 @@ export default function ReportsPage() {
   const [dateFrom, setDateFrom] = useState(format(startOfMonth(now), 'yyyy-MM-dd'))
   const [dateTo, setDateTo] = useState(format(now, 'yyyy-MM-dd'))
   const [selectedTemplates, setSelectedTemplates] = useState<string[]>([])
+  const [exportMode, setExportMode] = useState<'detailed' | 'table'>('detailed')
 
   // Fetch templates for the filter
   const { data: templates = [] } = useQuery({
@@ -49,7 +51,7 @@ export default function ReportsPage() {
           *,
           template:checklist_templates (name),
           completed_by_profile:profiles!checklist_completions_completed_by_fkey (full_name),
-          responses:checklist_responses (value, notes, flagged, item:checklist_items (name))
+          responses:checklist_responses (value, notes, flagged, item:checklist_template_items (name, item_type, sort_order))
         `)
         .eq('business_id', business.id)
         .gte('completed_at', dateFrom)
@@ -90,16 +92,185 @@ export default function ReportsPage() {
     )
   }
 
-  function handlePrint() {
-    window.print()
+  function handleExportPDF() {
+    if (completions.length === 0) {
+      toast.error('No data to export')
+      return
+    }
+
+    const bizName = business?.name ?? 'Restaurant'
+    const periodLabel = `${format(parseISO(dateFrom), 'dd MMM yyyy')} — ${format(parseISO(dateTo), 'dd MMM yyyy')}`
+    const generated = format(new Date(), 'dd MMM yyyy HH:mm')
+
+    let html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Compliance Report — ${bizName}</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #111; font-size: 11px; padding: 24px; }
+  .header { text-align: center; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 2px solid #059669; }
+  .header h1 { font-size: 20px; color: #059669; margin-bottom: 4px; }
+  .header .period { font-size: 13px; color: #555; }
+  .header .generated { font-size: 10px; color: #999; margin-top: 4px; }
+  .summary { display: flex; gap: 16px; margin-bottom: 20px; }
+  .stat { flex: 1; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; text-align: center; }
+  .stat .val { font-size: 20px; font-weight: 700; }
+  .stat .lbl { font-size: 10px; color: #666; margin-top: 2px; }
+  .stat.green .val { color: #059669; }
+  .stat.red .val { color: #dc2626; }
+  .stat.blue .val { color: #2563eb; }
+  .checklist { margin-bottom: 16px; page-break-inside: avoid; }
+  .checklist-header { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px 6px 0 0; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; }
+  .checklist-header h3 { font-size: 13px; font-weight: 600; }
+  .checklist-meta { font-size: 10px; color: #666; }
+  .responses { border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 6px 6px; }
+  .response { display: flex; align-items: flex-start; padding: 6px 14px; border-bottom: 1px solid #f3f4f6; }
+  .response:last-child { border-bottom: none; }
+  .response .name { flex: 1; font-size: 11px; }
+  .response .value { width: 100px; text-align: center; font-size: 11px; font-weight: 500; }
+  .response .notes { flex: 1; font-size: 10px; color: #666; font-style: italic; }
+  .flagged { color: #dc2626; font-weight: 600; }
+  .pass { color: #059669; }
+  @media print { body { padding: 12px; } .checklist { page-break-inside: avoid; } }
+</style></head><body>`
+
+    // Header
+    html += `<div class="header">
+      <h1>${bizName} — Compliance Report</h1>
+      <div class="period">${periodLabel}</div>
+      <div class="generated">Generated ${generated}</div>
+    </div>`
+
+    // Summary
+    html += `<div class="summary">
+      <div class="stat blue"><div class="val">${summary.total}</div><div class="lbl">Completions</div></div>
+      <div class="stat green"><div class="val">${summary.totalItems}</div><div class="lbl">Total Items</div></div>
+      <div class="stat red"><div class="val">${summary.flaggedItems}</div><div class="lbl">Flagged</div></div>
+      <div class="stat ${summary.compliance >= 90 ? 'green' : 'red'}"><div class="val">${summary.compliance.toFixed(1)}%</div><div class="lbl">Compliance</div></div>
+    </div>`
+
+    if (exportMode === 'detailed') {
+      // ── Detailed mode: each completion as a separate block ──
+      completions.forEach((c: any) => {
+        const responses = (c.responses ?? []).slice().sort((a: any, b: any) => (a.item?.sort_order ?? 0) - (b.item?.sort_order ?? 0))
+        const flaggedCount = responses.filter((r: any) => r.flagged).length
+        const dateStr = format(parseISO(c.completed_at), 'dd MMM yyyy, HH:mm')
+        const by = c.completed_by_profile?.full_name ?? 'Unknown'
+
+        html += `<div class="checklist">
+          <div class="checklist-header">
+            <h3>${c.template?.name ?? 'Checklist'}</h3>
+            <div class="checklist-meta">${dateStr} · ${by}${flaggedCount > 0 ? ` · <span class="flagged">${flaggedCount} flagged</span>` : ''}</div>
+          </div>
+          <div class="responses">`
+
+        if (responses.length === 0) {
+          html += `<div class="response"><span class="name" style="color:#999">No responses recorded</span></div>`
+        } else {
+          responses.forEach((r: any) => {
+            const itemName = r.item?.name ?? 'Item'
+            const isFlagged = r.flagged
+            const valueClass = isFlagged ? 'flagged' : 'pass'
+            const displayValue = r.value === 'yes' ? '✓ Yes' : r.value === 'no' ? '✗ No' : r.value ?? '-'
+            html += `<div class="response">
+              <span class="name">${itemName}</span>
+              <span class="value ${valueClass}">${displayValue}</span>
+              <span class="notes">${r.notes ?? ''}</span>
+            </div>`
+          })
+        }
+
+        html += `</div></div>`
+      })
+    } else {
+      // ── Table mode: group by template, rows = items, columns = dates ──
+      // Group completions by template_id
+      const byTemplate = new Map<string, { name: string; completions: any[] }>()
+      completions.forEach((c: any) => {
+        const tid = c.template_id ?? 'unknown'
+        if (!byTemplate.has(tid)) {
+          byTemplate.set(tid, { name: c.template?.name ?? 'Checklist', completions: [] })
+        }
+        byTemplate.get(tid)!.completions.push(c)
+      })
+
+      byTemplate.forEach((group) => {
+        // Sort completions by date ascending for columns
+        const sorted = group.completions.slice().sort(
+          (a: any, b: any) => new Date(a.completed_at).getTime() - new Date(b.completed_at).getTime(),
+        )
+
+        // Collect all unique items across completions (by item name + sort_order)
+        const itemMap = new Map<string, { name: string; sortOrder: number }>()
+        sorted.forEach((c: any) => {
+          (c.responses ?? []).forEach((r: any) => {
+            if (r.item?.name && !itemMap.has(r.item.name)) {
+              itemMap.set(r.item.name, { name: r.item.name, sortOrder: r.item.sort_order ?? 999 })
+            }
+          })
+        })
+        const items = Array.from(itemMap.values()).sort((a, b) => a.sortOrder - b.sortOrder)
+
+        // Build response lookup: completionId → itemName → response
+        const lookup = new Map<string, Map<string, any>>()
+        sorted.forEach((c: any) => {
+          const resMap = new Map<string, any>()
+          ;(c.responses ?? []).forEach((r: any) => {
+            if (r.item?.name) resMap.set(r.item.name, r)
+          })
+          lookup.set(c.id, resMap)
+        })
+
+        html += `<div class="checklist" style="page-break-inside:auto;">
+          <h3 style="font-size:14px;font-weight:600;margin-bottom:8px;">${group.name}</h3>
+          <div style="overflow-x:auto;">
+          <table style="width:100%;border-collapse:collapse;font-size:10px;">
+            <thead>
+              <tr>
+                <th style="text-align:left;padding:6px 8px;border:1px solid #e5e7eb;background:#f9fafb;min-width:180px;font-size:10px;">Item</th>`
+
+        sorted.forEach((c: any) => {
+          const d = format(parseISO(c.completed_at), 'dd MMM')
+          const by = c.completed_by_profile?.full_name?.split(' ')[0] ?? ''
+          html += `<th style="text-align:center;padding:6px 4px;border:1px solid #e5e7eb;background:#f9fafb;min-width:60px;font-size:9px;white-space:nowrap;">${d}<br/><span style="font-weight:400;color:#999;">${by}</span></th>`
+        })
+
+        html += `</tr></thead><tbody>`
+
+        items.forEach((item) => {
+          html += `<tr><td style="padding:5px 8px;border:1px solid #e5e7eb;font-size:10px;">${item.name}</td>`
+          sorted.forEach((c: any) => {
+            const r = lookup.get(c.id)?.get(item.name)
+            if (!r) {
+              html += `<td style="text-align:center;padding:5px 4px;border:1px solid #e5e7eb;color:#ccc;">—</td>`
+            } else {
+              const val = r.value === 'yes' ? '✓' : r.value === 'no' ? '✗' : r.value ?? '—'
+              const bg = r.flagged ? '#fef2f2' : ''
+              const color = r.flagged ? '#dc2626' : r.value === 'yes' ? '#059669' : '#111'
+              const fw = r.flagged ? '700' : '500'
+              const title = r.notes ? ` title="${r.notes.replace(/"/g, '&quot;')}"` : ''
+              html += `<td style="text-align:center;padding:5px 4px;border:1px solid #e5e7eb;background:${bg};color:${color};font-weight:${fw};font-size:10px;"${title}>${val}</td>`
+            }
+          })
+          html += `</tr>`
+        })
+
+        html += `</tbody></table></div></div>`
+      })
+    }
+
+    html += `<div style="text-align:center;margin-top:20px;font-size:10px;color:#999;">
+      Blueroll · blueroll.app · ${completions.length} completions · ${summary.compliance.toFixed(1)}% compliance
+    </div></body></html>`
+
+    const w = window.open('', '_blank')
+    if (w) { w.document.write(html); w.document.close(); w.print() }
   }
 
   return (
     <div className="space-y-6">
       <PageHeader title="Reports" description="Checklist completion reports and compliance data">
-        <Button variant="outline" size="sm" onClick={handlePrint} className="gap-1.5">
-          <Printer className="h-3.5 w-3.5" />
-          Print / PDF
+        <Button variant="outline" size="sm" onClick={handleExportPDF} className="gap-1.5">
+          <Download className="h-3.5 w-3.5" />
+          Export PDF
         </Button>
       </PageHeader>
 
@@ -145,6 +316,27 @@ export default function ReportsPage() {
             {templates.length === 0 && (
               <span className="text-[12px] text-muted-foreground">No templates found</span>
             )}
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-[12px] font-medium text-muted-foreground">Export format</label>
+          <div className="flex gap-1 rounded-lg border border-border p-1 bg-muted/30">
+            {([
+              { id: 'detailed' as const, label: 'Detailed' },
+              { id: 'table' as const, label: 'Table' },
+            ]).map((m) => (
+              <button
+                key={m.id}
+                onClick={() => setExportMode(m.id)}
+                className={`rounded-md px-3 py-1.5 text-[12px] font-medium transition-colors ${
+                  exportMode === m.id
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {m.label}
+              </button>
+            ))}
           </div>
         </div>
       </div>
