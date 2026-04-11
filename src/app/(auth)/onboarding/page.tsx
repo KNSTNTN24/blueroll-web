@@ -405,7 +405,7 @@ export default function OnboardingPage() {
   const [signupLoading, setSignupLoading] = useState(false)
 
   const stepsForFlow = isJoinFlow
-    ? ['name', 'choice', 'invite', 'signup', 'card']
+    ? ['name', 'choice', 'invite', 'signup']
     : ['name', 'choice', 'postcode', 'select', 'rating', 'signup', 'card']
 
   const currentStepIndex = stepsForFlow.indexOf(step)
@@ -509,12 +509,25 @@ export default function OnboardingPage() {
         }
       } catch { /* Non-critical — dashboard will re-fetch */ }
 
+      // Join-flow users inherit the owner's subscription — skip paywall and
+      // go straight to the dashboard. New-business flow still needs the card step.
+      if (isJoinFlow) {
+        window.location.assign('/dashboard')
+        return
+      }
+
       setStep('card')
       setSignupLoading(false)
     } catch (err: unknown) {
-      // If signup succeeded but business setup failed, still go to card
+      // If signup succeeded but a later step failed, fall forward:
+      //   - join flow → dashboard (subscription inherited from owner)
+      //   - new flow  → card step (still needs to pay)
       const session = await supabase.auth.getSession()
       if (session.data.session) {
+        if (isJoinFlow) {
+          window.location.assign('/dashboard')
+          return
+        }
         setStep('card')
         setSignupLoading(false)
         return
