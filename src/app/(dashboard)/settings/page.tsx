@@ -92,15 +92,30 @@ export default function SettingsPage() {
     mutationFn: async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) throw new Error('Not authenticated')
+      if (!business?.stripe_customer_id) throw new Error('No Stripe customer for this business')
 
       const res = await supabase.functions.invoke('manage-subscription', {
         headers: { Authorization: `Bearer ${session.access_token}` },
+        body: {
+          action: 'portal',
+          customerId: business.stripe_customer_id,
+          returnUrl: `${window.location.origin}/settings`,
+        },
       })
-      if (res.error) throw res.error
-      return res.data as { url: string }
+      if (res.error) {
+        const ctx = (res.error as { context?: Response }).context
+        if (ctx && typeof ctx.json === 'function') {
+          try {
+            const detail = await ctx.json()
+            if (detail?.error) throw new Error(detail.error)
+          } catch {}
+        }
+        throw res.error
+      }
+      return res.data as { portalUrl: string }
     },
     onSuccess: (data) => {
-      window.open(data.url, '_blank')
+      window.location.assign(data.portalUrl)
     },
     onError: (err: Error) => toast.error(err.message || 'Failed to open subscription portal'),
   })

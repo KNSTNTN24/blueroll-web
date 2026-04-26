@@ -214,24 +214,80 @@ function CardForm() {
     setError('')
 
     const card = elements.getElement(CardElement)
-    if (!card) return
+    if (!card) {
+      setLoading(false)
+      return
+    }
 
     const { error: stripeError, paymentMethod } = await stripe.createPaymentMethod({
       type: 'card',
       card,
     })
 
-    if (stripeError) {
-      setError(stripeError.message ?? 'Something went wrong')
+    if (stripeError || !paymentMethod) {
+      setError(stripeError?.message ?? 'Card validation failed')
       setLoading(false)
       return
     }
 
-    // TODO: send paymentMethod.id to backend to create subscription
-    console.log('PaymentMethod created:', paymentMethod.id)
-    // Force Supabase to refresh + persist session to localStorage before navigating
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session?.user) {
+      setError('Session expired. Please sign in again.')
+      setLoading(false)
+      return
+    }
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('business_id')
+      .eq('id', session.user.id)
+      .single()
+
+    if (!profile?.business_id) {
+      setError('No business found. Please restart onboarding.')
+      setLoading(false)
+      return
+    }
+
+    const { data: result, error: fnError } = await supabase.functions.invoke(
+      'create-subscription',
+      {
+        body: {
+          userId: session.user.id,
+          email: session.user.email,
+          businessId: profile.business_id,
+          paymentMethodId: paymentMethod.id,
+        },
+      },
+    )
+
+    if (fnError || result?.error) {
+      let detail: Record<string, unknown> | null = null
+      const ctx = (fnError as { context?: Response } | null)?.context
+      if (ctx && typeof ctx.json === 'function') {
+        try { detail = await ctx.json() } catch {}
+      }
+      console.error('create-subscription failed:', { fnError, result, detail })
+      const msg =
+        result?.error ??
+        (detail && typeof detail.error === 'string' ? detail.error : null) ??
+        fnError?.message ??
+        'Subscription failed. Please try again.'
+      setError(msg)
+      setLoading(false)
+      return
+    }
+
+    if (result?.requires_action && result?.client_secret) {
+      const { error: scaError } = await stripe.confirmCardSetup(result.client_secret)
+      if (scaError) {
+        setError(scaError.message ?? 'Card authentication failed.')
+        setLoading(false)
+        return
+      }
+    }
+
     try { await supabase.auth.refreshSession() } catch {}
-    await new Promise((r) => setTimeout(r, 300))
     window.location.assign('/dashboard')
   }
 
