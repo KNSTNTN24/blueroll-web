@@ -975,18 +975,17 @@ export default function HaccpPackPage() {
         </span>
       </div>
 
-      {/* Sentinel to detect sticky-stuck state */}
-      <div ref={sentinelRef} aria-hidden className="h-px" />
-
-      {/* \u2500\u2500 Section tabs (sticky) \u2500\u2500 */}
-      <div
-        className={cn(
-          'sticky top-0 z-20 -mx-6 px-6 py-2.5 transition-[background-color,border-color,backdrop-filter] duration-200',
-          tabsStuck
-            ? 'border-b border-border/60 bg-background/75 backdrop-blur-md'
-            : 'border-b border-transparent',
-        )}
-      >
+      {/* Sticky tabs + sentinel for stuck detection */}
+      <div className="-mt-2">
+        <div ref={sentinelRef} aria-hidden className="h-px" />
+        <div
+          className={cn(
+            'sticky top-0 z-20 -mx-6 px-6 py-2 transition-[background-color,border-color,backdrop-filter] duration-200',
+            tabsStuck
+              ? 'border-b border-border/60 bg-background/75 backdrop-blur-md'
+              : 'border-b border-transparent',
+          )}
+        >
         <div
           ref={tabsRef}
           className="relative flex gap-0.5 rounded-xl border border-border bg-card p-1 shadow-[0_1px_2px_rgba(24,24,27,0.04)]"
@@ -1044,6 +1043,7 @@ export default function HaccpPackPage() {
             </button>
           )
         })}
+        </div>
         </div>
       </div>
 
