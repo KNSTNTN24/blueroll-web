@@ -1,18 +1,13 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
-import { PageHeader } from '@/components/layout/page-header'
-import { HACCP_SECTIONS, HACCP_LEVELS } from '@/lib/constants'
+import { HACCP_SECTIONS } from '@/lib/constants'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
-import {
-  Shield, Sparkles, Download, CheckCircle2, AlertTriangle, Clock,
-  ChevronDown, ChevronUp, FileText, Upload, Trophy, Star, Zap,
-  X, Info, Eye, Link2,
-} from 'lucide-react'
+import { Download, ChevronDown, FileText, X, Eye, Link2 } from 'lucide-react'
 import { DocumentPickerModal, type PickedDocument } from '@/components/shared/document-picker-modal'
 
 // ═══════════════════════════════════════════════════════════════
@@ -323,22 +318,6 @@ function getSectionMethods(sectionId: SectionId) {
   return HACCP_METHODS.filter((m) => m.section === sectionId)
 }
 
-function getLevel(xp: number) {
-  let level = HACCP_LEVELS[0]
-  for (const l of HACCP_LEVELS) {
-    if (xp >= l.min) level = l
-    else break
-  }
-  return level
-}
-
-function getNextLevel(xp: number) {
-  for (const l of HACCP_LEVELS) {
-    if (xp < l.min) return l
-  }
-  return null
-}
-
 function isFieldFilled(
   field: HaccpField,
   data: HaccpPackRow,
@@ -423,9 +402,11 @@ export default function HaccpPackPage() {
 
   const [activeSection, setActiveSection] = useState<SectionId>('cross')
   const [expandedMethods, setExpandedMethods] = useState<Record<string, boolean>>({})
-  const [celebration, setCelebration] = useState<SectionId | null>(null)
-  const celebratedRef = useRef<Set<string>>(new Set())
+  const [tabsStuck, setTabsStuck] = useState(false)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const tabsRef = useRef<HTMLDivElement | null>(null)
+  const indicatorRef = useRef<HTMLSpanElement | null>(null)
+  const sentinelRef = useRef<HTMLDivElement | null>(null)
 
   const businessId = business?.id ?? ''
   const autoFillEnabled = business?.haccp_auto_fill ?? true
@@ -799,22 +780,6 @@ export default function HaccpPackPage() {
     [localData, autoData, autoFillEnabled],
   )
 
-  const currentLevel = getLevel(totalProgress.xp)
-  const nextLevel = getNextLevel(totalProgress.xp)
-
-  // ── Celebration effect ──
-  useEffect(() => {
-    for (const s of HACCP_SECTIONS) {
-      const sid = s.id as SectionId
-      if (sectionProgress[sid]?.pct === 100 && !celebratedRef.current.has(sid)) {
-        celebratedRef.current.add(sid)
-        setCelebration(sid)
-        setTimeout(() => setCelebration(null), 3000)
-        break
-      }
-    }
-  }, [sectionProgress])
-
   // ── 4-week review ──
   const reviewInfo = useMemo(() => {
     const lastReviewed = business?.haccp_last_reviewed_at
@@ -838,6 +803,41 @@ export default function HaccpPackPage() {
 
   const activeSectionInfo = HACCP_SECTIONS.find((s) => s.id === activeSection)!
   const activeMethods = getSectionMethods(activeSection)
+
+  // ── Tab sliding indicator ──
+  const moveIndicator = useCallback(() => {
+    const tabs = tabsRef.current
+    const ind = indicatorRef.current
+    if (!tabs || !ind) return
+    const active = tabs.querySelector<HTMLElement>('[data-tab][data-active="true"]')
+    if (!active) return
+    const tabsRect = tabs.getBoundingClientRect()
+    const rect = active.getBoundingClientRect()
+    ind.style.width = `${rect.width}px`
+    ind.style.transform = `translateX(${rect.left - tabsRect.left - 4}px)`
+  }, [])
+
+  useLayoutEffect(() => {
+    moveIndicator()
+  }, [activeSection, moveIndicator])
+
+  useEffect(() => {
+    const handler = () => moveIndicator()
+    window.addEventListener('resize', handler)
+    return () => window.removeEventListener('resize', handler)
+  }, [moveIndicator])
+
+  // ── Detect "stuck" state for sticky tabs ──
+  useEffect(() => {
+    const sentinel = sentinelRef.current
+    if (!sentinel) return
+    const observer = new IntersectionObserver(
+      ([entry]) => setTabsStuck(!entry.isIntersecting),
+      { threshold: 0 },
+    )
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [])
 
   function handleExportPDF() {
     let html = `<!DOCTYPE html><html><head><title>${business?.name ?? 'Blueroll'} — HACCP Pack</title>
@@ -863,14 +863,10 @@ export default function HaccpPackPage() {
     html += `<h1>${business?.name ?? ''} — HACCP Pack</h1>`
     html += `<div class="subtitle">Safer Food, Better Business · Generated ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</div>`
 
-    const sectionColors: Record<string, string> = {
-      cross: '#DC2626', cleaning: '#7C3AED', chilling: '#0891B2', cooking: '#EA580C', management: '#A21CAF',
-    }
-
     for (const section of HACCP_SECTIONS) {
       const methods = getSectionMethods(section.id as SectionId)
       const stats = sectionProgress[section.id as SectionId]
-      html += `<h2 style="background:${sectionColors[section.id] ?? '#333'}">${section.name} — ${stats.pct}% complete</h2>`
+      html += `<h2 style="background:#066E4F">${section.name} — ${stats.pct}% complete</h2>`
 
       for (const method of methods) {
         html += `<h3>${method.name}</h3>`
@@ -893,221 +889,261 @@ export default function HaccpPackPage() {
       }
     }
 
-    html += `<div class="footer">Generated by Blueroll · blueroll.app · ${totalProgress.xp} XP · Level ${currentLevel.level}: ${currentLevel.name}</div></body></html>`
+    html += `<div class="footer">Generated by Blueroll · blueroll.app · ${totalProgress.filled} of ${totalProgress.total} fields complete (${totalProgress.pct}%)</div></body></html>`
 
     const w = window.open('', '_blank')
     if (w) { w.document.write(html); w.document.close(); w.print() }
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 px-6 py-6">
-      {/* Celebration overlay */}
-      {celebration && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-          <div className="animate-in zoom-in-95 fade-in rounded-xl bg-white p-10 text-center shadow-lg">
-            <Trophy className="mx-auto mb-4 h-12 w-12 text-amber-500" />
-            <h2 className="text-xl font-semibold tracking-tight">
-              {HACCP_SECTIONS.find((s) => s.id === celebration)?.name} Complete!
-            </h2>
-            <p className="mt-2 text-[13px] text-muted-foreground">
-              Amazing work. This section is 100% done.
-            </p>
-            <button
-              onClick={() => setCelebration(null)}
-              className="mt-4 rounded-md bg-emerald-600 px-4 py-2 text-[12px] font-medium text-white hover:bg-emerald-700"
-            >
-              Continue
-            </button>
-          </div>
+    <div className="space-y-6">
+      {/* \u2500\u2500 Page header \u2500\u2500 */}
+      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-border pb-5">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">HACCP Pack</h1>
+          <p className="mt-1.5 text-[13px] text-muted-foreground">
+            Safer Food, Better Business documentation for EHO inspections.
+          </p>
         </div>
-      )}
 
-      {/* Header */}
-      <PageHeader title="HACCP Pack" description="Safer Food, Better Business documentation for EHO inspections">
-        <button
-          onClick={handleExportPDF}
-          className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-[12px] font-medium text-muted-foreground hover:bg-accent/50"
-        >
-          <Download className="h-3.5 w-3.5" />
-          Export
-        </button>
-      </PageHeader>
-
-      {/* 4-Week Review Banner */}
-      <div
-        className={cn(
-          'flex items-center gap-2 rounded-lg border px-4 py-3 text-[13px]',
-          reviewInfo.overdue
-            ? 'border-red-200 bg-red-50 text-red-700'
-            : 'border-emerald-200 bg-emerald-50 text-emerald-700',
-        )}
-      >
-        {reviewInfo.overdue ? (
-          <AlertTriangle className="h-4 w-4 flex-shrink-0" />
-        ) : (
-          <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
-        )}
-        <span className="font-medium">{reviewInfo.label}</span>
-        <span className="ml-auto text-[12px] opacity-70">SFBB requires a 4-weekly review</span>
-      </div>
-
-      {/* Auto-fill toggle + Level display */}
-      <div className="flex items-center justify-between gap-4">
-        <button
-          onClick={() => toggleAutoFill.mutate()}
-          disabled={toggleAutoFill.isPending}
-          className={cn(
-            'flex items-center gap-2 rounded-lg border px-4 py-2.5 text-[13px] font-medium transition-colors',
-            autoFillEnabled
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-              : 'border-border bg-white text-muted-foreground',
-          )}
-        >
-          <Sparkles className="h-4 w-4" />
-          Auto-fill from Blueroll data
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Review status pill */}
           <span
             className={cn(
-              'ml-1 inline-flex h-5 w-9 items-center rounded-full transition-colors',
-              autoFillEnabled ? 'bg-emerald-600' : 'bg-gray-200',
+              'inline-flex h-8 items-center gap-2 rounded-full border px-3 text-[12px] font-medium transition-colors',
+              reviewInfo.overdue
+                ? 'border-rose-200 bg-rose-50 text-rose-700'
+                : 'border-border bg-card text-foreground',
             )}
           >
             <span
               className={cn(
-                'inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform',
-                autoFillEnabled ? 'translate-x-[18px]' : 'translate-x-[3px]',
+                'h-1.5 w-1.5 rounded-full',
+                reviewInfo.overdue ? 'bg-rose-500' : 'bg-emerald-600',
               )}
             />
+            {reviewInfo.label}
           </span>
-        </button>
 
-        <div className="flex items-center gap-3 text-[13px]">
-          <div className="flex items-center gap-1.5">
-            <Star className="h-4 w-4 text-amber-500" />
-            <span className="font-medium">{currentLevel.name}</span>
-          </div>
-          <span className="text-muted-foreground">{totalProgress.xp} XP</span>
-          {nextLevel && (
-            <span className="text-[12px] text-muted-foreground">
-              ({nextLevel.min - totalProgress.xp} to {nextLevel.name})
+          {/* Auto-fill switch */}
+          <button
+            onClick={() => toggleAutoFill.mutate()}
+            disabled={toggleAutoFill.isPending}
+            className="flex h-8 items-center gap-2 rounded-full border border-border bg-card pl-3.5 pr-2 text-[12px] font-medium text-foreground transition-colors hover:bg-accent/40 disabled:opacity-60"
+          >
+            <span>Auto-fill</span>
+            <span
+              className={cn(
+                'relative block h-4 w-7 shrink-0 rounded-full transition-colors',
+                autoFillEnabled ? 'bg-emerald-600' : 'bg-zinc-300',
+              )}
+            >
+              <span
+                className={cn(
+                  'absolute top-0.5 block h-3 w-3 rounded-full bg-white shadow-sm transition-[left] duration-200',
+                  autoFillEnabled ? 'left-3.5' : 'left-0.5',
+                )}
+              />
             </span>
-          )}
+          </button>
+
+          {/* Export PDF */}
+          <button
+            onClick={handleExportPDF}
+            className="inline-flex h-8 items-center gap-2 rounded-lg bg-foreground px-3.5 text-[12px] font-medium text-background transition-colors hover:bg-foreground/90"
+          >
+            <Download className="h-3.5 w-3.5" strokeWidth={1.7} />
+            Export PDF
+          </button>
         </div>
       </div>
 
-      {/* Total progress */}
-      <div className="rounded-lg border border-border bg-white p-4">
-        <div className="mb-2 flex items-center justify-between text-[13px]">
-          <span className="font-medium">
-            Total Progress: {totalProgress.filled}/{totalProgress.total} fields
+      {/* \u2500\u2500 Progress strip \u2500\u2500 */}
+      <div className="-mt-1 flex items-center gap-4">
+        <span className="whitespace-nowrap text-[12px] text-muted-foreground">
+          <b className="font-semibold tabular-nums text-foreground">{totalProgress.filled}</b> of{' '}
+          <b className="font-semibold tabular-nums text-foreground">{totalProgress.total}</b> fields complete
+          <span className="ml-1.5 font-semibold tabular-nums text-emerald-600">
+            {'\u00b7'} {totalProgress.pct}%
           </span>
-          <span className="font-semibold tabular-nums">{totalProgress.pct}%</span>
-        </div>
-        <div className="h-2 overflow-hidden rounded-full bg-gray-100">
-          <div
-            className="h-full rounded-full bg-emerald-600 transition-all duration-500"
+        </span>
+        <span className="relative h-1 flex-1 overflow-hidden rounded-full bg-accent">
+          <span
+            className="absolute inset-y-0 left-0 rounded-full bg-emerald-600 transition-[width] duration-500"
             style={{ width: `${totalProgress.pct}%` }}
           />
-        </div>
+        </span>
       </div>
 
-      {/* Section tabs */}
-      <div className="flex gap-1 overflow-x-auto rounded-lg border border-border bg-white p-1">
+      {/* Sentinel to detect sticky-stuck state */}
+      <div ref={sentinelRef} aria-hidden className="h-px" />
+
+      {/* \u2500\u2500 Section tabs (sticky) \u2500\u2500 */}
+      <div
+        className={cn(
+          'sticky top-0 z-20 -mx-6 px-6 py-2.5 transition-[background-color,border-color,backdrop-filter] duration-200',
+          tabsStuck
+            ? 'border-b border-border/60 bg-background/75 backdrop-blur-md'
+            : 'border-b border-transparent',
+        )}
+      >
+        <div
+          ref={tabsRef}
+          className="relative flex gap-0.5 rounded-xl border border-border bg-card p-1 shadow-[0_1px_2px_rgba(24,24,27,0.04)]"
+        >
+          <span
+            ref={indicatorRef}
+            aria-hidden
+            className="pointer-events-none absolute left-1 top-1 z-0 h-[calc(100%-8px)] rounded-lg bg-emerald-600 transition-[transform,width] duration-[380ms] will-change-[transform,width]"
+            style={{ transitionTimingFunction: 'cubic-bezier(.28,.85,.34,1)' }}
+          />
         {HACCP_SECTIONS.map((section) => {
           const sp = sectionProgress[section.id as SectionId]
           const isActive = section.id === activeSection
           return (
             <button
               key={section.id}
+              data-tab
+              data-active={isActive ? 'true' : undefined}
               onClick={() => setActiveSection(section.id as SectionId)}
               className={cn(
-                'flex flex-1 flex-col items-center gap-1 rounded-md px-3 py-2.5 text-[12px] font-medium transition-colors',
-                isActive ? 'text-white' : 'text-muted-foreground hover:bg-accent/50',
+                'relative z-10 flex flex-1 flex-col items-start gap-1 rounded-xl px-3.5 py-2.5 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600/40',
+                !isActive && 'hover:bg-white/60',
               )}
-              style={isActive ? { backgroundColor: section.color } : undefined}
             >
-              <span className="whitespace-nowrap">{section.shortName}</span>
-              <span className={cn('text-[10px] tabular-nums', isActive ? 'text-white/80' : 'text-muted-foreground')}>
-                {sp?.pct ?? 0}%
+              <span
+                className={cn(
+                  'text-[12.5px] leading-tight tracking-tight transition-colors duration-200',
+                  isActive ? 'font-semibold text-white' : 'font-medium text-zinc-500',
+                )}
+              >
+                {section.name}
+              </span>
+              <span
+                className={cn(
+                  'inline-flex items-center gap-2 font-mono text-[10.5px] leading-none tabular-nums transition-colors',
+                  isActive ? 'text-emerald-50' : 'text-zinc-500',
+                )}
+              >
+                <span
+                  className={cn(
+                    'relative block h-[3px] w-9 overflow-hidden rounded-full',
+                    isActive ? 'bg-emerald-800/40' : 'bg-zinc-300',
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'absolute inset-y-0 left-0 rounded-full',
+                      isActive ? 'bg-white' : 'bg-emerald-600',
+                    )}
+                    style={{ width: `${sp?.pct ?? 0}%` }}
+                  />
+                </span>
+                {sp?.filled ?? 0} / {sp?.total ?? 0}
               </span>
             </button>
           )
         })}
-      </div>
-
-      {/* Section progress bar */}
-      <div className="rounded-lg border border-border bg-white p-4">
-        <div className="mb-2 flex items-center justify-between text-[13px]">
-          <span className="font-medium" style={{ color: activeSectionInfo.color }}>
-            {activeSectionInfo.name}
-          </span>
-          <span className="tabular-nums text-muted-foreground">
-            {sectionProgress[activeSection]?.filled}/{sectionProgress[activeSection]?.total} \u2014{' '}
-            {sectionProgress[activeSection]?.pct}%
-          </span>
-        </div>
-        <div className="h-2 overflow-hidden rounded-full bg-gray-100">
-          <div
-            className="h-full rounded-full transition-all duration-500"
-            style={{
-              width: `${sectionProgress[activeSection]?.pct ?? 0}%`,
-              backgroundColor: activeSectionInfo.color,
-            }}
-          />
         </div>
       </div>
 
-      {/* Methods */}
-      <div className="space-y-3">
-        {activeMethods.map((method) => {
-          const isExpanded = expandedMethods[method.id] !== false // default expanded
-          const methodFilled = method.fields.filter((f) => isFieldFilled(f, localData, autoData, autoFillEnabled)).length
+      {/* \u2500\u2500 Methods list \u2500\u2500 */}
+      <div className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
+        {activeMethods.map((method, idx) => {
+          const methodFilled = method.fields.filter((f) =>
+            isFieldFilled(f, localData, autoData, autoFillEnabled),
+          ).length
           const methodTotal = method.fields.length
           const methodPct = methodTotal > 0 ? Math.round((methodFilled / methodTotal) * 100) : 0
+          const isDone = methodPct === 100
+          const isExpanded = expandedMethods[method.id] === true
 
           return (
-            <div key={method.id} className="rounded-lg border border-border bg-white">
-              {/* Method header */}
+            <div key={method.id}>
               <button
                 onClick={() => toggleMethod(method.id)}
-                className="flex w-full items-center gap-3 px-4 py-3"
+                className="grid w-full grid-cols-[1fr_auto_auto] items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-zinc-50/60"
               >
-                <div
-                  className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-[11px] font-semibold text-white"
-                  style={{ backgroundColor: activeSectionInfo.color }}
-                >
-                  {methodPct === 100 ? (
-                    <CheckCircle2 className="h-4 w-4" />
+                <span className="inline-flex items-center gap-3.5">
+                  {isDone ? (
+                    <span className="flex h-[26px] w-[26px] items-center justify-center rounded-full bg-emerald-600">
+                      <svg
+                        viewBox="0 0 14 14"
+                        className="h-[15px] w-[15px] text-white"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.9"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M3 7 L5.6 9.6 L11 4.2" />
+                      </svg>
+                    </span>
                   ) : (
-                    <span>{methodPct}%</span>
+                    <span
+                      className="h-[26px] w-[26px] rounded-full"
+                      style={{
+                        background:
+                          methodPct > 0
+                            ? `conic-gradient(rgb(5 150 105) ${methodPct}%, rgb(212 212 216) 0)`
+                            : 'rgb(212 212 216)',
+                        WebkitMask: 'radial-gradient(circle, transparent 9px, #000 9.5px)',
+                        mask: 'radial-gradient(circle, transparent 9px, #000 9.5px)',
+                      }}
+                    />
                   )}
-                </div>
-                <span className="flex-1 text-left text-[13px] font-medium">{method.name}</span>
-                <span className="text-[12px] tabular-nums text-muted-foreground">
-                  {methodFilled}/{methodTotal}
+                  <span className="text-[14px] font-medium tracking-tight text-foreground">
+                    {method.name}
+                  </span>
                 </span>
-                {isExpanded ? (
-                  <ChevronUp className="h-4 w-4 text-muted-foreground" />
-                ) : (
-                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                )}
+
+                <span className="inline-flex items-center gap-2.5 font-mono text-[12px] tabular-nums text-muted-foreground">
+                  {methodFilled} of {methodTotal}
+                  <span className="block h-[3px] w-12 overflow-hidden rounded-full bg-zinc-200">
+                    <span
+                      className="block h-full rounded-full bg-emerald-600"
+                      style={{ width: `${methodPct}%` }}
+                    />
+                  </span>
+                </span>
+
+                <ChevronDown
+                  className={cn(
+                    'h-4 w-4 text-muted-foreground transition-transform duration-200',
+                    isExpanded && 'rotate-180',
+                  )}
+                  strokeWidth={1.7}
+                />
               </button>
 
-              {/* Method fields */}
-              {isExpanded && (
-                <div className="space-y-3 border-t border-border px-4 py-4">
-                  {method.fields.map((field) => (
-                    <FieldRenderer
-                      key={field.id}
-                      field={field}
-                      data={localData}
-                      autoData={autoData}
-                      autoFill={autoFillEnabled}
-                      accentColor={activeSectionInfo.color}
-                      onUpdate={updateField}
-                    />
-                  ))}
+              {/* Smooth grid-based accordion */}
+              <div
+                className="grid transition-[grid-template-rows] duration-[380ms]"
+                style={{
+                  transitionTimingFunction: 'cubic-bezier(.4,0,.2,1)',
+                  gridTemplateRows: isExpanded ? '1fr' : '0fr',
+                }}
+              >
+                <div className="min-h-0 overflow-hidden">
+                  <div
+                    className={cn(
+                      'space-y-2 border-t border-border bg-zinc-50/60 pb-6 pl-[56px] pr-[56px] pt-3 transition-[opacity,transform] duration-200 ease-out',
+                      isExpanded ? 'translate-y-0 opacity-100 delay-[80ms]' : '-translate-y-1 opacity-0',
+                    )}
+                  >
+                    {method.fields.map((field) => (
+                      <FieldRenderer
+                        key={field.id}
+                        field={field}
+                        data={localData}
+                        autoData={autoData}
+                        autoFill={autoFillEnabled}
+                        onUpdate={updateField}
+                      />
+                    ))}
+                  </div>
                 </div>
-              )}
+              </div>
             </div>
           )
         })}
@@ -1164,48 +1200,60 @@ function FieldRenderer({
   data,
   autoData,
   autoFill,
-  accentColor,
   onUpdate,
 }: {
   field: HaccpField
   data: HaccpPackRow
   autoData: Record<string, string>
   autoFill: boolean
-  accentColor: string
   onUpdate: (fieldId: string, type: FieldType, value: any) => void
 }) {
   const hasAutoValue = autoFill && !!field.autoSource && !!autoData[field.id]
   const isOverridden = data.overrides[field.id]
   const showAuto = hasAutoValue && !isOverridden
+  const isChecked = data.toggles[field.id] ?? false
 
   switch (field.type) {
     case 'toggle':
       return (
-        <label className="flex cursor-pointer items-start gap-3">
-          <span className="relative mt-0.5 flex-shrink-0">
-            <input
-              type="checkbox"
-              checked={data.toggles[field.id] ?? false}
-              onChange={(e) => onUpdate(field.id, 'toggle', e.target.checked)}
-              className="peer sr-only"
-            />
-            <span
-              className={cn(
-                'block h-[18px] w-[18px] rounded border-2 transition-colors',
-                data.toggles[field.id]
-                  ? 'border-transparent'
-                  : 'border-gray-300 bg-white',
-              )}
-              style={data.toggles[field.id] ? { backgroundColor: accentColor, borderColor: accentColor } : undefined}
+        <label className="flex cursor-pointer items-center gap-3 border-b border-border/40 py-3 last:border-b-0">
+          <input
+            type="checkbox"
+            checked={isChecked}
+            onChange={(e) => onUpdate(field.id, 'toggle', e.target.checked)}
+            className="peer sr-only"
+          />
+          <span
+            className={cn(
+              'relative inline-flex h-[22px] w-[22px] flex-shrink-0 items-center justify-center rounded-full border-[1.5px] bg-card transition-[background,border-color,transform] duration-200',
+              isChecked
+                ? 'border-emerald-600 bg-emerald-600 [animation:haccp-check-pop_.35s_cubic-bezier(.5,1.5,.4,1)]'
+                : 'border-zinc-300',
+            )}
+          >
+            <svg
+              viewBox="0 0 14 14"
+              className="h-[13px] w-[13px]"
+              fill="none"
+              stroke="white"
+              strokeWidth="1.9"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              style={{
+                strokeDasharray: 12,
+                strokeDashoffset: isChecked ? 0 : 12,
+                transition: 'stroke-dashoffset .32s .07s cubic-bezier(.6,.15,.3,1)',
+              }}
             >
-              {data.toggles[field.id] && (
-                <svg viewBox="0 0 14 14" className="h-full w-full text-white" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <path d="M3 7l3 3 5-5" />
-                </svg>
-              )}
-            </span>
+              <path d="M3 7 L5.6 9.6 L11 4.2" />
+            </svg>
           </span>
-          <span className={cn('text-[13px]', data.toggles[field.id] ? 'text-foreground' : 'text-muted-foreground')}>
+          <span
+            className={cn(
+              'text-[13.5px] leading-relaxed transition-colors',
+              isChecked ? 'text-foreground' : 'text-muted-foreground',
+            )}
+          >
             {field.label}
           </span>
         </label>
@@ -1213,56 +1261,64 @@ function FieldRenderer({
 
     case 'text':
       return (
-        <div className="space-y-1.5">
-          <div className="flex items-center gap-2">
-            <label className="text-[13px] font-medium">{field.label}</label>
-            {showAuto && (
-              <span
-                className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium text-white"
-                style={{ backgroundColor: accentColor }}
-              >
-                <Zap className="h-2.5 w-2.5" /> Auto
-              </span>
-            )}
-            {isOverridden && hasAutoValue && (
-              <button
-                onClick={() => {
-                  const updated = { ...data }
-                  updated.overrides = { ...updated.overrides }
-                  delete updated.overrides[field.id]
-                  updated.texts = { ...updated.texts }
-                  delete updated.texts[field.id]
-                  onUpdate(field.id, 'text', '')
-                }}
-                className="text-[11px] text-muted-foreground hover:text-foreground"
-              >
-                Revert to auto
-              </button>
-            )}
-          </div>
-          <textarea
-            value={showAuto ? autoData[field.id] : (data.texts[field.id] ?? '')}
-            onChange={(e) => onUpdate(field.id, 'text', e.target.value)}
-            placeholder={hasAutoValue && isOverridden ? 'Auto-fill available \u2014 type to override' : 'Enter details...'}
-            rows={3}
-            className={cn(
-              'w-full resize-y rounded-md border border-border px-3 py-2 text-[13px] placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-offset-1',
-              showAuto ? 'bg-gray-50' : 'bg-white',
-            )}
-            style={{ '--tw-ring-color': accentColor } as React.CSSProperties}
-            readOnly={showAuto}
-            onFocus={(e) => {
-              if (showAuto) {
-                // User wants to override — copy auto value and mark as overridden
-                onUpdate(field.id, 'text', autoData[field.id])
-              }
-            }}
-          />
-          {field.autoSource && (
-            <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
-              <Info className="h-3 w-3" />
-              Source: {field.autoSource}
-            </p>
+        <div className="space-y-2 py-3">
+          <label className="block text-[13px] font-medium text-foreground">{field.label}</label>
+
+          {showAuto ? (
+            <div
+              onClick={() => onUpdate(field.id, 'text', autoData[field.id])}
+              className="cursor-text rounded-[10px] bg-emerald-50 px-4 py-3"
+            >
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <span className="inline-flex items-center gap-2 text-[10.5px] font-semibold uppercase tracking-[.08em] text-emerald-600">
+                  <span className="h-[5px] w-[5px] rounded-full bg-emerald-600" />
+                  Auto-filled
+                  {field.autoSource && (
+                    <span className="text-[11.5px] font-medium normal-case tracking-normal text-emerald-600/70">
+                      &middot; {field.autoSource}
+                    </span>
+                  )}
+                </span>
+                <button
+                  type="button"
+                  className="flex-shrink-0 rounded-md px-2.5 py-1 text-[12px] font-medium text-emerald-600 hover:bg-emerald-100"
+                >
+                  Edit / override
+                </button>
+              </div>
+              <p className="whitespace-pre-wrap text-[13.5px] leading-[1.55] tracking-[-.003em] text-foreground">
+                {autoData[field.id]}
+              </p>
+            </div>
+          ) : (
+            <textarea
+              value={data.texts[field.id] ?? ''}
+              onChange={(e) => onUpdate(field.id, 'text', e.target.value)}
+              placeholder={hasAutoValue ? 'Auto-fill available - type to override' : 'Enter details...'}
+              rows={3}
+              className="w-full resize-y rounded-lg border border-border bg-card px-3 py-2 text-[13.5px] text-foreground placeholder:text-muted-foreground/60 focus:border-emerald-600 focus:outline-none focus:ring-4 focus:ring-emerald-600/15"
+            />
+          )}
+
+          {!showAuto && isOverridden && hasAutoValue && (
+            <button
+              type="button"
+              onClick={() => {
+                const updated = { ...data }
+                updated.overrides = { ...updated.overrides }
+                delete updated.overrides[field.id]
+                updated.texts = { ...updated.texts }
+                delete updated.texts[field.id]
+                onUpdate(field.id, 'text', '')
+              }}
+              className="text-[11px] text-muted-foreground underline decoration-zinc-300 underline-offset-2 hover:text-foreground"
+            >
+              Revert to auto-fill
+            </button>
+          )}
+
+          {!showAuto && field.autoSource && !hasAutoValue && (
+            <p className="text-[11px] text-muted-foreground">Source: {field.autoSource}</p>
           )}
         </div>
       )
@@ -1270,33 +1326,20 @@ function FieldRenderer({
     case 'file': {
       const fileRef = parseFileRef(data.files[field.id])
       return (
-        <FileFieldRenderer
-          field={field}
-          fileRef={fileRef}
-          onUpdate={onUpdate}
-        />
+        <div className="py-3">
+          <FileFieldRenderer field={field} fileRef={fileRef} onUpdate={onUpdate} />
+        </div>
       )
     }
 
     case 'select':
       return (
-        <div className="space-y-1.5">
-          <div className="flex items-center gap-2">
-            <label className="text-[13px] font-medium">{field.label}</label>
-            {showAuto && (
-              <span
-                className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium text-white"
-                style={{ backgroundColor: accentColor }}
-              >
-                <Zap className="h-2.5 w-2.5" /> Auto
-              </span>
-            )}
-          </div>
+        <div className="space-y-2 py-3">
+          <label className="block text-[13px] font-medium text-foreground">{field.label}</label>
           <select
             value={showAuto ? autoData[field.id] : (data.selects[field.id] ?? '')}
             onChange={(e) => onUpdate(field.id, 'select', e.target.value)}
-            className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] focus:outline-none focus:ring-2 focus:ring-offset-1"
-            style={{ '--tw-ring-color': accentColor } as React.CSSProperties}
+            className="w-full rounded-lg border border-border bg-card px-3 py-2 text-[13.5px] text-foreground focus:border-emerald-600 focus:outline-none focus:ring-4 focus:ring-emerald-600/15"
           >
             <option value="">Select...</option>
             {field.options?.map((opt) => (
@@ -1306,10 +1349,7 @@ function FieldRenderer({
             ))}
           </select>
           {field.autoSource && (
-            <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
-              <Info className="h-3 w-3" />
-              Source: {field.autoSource}
-            </p>
+            <p className="text-[11px] text-muted-foreground">Source: {field.autoSource}</p>
           )}
         </div>
       )
@@ -1343,7 +1383,7 @@ function FileFieldRenderer({
           <span className="flex-1 truncate text-[13px] font-medium">{fileRef.title}</span>
           <button
             onClick={() => viewDocument(fileRef.id)}
-            className="text-emerald-600 hover:text-emerald-700"
+            className="text-emerald-600 hover:text-emerald-600"
             title="View document"
           >
             <Eye className="h-3.5 w-3.5" />
@@ -1366,10 +1406,7 @@ function FileFieldRenderer({
         </button>
       )}
       {field.autoSource && (
-        <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
-          <Info className="h-3 w-3" />
-          Source: {field.autoSource}
-        </p>
+        <p className="text-[11px] text-muted-foreground">Source: {field.autoSource}</p>
       )}
       <DocumentPickerModal
         open={pickerOpen}

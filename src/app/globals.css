@@ -117,3 +117,10 @@
 .animate-page-fade-in {
   animation: pageFadeIn 280ms cubic-bezier(0.22, 1, 0.36, 1);
 }
+
+/* HACCP Pack — checkbox pop animation */
+@keyframes haccp-check-pop {
+  0%   { transform: scale(.85); }
+  55%  { transform: scale(1.08); }
+  100% { transform: scale(1); }
+}
