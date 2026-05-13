@@ -896,7 +896,7 @@ export default function HaccpPackPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* \u2500\u2500 Page header \u2500\u2500 */}
       <div className="flex flex-wrap items-start justify-between gap-4 border-b border-border pb-5">
         <div>
@@ -959,7 +959,7 @@ export default function HaccpPackPage() {
       </div>
 
       {/* \u2500\u2500 Progress strip \u2500\u2500 */}
-      <div className="-mt-1 flex items-center gap-4">
+      <div className="flex items-center gap-4">
         <span className="whitespace-nowrap text-[12px] text-muted-foreground">
           <b className="font-semibold tabular-nums text-foreground">{totalProgress.filled}</b> of{' '}
           <b className="font-semibold tabular-nums text-foreground">{totalProgress.total}</b> fields complete
@@ -976,7 +976,7 @@ export default function HaccpPackPage() {
       </div>
 
       {/* Sticky tabs + sentinel for stuck detection */}
-      <div className="-mt-2">
+      <div className="-mt-[9px]">
         <div ref={sentinelRef} aria-hidden className="h-px" />
         <div
           className={cn(
