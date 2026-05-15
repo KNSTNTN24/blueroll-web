@@ -4,6 +4,38 @@ import { useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 
+// Module-level flag so the Stripe sync runs at most once per browser session.
+// Webhook is the primary source of truth for subscription state; this is just
+// a safety net for the rare case where a webhook event was lost or hasn't
+// been delivered yet (Stripe retries up to ~3 days).
+let stripeSyncRanThisSession = false
+
+async function syncSubscriptionFromStripe(): Promise<void> {
+  const business = useAuthStore.getState().business
+  if (!business?.stripe_customer_id) return // No Stripe customer — nothing to sync.
+
+  try {
+    await supabase.functions.invoke('manage-subscription', {
+      body: {
+        action: 'sync',
+        customerId: business.stripe_customer_id,
+        businessId: business.id,
+      },
+    })
+    // sync() updates businesses.subscription_status + trial_ends_at in DB.
+    // Re-fetch so the local store reflects what the webhook may have missed.
+    const { data: fresh } = await supabase
+      .from('businesses')
+      .select('*')
+      .eq('id', business.id)
+      .maybeSingle()
+    if (fresh) useAuthStore.getState().setBusiness(fresh)
+  } catch (e) {
+    // Non-fatal — webhook will catch the next event anyway.
+    console.warn('[useAuth] Stripe sync failed (non-fatal):', e)
+  }
+}
+
 async function loadProfileAndBusiness(userId: string, retry = 0): Promise<void> {
   const store = useAuthStore.getState()
   const MAX_RETRIES = 5
@@ -87,15 +119,21 @@ export function useAuth() {
       }
     )
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (!mounted) return
       clearTimeout(timeoutId)
       const user = session?.user ?? null
       useAuthStore.getState().setUser(user)
       useAuthStore.getState().setLoading(false) // unblock UI immediately
       if (user) {
-        // Load profile/business in background
-        void loadProfileAndBusiness(user.id)
+        // Load profile/business, then opportunistically sync subscription
+        // state from Stripe (once per session). Webhook keeps the DB fresh
+        // in real time; this catches any missed events on page load.
+        await loadProfileAndBusiness(user.id)
+        if (mounted && !stripeSyncRanThisSession) {
+          stripeSyncRanThisSession = true
+          void syncSubscriptionFromStripe()
+        }
       }
     }).catch(() => {
       if (mounted) { clearTimeout(timeoutId); useAuthStore.getState().setLoading(false) }
@@ -104,8 +142,20 @@ export function useAuth() {
     return () => { mounted = false; clearTimeout(timeoutId); subscription.unsubscribe() }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const isSubscribed = store.business?.subscription_status === 'active' ||
-    store.business?.subscription_status === 'trialing'
+  // Subscription gating.
+  //
+  // A `trialing` status is honoured until `trial_ends_at` passes — after that
+  // the row is treated as not-subscribed until something (webhook, manual
+  // sync) flips it to `active`. This prevents the migrated grace period
+  // (trial_ends_at = NOW + 10 days for previously-`none` businesses) from
+  // turning into permanent free access.
+  const sub = store.business?.subscription_status
+  const trialEnd = store.business?.trial_ends_at
+  const trialExpired = !!(
+    sub === 'trialing' && trialEnd && new Date(trialEnd) < new Date()
+  )
+  const isSubscribed =
+    sub === 'active' || (sub === 'trialing' && !trialExpired)
 
   return {
     ...store,

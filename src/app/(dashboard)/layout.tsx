@@ -8,15 +8,23 @@ import { Topbar } from '@/components/layout/topbar'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
-  const { user, profile, business, isLoading } = useAuth()
+  const { user, profile, business, isLoading, isSubscribed } = useAuth()
   const [collapsed, setCollapsed] = useState(false)
 
   useEffect(() => {
     if (isLoading) return
     if (!user) {
       router.replace('/onboarding')
+      return
     }
-  }, [isLoading, user, router])
+    // Wait for the background business fetch to settle before gating —
+    // `business` starts as null in the store and only becomes a row (or
+    // stays null if onboarding is incomplete) after loadProfileAndBusiness.
+    if (business === null) return
+    if (!isSubscribed) {
+      router.replace('/paywall')
+    }
+  }, [isLoading, user, business, isSubscribed, router])
 
   // Show spinner only while the initial auth check is in flight.
   // Profile / business load asynchronously in the background — Topbar and

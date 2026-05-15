@@ -20,6 +20,7 @@ export interface Business {
   post_code: string | null
   subscription_status: string | null
   trial_ends_at: string | null
+  stripe_customer_id: string | null
   haccp_auto_fill: boolean
   haccp_last_reviewed_at: string | null
   equipment: string[]

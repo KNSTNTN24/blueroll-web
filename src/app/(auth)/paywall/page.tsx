@@ -197,14 +197,6 @@ export default function PaywallPage() {
               </a>
             </div>
           </div>
-
-          {/* Temporary skip link */}
-          <button
-            onClick={() => { window.location.href = '/dashboard' }}
-            className="mt-6 inline-block text-sm text-emerald-200 underline hover:text-white"
-          >
-            Continue to dashboard
-          </button>
         </div>
       </div>
     </div>
