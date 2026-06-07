@@ -43,5 +43,19 @@ BEGIN
   -- 8b. tie-break on equal NULL untils: manual > iap > stripe (status of winner published)
   r := public.compute_entitlement('trialing', NULL, 'active', NULL, NULL, NULL);
   ASSERT r.status = 'trialing', format('t8b got %s', r.status);
+
+  -- 9. expired canceling must NOT republish as active
+  u := now() - interval '1 day';
+  r := public.compute_entitlement(NULL, NULL, 'canceling', u, NULL, NULL);
+  ASSERT r.status = 'canceled' AND r.until_ts = u, format('t9 got %s/%s', r.status, r.until_ts);
+
+  -- 10. unknown/non-entitled statuses never grant access
+  r := public.compute_entitlement('past_due', now() + interval '5 days', NULL, NULL, NULL, NULL);
+  ASSERT r.status = 'canceled', format('t10 got %s', r.status);
+
+  -- 11. until exactly = now() is expired (strict >)
+  u := now();
+  r := public.compute_entitlement('trialing', u, NULL, NULL, NULL, NULL);
+  ASSERT r.status = 'canceled' AND r.until_ts = u, format('t11 got %s/%s', r.status, r.until_ts);
 END $$;
 SELECT 'COMPUTE_ENTITLEMENT TESTS PASSED' AS result;
