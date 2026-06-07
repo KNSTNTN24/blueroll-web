@@ -17,6 +17,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import { CHECKLIST_FREQUENCIES, ROLE_LABELS, type UserRole } from '@/lib/constants'
+import { checklistStatus, compareTemplates } from '@/lib/checklist-status'
 import { startOfDay, startOfWeek, startOfMonth } from 'date-fns'
 
 function getPeriodStart(frequency: string): Date {
@@ -91,16 +92,20 @@ export default function ChecklistsPage() {
     enabled: !!business?.id,
   })
 
-  function getStatus(template: any): { label: string; status: 'success' | 'warning' | 'info' | 'neutral' } {
-    const periodStart = getPeriodStart(template.frequency)
-    const completion = completions.find(
+  function getStatus(template: any) {
+    // multi-per-day counts TODAY regardless of declared frequency
+    const periodStart = getPeriodStart(template.multi_per_day ? 'daily' : template.frequency)
+    const periodCompletions = completions.filter(
       (c: any) => c.template_id === template.id && new Date(c.completed_at) >= periodStart
     )
-    if (!completion) return { label: 'Pending', status: 'neutral' }
-    if (completion.signed_off_by) return { label: 'Signed Off', status: 'success' }
-    if (template.supervisor_role) return { label: 'Awaiting Sign-off', status: 'warning' }
-    return { label: 'Completed', status: 'success' }
+    return checklistStatus(template, periodCompletions)
   }
+
+  // Sort Today templates by status: pending first, earlier deadline first, then name
+  const sortedMyTemplates = [...myTemplates]
+    .map((t: any) => ({ t, done: getStatus(t).done }))
+    .sort(compareTemplates)
+    .map((x) => x.t)
 
   // ── Toggle active mutation ──
   const toggleActiveMutation = useMutation({
@@ -154,7 +159,7 @@ export default function ChecklistsPage() {
             />
           ) : (
             <div className="space-y-2">
-              {myTemplates.map((t: any) => {
+              {sortedMyTemplates.map((t: any) => {
                 const s = getStatus(t)
                 return (
                   <button

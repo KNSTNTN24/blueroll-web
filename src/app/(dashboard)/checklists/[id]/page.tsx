@@ -87,7 +87,9 @@ export default function ChecklistDetailPage({ params }: { params: Promise<{ id: 
     enabled: !!business?.id && !!template,
   })
 
-  const isCompleted = !!existingCompletion
+  // multi-per-day templates can always submit a NEW completion: keep the form
+  // enabled regardless of existing completions today.
+  const isCompleted = !!existingCompletion && !template?.multi_per_day
   const canSignOff = isCompleted && template?.supervisor_role && !existingCompletion?.signed_off_by && isManager
 
   function getResponse(itemId: string): ItemResponse {
