@@ -20,3 +20,15 @@
   отключить: `ALTER TABLE businesses DISABLE TRIGGER trg_ntfy_subscription_change;`
   (иначе пуш на каждую изменившуюся строку), после — ENABLE.
 - Тесты 02/04 при прогоне шлют по одному реальному пушу с пометкой "__…TEST__ (ignore push)".
+
+## v-next Phase 1 — DB (2026-06-07)
+
+- recipes: `*_override` boolean NULL=auto (vegan/vegetarian/gluten_free/dairy_free);
+  effective = override ?? computed-from-allergens.
+- checklist_templates: `multi_per_day` (bool), `min_per_day` (int ≥0, 0 = optional).
+- `checklist_drafts` — личные черновики (RLS: только автор), уникальность (template_id, created_by);
+  клиент апсертит `ON CONFLICT (template_id, created_by)`.
+- RPC `create_recipe_with_ingredients(jsonb)` — атомарное сохранение рецепта
+  (рецепт + find-or-create ингредиентов + связи); клиенты переходят на него в фазах 2–3.
+- recipes.category CHECK: только lowercase ('starter','main','dessert','side','sauce','drink','other').
+- Тесты: supabase/tests/sql/05–08.
