@@ -17,6 +17,8 @@ import {
   ALLERGEN_LABELS,
 } from '@/lib/constants'
 import { HACCP_RECIPE_METHODS } from '@/lib/haccp-methods'
+import { type DietaryOverrides } from '@/lib/dietary'
+import { DietaryChips } from '@/components/dietary-chips'
 
 interface IngredientRow {
   name: string
@@ -57,6 +59,12 @@ export default function EditRecipePage({ params }: { params: Promise<{ id: strin
   const [hotHoldingRequired, setHotHoldingRequired] = useState(false)
   const [extraCareFlags, setExtraCareFlags] = useState<string[]>([])
   const [haccpMethods, setHaccpMethods] = useState<string[]>([])
+  const [dietary, setDietary] = useState<DietaryOverrides>({
+    vegan_override: null,
+    vegetarian_override: null,
+    gluten_free_override: null,
+    dairy_free_override: null,
+  })
   const [ingredients, setIngredients] = useState<IngredientRow[]>([])
 
   const { data: recipe, isLoading } = useQuery({
@@ -97,6 +105,12 @@ export default function EditRecipePage({ params }: { params: Promise<{ id: strin
       setHotHoldingRequired(recipe.hot_holding_required ?? false)
       setExtraCareFlags(recipe.extra_care_flags ?? [])
       setHaccpMethods(recipe.haccp_methods ?? [])
+      setDietary({
+        vegan_override: recipe.vegan_override ?? null,
+        vegetarian_override: recipe.vegetarian_override ?? null,
+        gluten_free_override: recipe.gluten_free_override ?? null,
+        dairy_free_override: recipe.dairy_free_override ?? null,
+      })
       setIngredients(
         recipe.recipe_ingredients?.map((ri: any) => ({
           name: ri.ingredient?.name ?? '',
@@ -201,6 +215,7 @@ export default function EditRecipePage({ params }: { params: Promise<{ id: strin
           hot_holding_required: hotHoldingRequired,
           extra_care_flags: extraCareFlags,
           haccp_methods: haccpMethods,
+          ...dietary,
         })
         .eq('id', id)
 
@@ -430,6 +445,18 @@ export default function EditRecipePage({ params }: { params: Promise<{ id: strin
               Add Ingredient
             </Button>
           </div>
+        </Section>
+
+        {/* Dietary */}
+        <Section title="Dietary">
+          <p className="text-[12px] text-muted-foreground">
+            Auto-derived from allergens — tap a chip to override
+          </p>
+          <DietaryChips
+            overrides={dietary}
+            allergens={[...new Set(ingredients.flatMap((i) => i.allergens))]}
+            onChange={setDietary}
+          />
         </Section>
 
         {/* HACCP Control Methods */}
