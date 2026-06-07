@@ -254,9 +254,9 @@ async function applyAppleUpdate(
     : null;
   const status = mapAppleStatus(i.status);
 
+  // Computed columns are owned by the DB arbiter; report Apple's view via iap_*.
   const payload = {
-    subscription_status: status,
-    trial_ends_at: expiresAt,
+    iap_status: status,
     iap_provider: "apple",
     iap_product_id: i.productId,
     iap_original_transaction_id: i.originalTransactionId,
