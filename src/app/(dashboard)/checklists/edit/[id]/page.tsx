@@ -17,7 +17,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
-import { CHECKLIST_FREQUENCIES, CHECKLIST_ITEM_TYPES, USER_ROLES, ROLE_LABELS, type UserRole } from '@/lib/constants'
+import { CHECKLIST_FREQUENCIES, CHECKLIST_ITEM_TYPES, ITEM_TYPE_LABELS, USER_ROLES, ROLE_LABELS, type UserRole } from '@/lib/constants'
 
 const itemSchema = z.object({
   name: z.string().min(1, 'Item name is required'),
@@ -41,14 +41,6 @@ const templateSchema = z.object({
 })
 
 type FormData = z.infer<typeof templateSchema>
-
-const ITEM_TYPE_LABELS: Record<string, string> = {
-  tick: 'Checkbox',
-  temperature: 'Temperature',
-  text: 'Text',
-  yes_no: 'Yes / No',
-  photo: 'Photo',
-}
 
 export default function EditChecklistPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
