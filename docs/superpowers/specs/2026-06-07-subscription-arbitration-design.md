@@ -52,6 +52,11 @@ iap_status     TEXT         -- mapped status from play/apple webhooks
 `set_default_trial` (BEFORE INSERT) changes to write `manual_status='trialing'`,
 `manual_until=now()+interval '14 days'` instead of the computed columns.
 
+**Trigger ordering:** Postgres fires same-event triggers alphabetically by name.
+The arbiter trigger MUST sort after `trg_set_default_trial` (name it e.g.
+`trg_zz_subscription_arbiter`), otherwise a fresh INSERT computes entitlement
+before the default trial is written. Covered by test 10.
+
 ### Arbitration rules
 
 Pure SQL function `compute_entitlement(manual_status, manual_until, stripe_status,
@@ -62,7 +67,8 @@ trigger `BEFORE INSERT OR UPDATE ON businesses` is a thin wrapper.
    (`until IS NULL` OR `until > now()`). `NULL until` = unbounded (paid Stripe sub
    without trial_end).
 2. Among live sources pick the one with the **latest** `until` (`NULL` = infinity);
-   publish its status and until into the computed columns.
+   publish its status and until into the computed columns. Tie-break (e.g. two
+   `NULL` untils): `manual > iap > stripe` — explicit, arbitrary, documented.
 3. **`canceling` is never published**: a live-but-canceling source publishes as
    `active` (keeps its until). Reason: both clients only honour `active|trialing`;
    publishing `canceling` would eject paid users early (fixes the latent bug).
@@ -122,9 +128,18 @@ Provenance rules, in order:
 3. else → `manual_status = subscription_status`, `manual_until = trial_ends_at`
    (default trials; Farkhod active/2027; Green Kitchen trialing/2099; Plan B)
 
+**Stale-`active` remedy:** when backfilling `status='active'` with `until < now()`
+(stale `trial_ends_at` on a still-active row, e.g. business `7830e2d9`), set the
+source `until = NULL` (unbounded) — the next real Stripe/store event tightens it.
+Without this, live `active` businesses would flip to `canceled` at cutover.
+
 After backfill, install the trigger, then **sanity check**: recompute all rows and
-diff against pre-migration `subscription_status`. Only planned diffs allowed
-(`canceling`→`active`). Any unplanned diff → stop before deploying functions.
+diff against pre-migration `subscription_status`. Planned diffs only:
+- `canceling` → `active` (rule 3 of arbitration)
+- `trialing` with past `until` → `canceled` (clients already deny access to these;
+  the column now tells the truth)
+
+Any unplanned diff → stop before deploying functions.
 
 ### Deploy order
 
