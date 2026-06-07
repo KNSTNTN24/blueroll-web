@@ -11,3 +11,12 @@
 - Reconcile после деплоев вебхуков:
   `SELECT id FROM businesses WHERE iap_provider IS NOT NULL AND iap_status IS NULL;`
 - SQL-тесты: `scripts/sql-api.sh supabase/tests/sql/<file>.sql` (01 unit, 02 trigger, 03 live regression).
+
+## ntfy notifier (2026-06-07, fix)
+
+- `trg_ntfy_subscription_change` снова ВКЛЮЧЁН: AFTER UPDATE (без OF!),
+  WHEN по фактическому изменению subscription_status; email владельца — из profiles.
+- ⚠️ Перед bulk-ресинком (`UPDATE businesses SET updated_at = updated_at`) —
+  отключить: `ALTER TABLE businesses DISABLE TRIGGER trg_ntfy_subscription_change;`
+  (иначе пуш на каждую изменившуюся строку), после — ENABLE.
+- Тесты 02/04 при прогоне шлют по одному реальному пушу с пометкой "__…TEST__ (ignore push)".
