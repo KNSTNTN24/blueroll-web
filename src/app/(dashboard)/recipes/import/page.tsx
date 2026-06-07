@@ -226,14 +226,11 @@ export default function ImportRecipePage() {
       const recipeId = (rpcResult as { recipe_id: string }).recipe_id
 
       if (parsed.extra_care_flags.length > 0) {
-        try {
-          await supabase
-            .from('recipes')
-            .update({ extra_care_flags: parsed.extra_care_flags })
-            .eq('id', recipeId)
-        } catch (flagErr) {
-          console.warn('Failed to set extra_care_flags (non-critical):', flagErr)
-        }
+        const { error: flagErr } = await supabase
+          .from('recipes')
+          .update({ extra_care_flags: parsed.extra_care_flags })
+          .eq('id', recipeId)
+        if (flagErr) console.warn('Failed to set extra_care_flags (non-critical):', flagErr.message)
       }
 
       toast.success('Recipe saved')

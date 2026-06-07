@@ -445,7 +445,7 @@ export default function ChecklistDetailPage({ params }: { params: Promise<{ id: 
                   onChange={(e) => {
                     const v = normalizeInitials(e.target.value)
                     setResponse(item.id, { value: v })
-                    try { localStorage.setItem(INITIALS_STORAGE_KEY, v) } catch {}
+                    try { if (isValidInitials(v)) localStorage.setItem(INITIALS_STORAGE_KEY, v) } catch {}
                   }}
                   onFocus={() => {
                     if (!getResponse(item.id).value) {
@@ -568,12 +568,13 @@ export default function ChecklistDetailPage({ params }: { params: Promise<{ id: 
           <Button
             variant="outline"
             onClick={async () => {
+              if (!business || !profile) return
               setSavingDraft(true)
               const { error } = await supabase.from('checklist_drafts').upsert(
                 {
                   template_id: id,
-                  business_id: business!.id,
-                  created_by: profile!.id,
+                  business_id: business.id,
+                  created_by: profile.id,
                   responses,
                   updated_at: new Date().toISOString(),
                 },
