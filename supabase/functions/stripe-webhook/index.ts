@@ -100,11 +100,11 @@ interface StripeSubscription {
 function subscriptionUpdatePayload(sub: StripeSubscription) {
   return {
     subscription_id: sub.id,
-    // Mirror what manage-subscription action=sync writes: a canceling
-    // subscription stays accessible until period end, so we tag it differently
-    // from a fully terminated one.
-    subscription_status: sub.cancel_at_period_end ? "canceling" : sub.status,
-    trial_ends_at: sub.trial_end
+    // Stripe's view only. The DB arbiter (trg_zz_subscription_arbiter) computes
+    // subscription_status/trial_ends_at from all sources; it publishes a live
+    // 'canceling' as 'active' so paid users keep access until period end.
+    stripe_status: sub.cancel_at_period_end ? "canceling" : sub.status,
+    stripe_until: sub.trial_end
       ? new Date(sub.trial_end * 1000).toISOString()
       : null,
   };
