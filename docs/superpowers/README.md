@@ -32,3 +32,12 @@
   (рецепт + find-or-create ингредиентов + связи); клиенты переходят на него в фазах 2–3.
 - recipes.category CHECK: только lowercase ('starter','main','dessert','side','sauce','drink','other').
 - Тесты: supabase/tests/sql/05–08.
+
+## v-next Phase 2 — Web (2026-06-07)
+
+- `src/lib/dietary.ts` — единый расчёт дието-флагов (override ?? computed); чипы-редактор `src/components/dietary-chips.tsx`.
+- `src/lib/checklist-status.ts` — статус/сортировка карточек (overdue, multi N/M today).
+- `src/lib/initials.ts` + тип поля `initials` (валидация A-Z0-9 2-5, localStorage `blueroll_last_initials`).
+- AI-импорт рецептов и веб — через RPC `create_recipe_with_ingredients`.
+- Юнит-тесты: `npm test` (vitest, src/lib/*.test.ts).
+- Деплой: PR → squash merge в main → `vercel --prod`.
