@@ -255,9 +255,10 @@ async function applySubscriptionUpdate(
   const expiry = sub.lineItems?.[0]?.expiryTime ?? null;
   const status = mapSubscriptionState(sub.subscriptionState);
 
+  // Computed subscription_status/trial_ends_at are owned by the DB arbiter
+  // (trg_zz_subscription_arbiter); we only report Google's view via iap_*.
   const payload = {
-    subscription_status: status,
-    trial_ends_at: expiry, // re-using the existing column for the entitlement boundary
+    iap_status: status,
     iap_provider: "google",
     iap_product_id: productId,
     iap_purchase_token: purchaseToken,
