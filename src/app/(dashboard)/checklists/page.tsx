@@ -1,8 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, Suspense } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { toast } from 'sonner'
@@ -32,12 +32,14 @@ function getPeriodStart(frequency: string): Date {
   return startOfDay(now)
 }
 
-export default function ChecklistsPage() {
+function ChecklistsPageInner() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const queryClient = useQueryClient()
   const profile = useAuthStore((s) => s.profile)
   const business = useAuthStore((s) => s.business)
   const isManager = profile?.role === 'owner' || profile?.role === 'manager'
+  const tab = searchParams.get('tab') === 'library' && isManager ? 'library' : 'today'
 
   // ── Today's templates for user's role ──
   const { data: myTemplates = [], isLoading: loadingMy } = useQuery({
@@ -139,7 +141,7 @@ export default function ChecklistsPage() {
         )}
       </PageHeader>
 
-      <Tabs defaultValue="today">
+      <Tabs value={tab} onValueChange={(v) => router.replace(`/checklists${v === 'library' ? '?tab=library' : ''}`)}>
         <TabsList>
           <TabsTrigger value="today">Today</TabsTrigger>
           {isManager && <TabsTrigger value="library">Library</TabsTrigger>}
@@ -272,5 +274,13 @@ export default function ChecklistsPage() {
         )}
       </Tabs>
     </div>
+  )
+}
+
+export default function ChecklistsPage() {
+  return (
+    <Suspense fallback={null}>
+      <ChecklistsPageInner />
+    </Suspense>
   )
 }

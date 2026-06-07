@@ -267,7 +267,7 @@ export default function NewChecklistPage() {
       toast.success('Template created')
       queryClient.invalidateQueries({ queryKey: ['all-checklists'] })
       queryClient.invalidateQueries({ queryKey: ['my-checklists'] })
-      router.push('/checklists')
+      router.push('/checklists?tab=library')
     } catch (err: any) {
       toast.error(err?.message ?? 'Failed to create template')
     } finally {
@@ -283,7 +283,7 @@ export default function NewChecklistPage() {
           variant="ghost"
           size="sm"
           className="mt-0.5 h-7 w-7 p-0"
-          onClick={() => router.push('/checklists')}
+          onClick={() => router.push('/checklists?tab=library')}
         >
           <ArrowLeft className="h-4 w-4" />
         </Button>
@@ -766,7 +766,7 @@ export default function NewChecklistPage() {
             type="button"
             variant="outline"
             size="sm"
-            onClick={() => router.push('/checklists')}
+            onClick={() => router.push('/checklists?tab=library')}
           >
             Cancel
           </Button>

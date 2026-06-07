@@ -191,7 +191,7 @@ export default function EditChecklistPage({ params }: { params: Promise<{ id: st
       queryClient.invalidateQueries({ queryKey: ['all-checklists'] })
       queryClient.invalidateQueries({ queryKey: ['my-checklists'] })
       queryClient.invalidateQueries({ queryKey: ['checklist-template', id] })
-      router.push('/checklists')
+      router.push('/checklists?tab=library')
     } catch (err: any) {
       toast.error(err?.message ?? 'Failed to update template')
     } finally {
@@ -223,7 +223,7 @@ export default function EditChecklistPage({ params }: { params: Promise<{ id: st
           variant="ghost"
           size="sm"
           className="mt-0.5 h-7 w-7 p-0"
-          onClick={() => router.push('/checklists')}
+          onClick={() => router.push('/checklists?tab=library')}
         >
           <ArrowLeft className="h-4 w-4" />
         </Button>
@@ -479,7 +479,7 @@ export default function EditChecklistPage({ params }: { params: Promise<{ id: st
             type="button"
             variant="outline"
             size="sm"
-            onClick={() => router.push('/checklists')}
+            onClick={() => router.push('/checklists?tab=library')}
           >
             Cancel
           </Button>
