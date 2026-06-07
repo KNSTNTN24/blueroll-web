@@ -194,86 +194,52 @@ export default function ImportRecipePage() {
 
     setSaving(true)
     try {
-      // Upsert ingredients
       const validIngredients = parsed.ingredients.filter((i) => i.name.trim())
-      const ingredientIds: Record<string, string> = {}
 
-      for (const ing of validIngredients) {
-        const { data: existing } = await supabase
-          .from('ingredients')
-          .select('id')
-          .eq('business_id', business.id)
-          .ilike('name', ing.name.trim())
-          .single()
+      const { data: rpcResult, error: rpcError } = await supabase.rpc('create_recipe_with_ingredients', {
+        p: {
+          recipe: {
+            name: parsed.name.trim(),
+            description: parsed.description.trim() || null,
+            category: parsed.category,
+            instructions: parsed.instructions.trim() || null,
+            cooking_method: parsed.cooking_method.trim() || null,
+            cooking_temp: parsed.cooking_temp || null,
+            cooking_time: parsed.cooking_time || null,
+            cooking_time_unit: parsed.cooking_time_unit,
+            chilling_method: parsed.chilling_method.trim() || null,
+            freezing_instructions: parsed.freezing_instructions.trim() || null,
+            defrosting_instructions: parsed.defrosting_instructions.trim() || null,
+            reheating_instructions: parsed.reheating_instructions.trim() || null,
+            hot_holding_required: parsed.hot_holding_required,
+            haccp_methods: parsed.haccp_methods,
+          },
+          ingredients: validIngredients.map((ing) => ({
+            name: ing.name.trim(),
+            allergens: ing.allergens,
+            quantity: ing.quantity?.toString().trim() || null,
+            unit: ing.unit.trim() || null,
+          })),
+        },
+      })
+      if (rpcError) throw rpcError
+      const recipeId = (rpcResult as { recipe_id: string }).recipe_id
 
-        if (existing) {
+      if (parsed.extra_care_flags.length > 0) {
+        try {
           await supabase
-            .from('ingredients')
-            .update({ allergens: ing.allergens })
-            .eq('id', existing.id)
-          ingredientIds[ing.name] = existing.id
-        } else {
-          const { data: created, error } = await supabase
-            .from('ingredients')
-            .insert({
-              business_id: business.id,
-              name: ing.name.trim(),
-              allergens: ing.allergens,
-            })
-            .select('id')
-            .single()
-          if (error) throw error
-          ingredientIds[ing.name] = created.id
+            .from('recipes')
+            .update({ extra_care_flags: parsed.extra_care_flags })
+            .eq('id', recipeId)
+        } catch (flagErr) {
+          console.warn('Failed to set extra_care_flags (non-critical):', flagErr)
         }
-      }
-
-      // Create recipe
-      const { data: recipe, error: recipeError } = await supabase
-        .from('recipes')
-        .insert({
-          business_id: business.id,
-          created_by: profile.id,
-          name: parsed.name.trim(),
-          description: parsed.description.trim() || null,
-          category: parsed.category,
-          instructions: parsed.instructions.trim() || null,
-          cooking_method: parsed.cooking_method.trim() || null,
-          cooking_temp: parsed.cooking_temp ? Number(parsed.cooking_temp) : null,
-          cooking_time: parsed.cooking_time ? Number(parsed.cooking_time) : null,
-          cooking_time_unit: parsed.cooking_time_unit,
-          chilling_method: parsed.chilling_method.trim() || null,
-          freezing_instructions: parsed.freezing_instructions.trim() || null,
-          defrosting_instructions: parsed.defrosting_instructions.trim() || null,
-          reheating_instructions: parsed.reheating_instructions.trim() || null,
-          hot_holding_required: parsed.hot_holding_required,
-          extra_care_flags: parsed.extra_care_flags,
-          haccp_methods: parsed.haccp_methods,
-          active: true,
-        })
-        .select('id')
-        .single()
-
-      if (recipeError) throw recipeError
-
-      // Create recipe_ingredients
-      const recipeIngredients = validIngredients.map((ing) => ({
-        recipe_id: recipe.id,
-        ingredient_id: ingredientIds[ing.name],
-        quantity: ing.quantity ? Number(ing.quantity) : null,
-        unit: ing.unit.trim() || null,
-      }))
-
-      if (recipeIngredients.length > 0) {
-        const { error: riError } = await supabase
-          .from('recipe_ingredients')
-          .insert(recipeIngredients)
-        if (riError) throw riError
       }
 
       toast.success('Recipe saved')
       queryClient.invalidateQueries({ queryKey: ['recipes'] })
       queryClient.invalidateQueries({ queryKey: ['haccp-recipes'] })
-      router.push(`/recipes/${recipe.id}`)
+      router.push(`/recipes/${recipeId}`)
     } catch (err: any) {
       toast.error(err.message || 'Failed to save recipe')
     } finally {
