@@ -89,6 +89,10 @@ BEGIN
     IF TG_OP = 'UPDATE' THEN
       NEW.subscription_status := OLD.subscription_status;
       NEW.trial_ends_at := OLD.trial_ends_at;
+    ELSE
+      -- INSERT: never trust caller-supplied computed columns; fail safe.
+      NEW.subscription_status := 'none';
+      NEW.trial_ends_at := NULL;
     END IF;
   END;
   RETURN NEW;
