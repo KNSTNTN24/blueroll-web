@@ -1,6 +1,6 @@
 'use client'
 
-import { use, useState, useRef } from 'react'
+import { use, useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -8,7 +8,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { toast } from 'sonner'
 import {
   ArrowLeft, CheckCircle2, AlertTriangle, Camera, Thermometer,
-  CheckSquare, FileText, ThumbsUp, ThumbsDown, ShieldCheck, Loader2,
+  CheckSquare, FileText, ThumbsUp, ThumbsDown, ShieldCheck, Loader2, Save,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -47,6 +47,7 @@ export default function ChecklistDetailPage({ params }: { params: Promise<{ id: 
 
   const [responses, setResponses] = useState<Record<string, ItemResponse>>({})
   const [submitting, setSubmitting] = useState(false)
+  const [savingDraft, setSavingDraft] = useState(false)
 
   // ── Load template with items ──
   const { data: template, isLoading: loadingTemplate } = useQuery({
@@ -91,6 +92,29 @@ export default function ChecklistDetailPage({ params }: { params: Promise<{ id: 
   // enabled regardless of existing completions today.
   const isCompleted = !!existingCompletion && !template?.multi_per_day
   const canSignOff = isCompleted && template?.supervisor_role && !existingCompletion?.signed_off_by && isManager
+
+  // ── Load user's saved draft ──
+  const { data: draft } = useQuery({
+    queryKey: ['checklist-draft', id, profile?.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('checklist_drafts')
+        .select('responses, updated_at')
+        .eq('template_id', id)
+        .eq('created_by', profile!.id)
+        .maybeSingle()
+      return data
+    },
+    enabled: !!profile?.id,
+  })
+
+  // Hydrate form from draft when not completed/read-only and form is empty
+  useEffect(() => {
+    if (draft?.responses && !isCompleted && Object.keys(responses).length === 0) {
+      setResponses(draft.responses as Record<string, ItemResponse>)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft])
 
   function getResponse(itemId: string): ItemResponse {
     return responses[itemId] ?? { value: '', notes: '', flagged: false }
@@ -191,6 +215,17 @@ export default function ChecklistDetailPage({ params }: { params: Promise<{ id: 
       if (template.supervisor_role) {
         await notifySignOffRequired(business.id, template.name, template.supervisor_role)
       }
+
+      // Delete the user's draft (non-fatal)
+      supabase
+        .from('checklist_drafts')
+        .delete()
+        .eq('template_id', id)
+        .eq('created_by', profile.id)
+        .then(({ error: draftErr }) => {
+          if (draftErr) console.warn('Failed to delete draft after submit:', draftErr.message)
+        })
+      queryClient.invalidateQueries({ queryKey: ['checklist-draft', id, profile.id] })
 
       toast.success('Checklist submitted')
       queryClient.invalidateQueries({ queryKey: ['existing-completion', id] })
@@ -499,6 +534,32 @@ export default function ChecklistDetailPage({ params }: { params: Promise<{ id: 
 
       {/* Actions */}
       <div className="sticky bottom-0 flex items-center justify-end gap-3 border-t border-border bg-white py-4">
+        {!isCompleted && (
+          <Button
+            variant="outline"
+            onClick={async () => {
+              setSavingDraft(true)
+              const { error } = await supabase.from('checklist_drafts').upsert(
+                {
+                  template_id: id,
+                  business_id: business!.id,
+                  created_by: profile!.id,
+                  responses,
+                  updated_at: new Date().toISOString(),
+                },
+                { onConflict: 'template_id,created_by' },
+              )
+              setSavingDraft(false)
+              if (error) toast.error('Failed to save draft: ' + error.message)
+              else toast.success('Draft saved — finish anytime')
+            }}
+            disabled={savingDraft}
+            className="gap-1.5"
+          >
+            <Save className="h-3.5 w-3.5" />
+            {savingDraft ? 'Saving…' : 'Save draft'}
+          </Button>
+        )}
         {!isCompleted && (
           <Button
             onClick={handleSubmit}
