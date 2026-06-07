@@ -8,6 +8,8 @@
 
 **Tech Stack:** Supabase Postgres, plpgsql, existing RLS helpers `get_my_business_id()` / `get_my_role()`.
 
+**Discovered during execution:** `recipes.category` has CHECK `recipes_category_check` allowing only lowercase `'starter','main','dessert','side','sauce','drink','other'` — tests/RPC use `'main'` / default `'other'`.
+
 **Conventions for every task:**
 - Repo `~/HACCP/web`, branch `KNS/iap-foundation`. Commit ONLY files named in the task (branch has unrelated uncommitted files: CLAUDE.md, team/page.tsx, .agents/ etc.).
 - Runner: `SUPABASE_ACCESS_TOKEN=sbp_… scripts/sql-api.sh <file.sql>`. On HTTP errors the script hides the body — re-run the curl from the script without `-f` to see the JSON error.
@@ -37,7 +39,7 @@ BEGIN
   ASSERT v_profile.id IS NOT NULL, 'test profile testpush@g.com missing';
 
   INSERT INTO public.recipes (business_id, created_by, name, category)
-  VALUES (v_profile.business_id, v_profile.id, '__DIETARY_TEST__', 'Main')
+  VALUES (v_profile.business_id, v_profile.id, '__DIETARY_TEST__', 'main')
   RETURNING id INTO v_recipe_id;
 
   -- defaults: all overrides NULL (= auto)
@@ -317,7 +319,7 @@ BEGIN
   v_result := public.create_recipe_with_ingredients(jsonb_build_object(
     'recipe', jsonb_build_object(
       'name', '__RPC_TEST_RECIPE__',
-      'category', 'Main',
+      'category', 'main',
       'description', 'rpc test',
       'instructions', 'mix and bake',
       'vegetarian_override', true
@@ -415,7 +417,7 @@ BEGIN
     v_business, v_user,
     p->'recipe'->>'name',
     p->'recipe'->>'description',
-    COALESCE(p->'recipe'->>'category', 'Main'),
+    COALESCE(p->'recipe'->>'category', 'other'),
     COALESCE(p->'recipe'->>'instructions', ''),
     p->'recipe'->>'cooking_method',
     (p->'recipe'->>'cooking_temp')::numeric,
