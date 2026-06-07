@@ -16,6 +16,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { StatusBadge } from '@/components/shared/status-badge'
 import { cn } from '@/lib/utils'
 import { notifyFlaggedItem, notifySignOffRequired } from '@/lib/notifications'
+import { normalizeInitials, isValidInitials, INITIALS_STORAGE_KEY } from '@/lib/initials'
 import { startOfDay, startOfWeek, startOfMonth, format } from 'date-fns'
 
 function getPeriodStart(frequency: string): Date {
@@ -167,6 +168,11 @@ export default function ChecklistDetailPage({ params }: { params: Promise<{ id: 
         }
         if (item.item_type === 'yes_no' && resp.value === '') {
           toast.error(`"${item.name}" is required`)
+          setSubmitting(false)
+          return
+        }
+        if (item.item_type === 'initials' && !isValidInitials(resp.value)) {
+          toast.error(`"${item.name}" requires valid initials (2–5 letters/digits)`)
           setSubmitting(false)
           return
         }
@@ -429,6 +435,30 @@ export default function ChecklistDetailPage({ params }: { params: Promise<{ id: 
                   onChange={(e) => setResponse(item.id, { value: e.target.value })}
                   placeholder="Enter notes..."
                   rows={2}
+                />
+              )}
+
+              {item.item_type === 'initials' && (
+                <Input
+                  disabled={readOnly}
+                  value={readOnly ? (existingResp?.value ?? '') : getResponse(item.id).value}
+                  onChange={(e) => {
+                    const v = normalizeInitials(e.target.value)
+                    setResponse(item.id, { value: v })
+                    try { localStorage.setItem(INITIALS_STORAGE_KEY, v) } catch {}
+                  }}
+                  onFocus={() => {
+                    if (!getResponse(item.id).value) {
+                      try {
+                        const last = localStorage.getItem(INITIALS_STORAGE_KEY)
+                        if (last) setResponse(item.id, { value: last })
+                      } catch {}
+                    }
+                  }}
+                  maxLength={5}
+                  className={cn('w-28 uppercase', !readOnly && getResponse(item.id).value
+                    && !isValidInitials(getResponse(item.id).value) && 'border-red-300 bg-red-50')}
+                  placeholder="e.g. JD"
                 />
               )}
 
