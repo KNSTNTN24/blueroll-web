@@ -41,3 +41,13 @@
 - AI-импорт рецептов и веб — через RPC `create_recipe_with_ingredients`.
 - Юнит-тесты: `npm test` (vitest, src/lib/*.test.ts).
 - Деплой: PR → squash merge в main → `vercel --prod`.
+
+## Security: service_role key removed from mobile (2026-06-07)
+
+- Был зашит `service_role` JWT в haccp-mobile (checklists_screen + checklist_detail) — обход RLS.
+- Причина закрыта: SELECT-политика completions уже business-scoped (admin-fetch был лишним);
+  добавлена DELETE-политика `Delete own or managed completions` (responses каскадят по FK).
+- Ключ удалён из обоих файлов (grep service_role = 0); будущие сборки его не отгружают.
+- Ключ НЕ ротирован (решение Константина: репо приватный, риск принят). При смене решения —
+  Settings→API→roll + обновить env: Edge Functions, Railway CRM, scripts/sql-api.sh.
+- Тест: supabase/tests/sql/09_completion_delete_policy.test.sql.
