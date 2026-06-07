@@ -19,20 +19,7 @@ import {
   type EUAllergen,
 } from '@/lib/constants'
 import { HACCP_RECIPE_METHODS } from '@/lib/haccp-methods'
-
-/* ── dietary helpers ── */
-const DIETARY_RULES: Record<string, (allergens: string[]) => boolean> = {
-  Vegan: (a) => !a.some((x) => ['milk', 'eggs', 'fish', 'crustaceans', 'molluscs'].includes(x)),
-  Vegetarian: (a) => !a.some((x) => ['fish', 'crustaceans', 'molluscs'].includes(x)),
-  'Gluten-Free': (a) => !a.includes('gluten'),
-  'Dairy-Free': (a) => !a.includes('milk'),
-}
-
-function computeDietary(allergens: string[]): string[] {
-  return Object.entries(DIETARY_RULES)
-    .filter(([, fn]) => fn(allergens))
-    .map(([label]) => label)
-}
+import { effectiveDietary } from '@/lib/dietary'
 
 const EXTRA_CARE_LABELS: Record<string, string> = {
   eggs: 'Eggs', rice: 'Rice', pulses: 'Pulses', shellfish: 'Shellfish',
@@ -117,7 +104,7 @@ export default function RecipeDetailPage({ params }: { params: Promise<{ id: str
   }
 
   const allergens = getAllergens()
-  const dietary = computeDietary(allergens)
+  const dietary = effectiveDietary(recipe, allergens)
 
   return (
     <div className="space-y-6">
