@@ -9,7 +9,7 @@ BEGIN
   ASSERT v_profile.id IS NOT NULL, 'test profile testpush@g.com missing';
 
   INSERT INTO public.recipes (business_id, created_by, name, category)
-  VALUES (v_profile.business_id, v_profile.id, '__DIETARY_TEST__', 'Main')
+  VALUES (v_profile.business_id, v_profile.id, '__DIETARY_TEST__', 'main')
   RETURNING id INTO v_recipe_id;
 
   -- defaults: all overrides NULL (= auto)
