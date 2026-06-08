@@ -1,8 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, Suspense } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { toast } from 'sonner'
@@ -17,6 +17,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import { CHECKLIST_FREQUENCIES, ROLE_LABELS, type UserRole } from '@/lib/constants'
+import { checklistStatus, compareTemplates } from '@/lib/checklist-status'
 import { startOfDay, startOfWeek, startOfMonth } from 'date-fns'
 
 function getPeriodStart(frequency: string): Date {
@@ -31,12 +32,14 @@ function getPeriodStart(frequency: string): Date {
   return startOfDay(now)
 }
 
-export default function ChecklistsPage() {
+function ChecklistsPageInner() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const queryClient = useQueryClient()
   const profile = useAuthStore((s) => s.profile)
   const business = useAuthStore((s) => s.business)
   const isManager = profile?.role === 'owner' || profile?.role === 'manager'
+  const tab = searchParams.get('tab') === 'library' && isManager ? 'library' : 'today'
 
   // ── Today's templates for user's role ──
   const { data: myTemplates = [], isLoading: loadingMy } = useQuery({
@@ -91,16 +94,20 @@ export default function ChecklistsPage() {
     enabled: !!business?.id,
   })
 
-  function getStatus(template: any): { label: string; status: 'success' | 'warning' | 'info' | 'neutral' } {
-    const periodStart = getPeriodStart(template.frequency)
-    const completion = completions.find(
+  function getStatus(template: any) {
+    // multi-per-day counts TODAY regardless of declared frequency
+    const periodStart = getPeriodStart(template.multi_per_day ? 'daily' : template.frequency)
+    const periodCompletions = completions.filter(
       (c: any) => c.template_id === template.id && new Date(c.completed_at) >= periodStart
     )
-    if (!completion) return { label: 'Pending', status: 'neutral' }
-    if (completion.signed_off_by) return { label: 'Signed Off', status: 'success' }
-    if (template.supervisor_role) return { label: 'Awaiting Sign-off', status: 'warning' }
-    return { label: 'Completed', status: 'success' }
+    return checklistStatus(template, periodCompletions)
   }
+
+  // Sort Today templates by status: pending first, earlier deadline first, then name
+  const sortedMyTemplates = [...myTemplates]
+    .map((t: any) => ({ t, done: getStatus(t).done }))
+    .sort(compareTemplates)
+    .map((x) => x.t)
 
   // ── Toggle active mutation ──
   const toggleActiveMutation = useMutation({
@@ -134,7 +141,7 @@ export default function ChecklistsPage() {
         )}
       </PageHeader>
 
-      <Tabs defaultValue="today">
+      <Tabs value={tab} onValueChange={(v) => router.replace(`/checklists${v === 'library' ? '?tab=library' : ''}`)}>
         <TabsList>
           <TabsTrigger value="today">Today</TabsTrigger>
           {isManager && <TabsTrigger value="library">Library</TabsTrigger>}
@@ -154,7 +161,7 @@ export default function ChecklistsPage() {
             />
           ) : (
             <div className="space-y-2">
-              {myTemplates.map((t: any) => {
+              {sortedMyTemplates.map((t: any) => {
                 const s = getStatus(t)
                 return (
                   <button
@@ -267,5 +274,13 @@ export default function ChecklistsPage() {
         )}
       </Tabs>
     </div>
+  )
+}
+
+export default function ChecklistsPage() {
+  return (
+    <Suspense fallback={null}>
+      <ChecklistsPageInner />
+    </Suspense>
   )
 }

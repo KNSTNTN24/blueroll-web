@@ -14,13 +14,6 @@ import { cn } from '@/lib/utils'
 import { ROLE_LABELS, ROLE_COLORS, USER_ROLES, type UserRole } from '@/lib/constants'
 import { format } from 'date-fns'
 
-function generateToken(length = 6): string {
-  const chars = '0123456789'
-  const arr = new Uint8Array(length)
-  crypto.getRandomValues(arr)
-  return Array.from(arr, (b) => chars[b % chars.length]).join('')
-}
-
 function getInitials(name: string | null, email: string): string {
   if (name) {
     const parts = name.split(' ').filter(Boolean)
@@ -80,21 +73,16 @@ export default function TeamPage() {
 
   const inviteMutation = useMutation({
     mutationFn: async () => {
-      if (!business?.id || !profile?.id) throw new Error('No business')
-      const token = generateToken(6)
-      const expiresAt = new Date()
-      expiresAt.setDate(expiresAt.getDate() + 7)
-
-      const { error } = await supabase.from('invites').insert({
-        business_id: business.id,
-        email: inviteEmail,
-        role: inviteRole,
-        token,
-        invited_by: profile.id,
-        expires_at: expiresAt.toISOString(),
+      // Single source of truth — Postgres RPC. Generates a unique 6-digit
+      // numeric token, enforces owner/manager permission, sets 7-day expiry.
+      const { data, error } = await supabase.rpc('create_invite', {
+        p_email: inviteEmail,
+        p_role: inviteRole,
       })
       if (error) throw error
-      return token
+      const row = Array.isArray(data) ? data[0] : data
+      if (!row?.token) throw new Error('Invite created but no token returned')
+      return row.token as string
     },
     onSuccess: (token) => {
       setGeneratedToken(token)

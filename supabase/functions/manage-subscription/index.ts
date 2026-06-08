@@ -71,7 +71,7 @@ Deno.serve(async (req) => {
 
       await supabase
         .from("businesses")
-        .update({ subscription_status: "canceling" })
+        .update({ stripe_status: "canceling" })
         .eq("id", businessId);
 
       return new Response(
@@ -94,7 +94,7 @@ Deno.serve(async (req) => {
 
       await supabase
         .from("businesses")
-        .update({ subscription_status: sub.status })
+        .update({ stripe_status: sub.status })
         .eq("id", businessId);
 
       return new Response(
@@ -125,8 +125,8 @@ Deno.serve(async (req) => {
           .from("businesses")
           .update({
             subscription_id: sub.id,
-            subscription_status: sub.cancel_at_period_end ? "canceling" : sub.status,
-            trial_ends_at: trialEnd,
+            stripe_status: sub.cancel_at_period_end ? "canceling" : sub.status,
+            stripe_until: trialEnd,
           })
           .eq("id", businessId);
 

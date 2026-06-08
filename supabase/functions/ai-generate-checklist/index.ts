@@ -17,7 +17,7 @@ Return ONLY a valid JSON object (no markdown, no commentary):
   "items": [
     {
       "name": "Short action item (max 10 words)",
-      "item_type": "tick|yes_no|temperature|text|photo",
+      "item_type": "tick|yes_no|temperature|text|photo|initials",
       "required": true/false,
       "description": "Guidance note for staff" or null,
       "min_value": number or null,
@@ -62,6 +62,8 @@ Return ONLY a valid JSON object (no markdown, no commentary):
 7. For temperature items: min_value and max_value are MANDATORY. Use FSA values above. Fridge = {min:0, max:5}. Freezer = {min:-30, max:-18}. Hot holding = {min:63, max:100}. Cooking = {min:75, max:100}.
 
 8. Use the exact equipment names provided by the user. Do not rename "Fridge 2" to "Secondary refrigerator".
+
+- Add ONE "initials" item ("Completed by (initials)", required) as the LAST item of every checklist.
 
 Return ONLY valid JSON, no other text.`;
 

@@ -17,7 +17,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
-import { CHECKLIST_FREQUENCIES, CHECKLIST_ITEM_TYPES, CHECKLIST_TYPES, DEFAULT_EQUIPMENT, USER_ROLES, ROLE_LABELS, type UserRole } from '@/lib/constants'
+import { CHECKLIST_FREQUENCIES, CHECKLIST_ITEM_TYPES, ITEM_TYPE_LABELS, CHECKLIST_TYPES, DEFAULT_EQUIPMENT, USER_ROLES, ROLE_LABELS, type UserRole } from '@/lib/constants'
 
 const itemSchema = z.object({
   name: z.string().min(1, 'Item name is required'),
@@ -35,18 +35,12 @@ const templateSchema = z.object({
   assigned_roles: z.array(z.string()).min(1, 'At least one role is required'),
   supervisor_role: z.string().optional().nullable(),
   deadline_time: z.string().optional().nullable(),
+  multi_per_day: z.boolean(),
+  min_per_day: z.union([z.number(), z.nan()]).optional().nullable(),
   items: z.array(itemSchema).min(1, 'At least one item is required'),
 })
 
 type FormData = z.infer<typeof templateSchema>
-
-const ITEM_TYPE_LABELS: Record<string, string> = {
-  tick: 'Checkbox',
-  temperature: 'Temperature',
-  text: 'Text',
-  yes_no: 'Yes / No',
-  photo: 'Photo',
-}
 
 export default function NewChecklistPage() {
   const router = useRouter()
@@ -83,6 +77,8 @@ export default function NewChecklistPage() {
       assigned_roles: ['owner', 'manager'],
       supervisor_role: null,
       deadline_time: null,
+      multi_per_day: false,
+      min_per_day: 1,
       items: [
         { name: '', item_type: 'tick', required: true, min_value: null, max_value: null, unit: null },
       ],
@@ -96,6 +92,7 @@ export default function NewChecklistPage() {
 
   const watchedItems = watch('items')
   const watchedRoles = watch('assigned_roles')
+  const watchedMulti = watch('multi_per_day')
 
   function handleRoleToggle(role: string) {
     const current = watchedRoles ?? []
@@ -235,6 +232,10 @@ export default function NewChecklistPage() {
           active: true,
           supervisor_role: data.supervisor_role || null,
           deadline_time: data.deadline_time || null,
+          multi_per_day: data.multi_per_day,
+          min_per_day: data.multi_per_day
+            ? (data.min_per_day != null && !isNaN(data.min_per_day) ? data.min_per_day : 0)
+            : 1,
         })
         .select('id')
         .single()
@@ -258,7 +259,7 @@ export default function NewChecklistPage() {
       toast.success('Template created')
       queryClient.invalidateQueries({ queryKey: ['all-checklists'] })
       queryClient.invalidateQueries({ queryKey: ['my-checklists'] })
-      router.push('/checklists')
+      router.push('/checklists?tab=library')
     } catch (err: any) {
       toast.error(err?.message ?? 'Failed to create template')
     } finally {
@@ -274,7 +275,7 @@ export default function NewChecklistPage() {
           variant="ghost"
           size="sm"
           className="mt-0.5 h-7 w-7 p-0"
-          onClick={() => router.push('/checklists')}
+          onClick={() => router.push('/checklists?tab=library')}
         >
           <ArrowLeft className="h-4 w-4" />
         </Button>
@@ -577,6 +578,30 @@ export default function NewChecklistPage() {
             </div>
           </div>
 
+          {/* Multiple completions per day */}
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                {...register('multi_per_day')}
+                className="h-4 w-4 rounded border-border text-emerald-600 focus:ring-emerald-500"
+              />
+              <span className="text-[13px] text-foreground">Can be completed multiple times per day</span>
+            </label>
+            {watchedMulti && (
+              <div className="space-y-1.5">
+                <Label htmlFor="min_per_day">Minimum completions per day (0 = optional)</Label>
+                <Input
+                  id="min_per_day"
+                  type="number"
+                  min={0}
+                  className="w-32"
+                  {...register('min_per_day', { valueAsNumber: true })}
+                />
+              </div>
+            )}
+          </div>
+
           {/* Assigned roles */}
           <div className="space-y-1.5">
             <Label>Assigned Roles</Label>
@@ -733,7 +758,7 @@ export default function NewChecklistPage() {
             type="button"
             variant="outline"
             size="sm"
-            onClick={() => router.push('/checklists')}
+            onClick={() => router.push('/checklists?tab=library')}
           >
             Cancel
           </Button>

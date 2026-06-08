@@ -21,20 +21,7 @@ import {
   ALLERGEN_LABELS,
   type EUAllergen,
 } from '@/lib/constants'
-
-/* ── dietary helpers ── */
-const DIETARY_RULES: Record<string, (allergens: string[]) => boolean> = {
-  Vegan: (a) => !a.some((x) => ['milk', 'eggs', 'fish', 'crustaceans', 'molluscs'].includes(x)),
-  Vegetarian: (a) => !a.some((x) => ['fish', 'crustaceans', 'molluscs'].includes(x)),
-  'Gluten-Free': (a) => !a.includes('gluten'),
-  'Dairy-Free': (a) => !a.includes('milk'),
-}
-
-function computeDietary(allergens: string[]): string[] {
-  return Object.entries(DIETARY_RULES)
-    .filter(([, fn]) => fn(allergens))
-    .map(([label]) => label)
-}
+import { effectiveDietary } from '@/lib/dietary'
 
 export default function RecipesPage() {
   const router = useRouter()
@@ -173,7 +160,7 @@ export default function RecipesPage() {
             <tbody>
               {filtered.map((recipe: any) => {
                 const allergens = getAllergens(recipe)
-                const dietary = computeDietary(allergens)
+                const dietary = effectiveDietary(recipe, allergens)
                 return (
                   <tr
                     key={recipe.id}

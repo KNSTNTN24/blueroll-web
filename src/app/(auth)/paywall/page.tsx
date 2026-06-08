@@ -88,12 +88,13 @@ export default function PaywallPage() {
         return
       }
 
-      // TEST STUB: write trialing status directly to DB instead of Stripe
+      // TEST STUB: seed a manual trial; the DB arbiter computes
+      // subscription_status/trial_ends_at from per-source fields.
       const { error: updateError } = await supabase
         .from('businesses')
         .update({
-          subscription_status: 'trialing',
-          trial_ends_at: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+          manual_status: 'trialing',
+          manual_until: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
         })
         .eq('id', profile.business_id)
 

@@ -122,8 +122,8 @@ Deno.serve(async (req) => {
       .from("businesses")
       .update({
         subscription_id: subscription.id,
-        subscription_status: subscription.status, // "trialing" on success
-        trial_ends_at: trialEndIso,
+        stripe_status: subscription.status, // "trialing" on success
+        stripe_until: trialEndIso,
       })
       .eq("id", businessId);
 

@@ -31,7 +31,16 @@ export const ROLE_COLORS: Record<UserRole, string> = {
 
 // ── Checklist ──
 export const CHECKLIST_FREQUENCIES = ['daily', 'weekly', 'monthly', 'four_weekly', 'custom'] as const
-export const CHECKLIST_ITEM_TYPES = ['tick', 'temperature', 'text', 'yes_no', 'photo'] as const
+export const CHECKLIST_ITEM_TYPES = ['tick', 'temperature', 'text', 'yes_no', 'photo', 'initials'] as const
+
+export const ITEM_TYPE_LABELS: Record<string, string> = {
+  tick: 'Checkbox',
+  temperature: 'Temperature',
+  text: 'Text',
+  yes_no: 'Yes / No',
+  photo: 'Photo',
+  initials: 'Initials (who filled this)',
+}
 
 export const CHECKLIST_TYPES = [
   { id: 'opening', label: 'Opening', icon: '🌅', description: 'Start-of-day checks' },
