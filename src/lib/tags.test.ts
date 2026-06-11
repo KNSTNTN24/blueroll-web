@@ -45,4 +45,10 @@ describe('groupByTags (duplicate under each tag, Untagged last)', () => {
   test('no untagged recipes -> no Untagged section', () => {
     expect(groupByTags([tiramisu]).map((g) => g.title)).toEqual(['Desserts'])
   })
+  test('recipes within a group sorted by name', () => {
+    const zabaione = { id: 'r4', name: 'Zabaione', recipe_tags: [{ tag: { id: 't3', name: 'Desserts' } }] }
+    const affogato = { id: 'r5', name: 'Affogato', recipe_tags: [{ tag: { id: 't3', name: 'Desserts' } }] }
+    const groups = groupByTags([zabaione, affogato, water, carbonara])
+    expect(groups.find((g) => g.title === 'Desserts')!.recipes.map((r: any) => r.name)).toEqual(['Affogato', 'Zabaione'])
+  })
 })
