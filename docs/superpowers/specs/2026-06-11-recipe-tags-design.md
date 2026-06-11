@@ -101,8 +101,9 @@ under RLS — no RPC needed.
 
 With no management screen, a typo'd tag would otherwise live in autocomplete forever.
 Decision: **self-cleaning** — `AFTER DELETE ON recipe_tags` trigger deletes the tag
-if it has no remaining links. Tags exist only while ≥1 recipe carries them. (Rare
-race with a concurrent attach resolves via FK error → client retries attach_tag.)
+if it has no remaining links. Tags exist only while ≥1 recipe carries them.
+(Concurrent attach/detach serialize on the tag row lock — lock-then-recheck in
+the trigger.)
 
 ### `create_recipe_with_ingredients` RPC change
 

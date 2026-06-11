@@ -76,7 +76,7 @@ BEGIN
   v_violated := false;
   BEGIN
     PERFORM public.attach_tag(v_recipe_a, '   ');
-  EXCEPTION WHEN raise_exception OR check_violation THEN
+  EXCEPTION WHEN raise_exception THEN
     v_violated := true;
   END;
   ASSERT v_violated, 'blank tag name accepted by attach_tag';
