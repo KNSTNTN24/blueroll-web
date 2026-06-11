@@ -1,7 +1,7 @@
 -- create_recipe_with_ingredients v2: optional tags[] (spec 2026-06-11 recipe-tags).
 -- Tags use the same normalised find-or-create as attach_tag, inside the same
 -- transaction. 'category' in the payload is still accepted (legacy clients);
--- when absent the column DEFAULT 'other' applies.
+-- when absent the function's COALESCE supplies 'other' (the column DEFAULT backs direct inserts).
 CREATE OR REPLACE FUNCTION public.create_recipe_with_ingredients(p jsonb)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -80,10 +80,17 @@ BEGIN
     v_ing_id := NULL;
   END LOOP;
 
+  -- ORDER BY: create-paths lock tags rows in canonical order (deadlock hygiene vs the cleanup trigger).
   FOR v_tag_name IN
-    SELECT btrim(x) FROM jsonb_array_elements_text(COALESCE(p->'tags', '[]'::jsonb)) x
+    SELECT btrim(coalesce(x, '')) FROM jsonb_array_elements_text(COALESCE(p->'tags', '[]'::jsonb)) x
+    ORDER BY 1
   LOOP
-    CONTINUE WHEN v_tag_name = '' OR char_length(v_tag_name) > 40;
+    IF v_tag_name = '' OR char_length(v_tag_name) > 40 THEN
+      -- Silent-skip by design (bulk/AI import must not fail over one bad tag),
+      -- but loud in the logs so an import-function regression is noticeable.
+      RAISE WARNING 'create_recipe_with_ingredients: skipped invalid tag (len %)', char_length(v_tag_name);
+      CONTINUE;
+    END IF;
     INSERT INTO public.tags (business_id, name)
     VALUES (v_business, v_tag_name)
     ON CONFLICT (business_id, name_norm) DO UPDATE SET name = tags.name
@@ -98,3 +105,4 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION public.create_recipe_with_ingredients(jsonb) TO authenticated;
+REVOKE EXECUTE ON FUNCTION public.create_recipe_with_ingredients(jsonb) FROM PUBLIC, anon;

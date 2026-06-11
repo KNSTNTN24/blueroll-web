@@ -13,11 +13,11 @@ BEGIN
   PERFORM set_config('request.jwt.claims',
     json_build_object('sub', v_profile.id, 'role', 'authenticated')::text, true);
 
-  -- tag-aware payload: no category, two tags (one duplicated after normalisation)
+  -- tag-aware payload: no category; valid tags (one duplicated after normalisation) + blank/overlong/null entries that must be silently skipped
   v_result := public.create_recipe_with_ingredients(jsonb_build_object(
     'recipe', jsonb_build_object('name', '__RPC_TAGS_TEST__', 'instructions', 'mix'),
     'ingredients', '[]'::jsonb,
-    'tags', jsonb_build_array('  Pasta RPC ', 'pasta rpc', 'Hits RPC')
+    'tags', jsonb_build_array('  Pasta RPC ', 'pasta rpc', 'Hits RPC', '   ', repeat('x', 41), null)
   ));
   v_recipe_id := (v_result->>'recipe_id')::uuid;
   ASSERT v_recipe_id IS NOT NULL, 'no recipe_id returned';
