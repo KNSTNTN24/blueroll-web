@@ -244,6 +244,8 @@ export default function ImportRecipePage() {
       queryClient.invalidateQueries({ queryKey: ['recipes'] })
       queryClient.invalidateQueries({ queryKey: ['haccp-recipes'] })
       queryClient.invalidateQueries({ queryKey: ['tags'] })
+      queryClient.invalidateQueries({ queryKey: ['menu-recipes'] })
+      queryClient.invalidateQueries({ queryKey: ['allergen-recipes'] })
       router.push(`/recipes/${recipeId}`)
     } catch (err: any) {
       toast.error(err.message || 'Failed to save recipe')
