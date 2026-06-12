@@ -10,7 +10,7 @@
 
 ---
 
-## Таблицы (21 активная)
+## Таблицы (23 активные)
 
 ### 1. businesses
 | Колонка | Тип | Описание |
@@ -148,7 +148,7 @@ FK hints: `profiles!checklist_completions_completed_by_fkey(full_name)`, `checkl
 | id | UUID PK | |
 | name | TEXT NOT NULL | |
 | description | TEXT | |
-| category | TEXT NOT NULL | starter/main/dessert/side/sauce/drink/cocktail/beverage/other |
+| category | TEXT NOT NULL | DEPRECATED — оставлена для старых мобильных билдов (≤1.4.0+21), `DEFAULT 'other'`; новый код использует теги. Дроп отдельной миграцией после раскатки мобильного релиза с тегами |
 | instructions | TEXT | |
 | cooking_method | TEXT | |
 | cooking_temp | NUMERIC | |
@@ -178,6 +178,35 @@ FK hints: `profiles!checklist_completions_completed_by_fkey(full_name)`, `checkl
 | ingredient_id | UUID NOT NULL | FK → ingredients(id) CASCADE |
 | quantity | TEXT | |
 | unit | TEXT | |
+
+---
+
+### 10a. tags
+Пер-бизнес теги рецептов (заменяют `recipes.category`).
+
+| Колонка | Тип | Описание |
+|---------|-----|----------|
+| id | UUID PK | |
+| business_id | UUID NOT NULL | FK → businesses(id) CASCADE |
+| name | TEXT NOT NULL | CHECK: непустое после btrim, ≤40 символов |
+| name_norm | TEXT GENERATED | `lower(btrim(name))`, UNIQUE (business_id, name_norm) |
+| created_at | TIMESTAMPTZ | |
+
+**RLS**: SELECT — все члены бизнеса; INSERT/UPDATE/DELETE — owner/manager/chef своего бизнеса.
+
+---
+
+### 10b. recipe_tags
+M:N связь рецепт ↔ тег.
+
+| Колонка | Тип | Описание |
+|---------|-----|----------|
+| recipe_id | UUID NOT NULL | FK → recipes(id) CASCADE, часть PK |
+| tag_id | UUID NOT NULL | FK → tags(id) CASCADE, часть PK |
+
+**RLS**: SELECT — все члены бизнеса; запись — owner/manager/chef, обе стороны пиннятся к бизнесу вызывающего (кросс-бизнес линковка невозможна).
+
+**Триггер**: `trg_cleanup_orphan_tag` (AFTER DELETE) — тег без единой связи самоудаляется (lock-then-recheck против гонок attach/detach). Detach = обычный DELETE из recipe_tags.
 
 ---
 
@@ -365,7 +394,7 @@ FK hints: `suppliers(name)`, `profiles(full_name)`, `delivery_photos(*)`
 
 ---
 
-## RPC функции (SECURITY DEFINER)
+## RPC функции (SECURITY DEFINER, если не отмечено иное)
 
 ### setup_business
 ```
@@ -391,6 +420,18 @@ join_with_invite(
 
 ### get_my_business_id / get_my_role
 Хелперы для RLS-политик. Не вызываются из приложения напрямую.
+
+### create_recipe_with_ingredients
+```
+create_recipe_with_ingredients(p JSONB) → JSONB
+```
+Атомарное сохранение рецепта: рецепт + find-or-create ингредиентов + связи. Принимает опциональный `tags: string[]` — каждый тег прогоняется через ту же логику, что `attach_tag`; невалидные имена тихо скипаются с RAISE WARNING (bulk-импорт не падает из-за одного тега).
+
+### attach_tag
+```
+attach_tag(p_recipe_id UUID, p_name TEXT) → tags
+```
+**SECURITY INVOKER** (авторизация — RLS на tags/recipe_tags). Нормализует имя (btrim, 1–40 символов), find-or-create тега в бизнесе вызывающего + линк к рецепту (ON CONFLICT race-safe). Detach — обычный DELETE из recipe_tags (тег-сирота самоудалится триггером).
 
 ---
 

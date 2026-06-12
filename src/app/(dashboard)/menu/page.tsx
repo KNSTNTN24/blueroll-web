@@ -13,11 +13,11 @@ import { EmptyState } from '@/components/shared/empty-state'
 import { StatusBadge } from '@/components/shared/status-badge'
 import { Button } from '@/components/ui/button'
 import {
-  RECIPE_CATEGORY_LABELS,
   EU_ALLERGENS,
   ALLERGEN_LABELS,
   type EUAllergen,
 } from '@/lib/constants'
+import { getRecipeTags, groupByTags, normalizeTag } from '@/lib/tags'
 
 type TabId = 'recipes' | 'allergens'
 
@@ -50,6 +50,8 @@ export default function MenuPage() {
   const isManager = profile?.role === 'owner' || profile?.role === 'manager'
 
   const [tab, setTab] = useState<TabId>('recipes')
+  const [tagFilter, setTagFilter] = useState<string[]>([])
+  const [groupByTag, setGroupByTag] = useState(false)
 
   const { data: recipes = [], isLoading } = useQuery({
     queryKey: ['menu-recipes', business?.id],
@@ -61,6 +63,9 @@ export default function MenuPage() {
           *,
           recipe_ingredients (
             ingredient:ingredients (name, allergens)
+          ),
+          recipe_tags (
+            tag:tags (id, name)
           )
         `)
         .eq('business_id', business.id)
@@ -72,6 +77,16 @@ export default function MenuPage() {
   })
 
   const activeRecipes = recipes.filter((r: any) => r.active)
+
+  function matchesFilter(r: any): boolean {
+    const norms = getRecipeTags(r).map((t) => normalizeTag(t.name))
+    return tagFilter.every((f) => norms.includes(normalizeTag(f)))
+  }
+  const visibleRecipes = recipes.filter(matchesFilter)
+  const visibleActive = activeRecipes.filter(matchesFilter)
+  const allTagNames = Array.from(
+    new Set(recipes.flatMap((r: any) => getRecipeTags(r).map((t) => t.name)))
+  ).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
 
   async function handleToggle(recipe: any) {
     const { error } = await supabase
@@ -87,12 +102,12 @@ export default function MenuPage() {
   }
 
   function exportCSV() {
-    const header = ['Recipe', 'Category', ...EU_ALLERGENS.map((a) => ALLERGEN_LABELS[a])]
-    const rows = activeRecipes.map((r: any) => {
+    const header = ['Recipe', 'Tags', ...EU_ALLERGENS.map((a) => ALLERGEN_LABELS[a])]
+    const rows = visibleActive.map((r: any) => {
       const allergens = getAllergens(r)
       return [
         r.name,
-        RECIPE_CATEGORY_LABELS[r.category] ?? r.category,
+        getRecipeTags(r).map((t) => t.name).join('; '),
         ...EU_ALLERGENS.map((a) => (allergens.includes(a) ? 'Y' : '')),
       ]
     })
@@ -107,25 +122,17 @@ export default function MenuPage() {
   }
 
   function handlePrint() {
-    // Group active recipes by category
-    const grouped: Record<string, any[]> = {}
-    for (const r of activeRecipes) {
-      const cat = r.category ?? 'other'
-      if (!grouped[cat]) grouped[cat] = []
-      grouped[cat].push(r)
-    }
+    const list = visibleActive
+    const sections = groupByTag
+      ? groupByTags(list)
+      : [{ title: '', recipes: [...list].sort((a: any, b: any) => a.name.localeCompare(b.name)) }]
 
     // Count dietary totals
     const dietaryCounts: Record<string, number> = {}
-    activeRecipes.forEach((r: any) => {
+    list.forEach((r: any) => {
       const dietary = computeDietary(getAllergens(r))
       dietary.forEach((d) => { dietaryCounts[d] = (dietaryCounts[d] || 0) + 1 })
     })
-
-    const categoryOrder = ['starter','main','dessert','side','sauce','drink','cocktail','beverage','other']
-    const sortedCategories = Object.keys(grouped).sort(
-      (a, b) => categoryOrder.indexOf(a) - categoryOrder.indexOf(b)
-    )
 
     let html = `<!DOCTYPE html><html><head><title>${business?.name ?? 'Blueroll'} — Menu</title>
     <style>
@@ -147,13 +154,13 @@ export default function MenuPage() {
     </style></head><body>`
 
     html += `<h1>${business?.name ?? 'Menu'}</h1>`
-    html += `<div class="subtitle">${activeRecipes.length} dishes · Generated ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</div>`
+    html += `<div class="subtitle">${list.length} dishes · Generated ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</div>`
 
-    for (const cat of sortedCategories) {
-      const items = grouped[cat]
-      html += `<h2>${RECIPE_CATEGORY_LABELS[cat] ?? cat} (${items.length})</h2>`
-      html += `<table><tr><th>Dish</th><th>Allergens</th><th>Dietary</th></tr>`
-      for (const r of items) {
+    for (const section of sections) {
+      if (section.title) html += `<h2>${section.title} (${section.recipes.length})</h2>`
+      html += `<table><tr><th>Dish</th><th>Tags</th><th>Allergens</th><th>Dietary</th></tr>`
+      for (const r of section.recipes) {
+        const tagNames = getRecipeTags(r).map((t) => t.name).join(', ')
         const allergens = getAllergens(r)
         const dietary = computeDietary(allergens)
         const allergenBadges = allergens.length > 0
@@ -162,7 +169,7 @@ export default function MenuPage() {
         const dietaryBadges = dietary.length > 0
           ? dietary.map((d) => `<span class="dietary">${d}</span>`).join('')
           : ''
-        html += `<tr><td><strong>${r.name}</strong>${r.description ? `<br><span style="color:#6b7280;font-size:10px">${r.description}</span>` : ''}</td><td>${allergenBadges}</td><td>${dietaryBadges}</td></tr>`
+        html += `<tr><td><strong>${r.name}</strong>${r.description ? `<br><span style="color:#6b7280;font-size:10px">${r.description}</span>` : ''}</td><td>${tagNames}</td><td>${allergenBadges}</td><td>${dietaryBadges}</td></tr>`
       }
       html += `</table>`
     }
@@ -221,6 +228,41 @@ export default function MenuPage() {
         ))}
       </div>
 
+      {allTagNames.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {allTagNames.map((name) => {
+            const selected = tagFilter.includes(name)
+            return (
+              <button
+                key={name}
+                type="button"
+                onClick={() =>
+                  setTagFilter((prev) =>
+                    selected ? prev.filter((x) => x !== name) : [...prev, name]
+                  )
+                }
+                className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-medium border transition-colors ${
+                  selected
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                    : 'bg-muted/50 text-muted-foreground border-border hover:border-emerald-200'
+                }`}
+              >
+                {name}
+              </button>
+            )
+          })}
+          <label className="ml-2 flex items-center gap-1.5 text-[12px] text-muted-foreground cursor-pointer">
+            <input
+              type="checkbox"
+              checked={groupByTag}
+              onChange={(e) => setGroupByTag(e.target.checked)}
+              className="h-3.5 w-3.5 rounded border-border accent-emerald-600"
+            />
+            Group by tags
+          </label>
+        </div>
+      )}
+
       {isLoading ? (
         <div className="flex items-center justify-center py-16 text-[13px] text-muted-foreground">
           Loading menu...
@@ -233,88 +275,23 @@ export default function MenuPage() {
             title="No recipes yet"
             description="Create recipes first, then activate them to build your menu"
           />
-        ) : (
-          <div className="overflow-hidden rounded-lg border border-border">
-            <table className="w-full text-[13px]">
-              <thead>
-                <tr className="border-b border-border bg-muted/50">
-                  <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Name</th>
-                  <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Category</th>
-                  <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Allergens</th>
-                  <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Dietary</th>
-                  <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Status</th>
-                  {isManager && (
-                    <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">Actions</th>
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                {recipes.map((recipe: any) => {
-                  const allergens = getAllergens(recipe)
-                  const dietary = computeDietary(allergens)
-                  return (
-                    <tr key={recipe.id} className="border-b border-border last:border-0 hover:bg-muted/30">
-                      <td className="px-4 py-3 font-medium text-foreground">{recipe.name}</td>
-                      <td className="px-4 py-3 text-muted-foreground">
-                        {RECIPE_CATEGORY_LABELS[recipe.category] ?? recipe.category}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex flex-wrap gap-1">
-                          {allergens.length === 0 ? (
-                            <span className="text-muted-foreground">None</span>
-                          ) : (
-                            allergens.map((a) => (
-                              <span
-                                key={a}
-                                className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-medium text-red-700 border border-red-200"
-                              >
-                                {ALLERGEN_LABELS[a as EUAllergen] ?? a}
-                              </span>
-                            ))
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex flex-wrap gap-1">
-                          {dietary.map((d) => (
-                            <span
-                              key={d}
-                              className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 border border-emerald-200"
-                            >
-                              {d}
-                            </span>
-                          ))}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <StatusBadge
-                          status={recipe.active ? 'success' : 'neutral'}
-                          label={recipe.active ? 'Active' : 'Inactive'}
-                        />
-                      </td>
-                      {isManager && (
-                        <td className="px-4 py-3 text-right">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleToggle(recipe)}
-                            className="gap-1.5 text-[12px]"
-                          >
-                            <Power className="h-3 w-3" />
-                            {recipe.active ? 'Deactivate' : 'Activate'}
-                          </Button>
-                        </td>
-                      )}
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+        ) : groupByTag ? (
+          <div className="space-y-6">
+            {groupByTags(visibleRecipes).map((group) => (
+              <div key={group.title}>
+                <h2 className="mb-2 text-[14px] font-semibold text-foreground">
+                  {group.title} <span className="text-muted-foreground font-normal">({group.recipes.length})</span>
+                </h2>
+                <RecipesTable list={group.recipes} isManager={isManager} onToggle={handleToggle} />
+              </div>
+            ))}
           </div>
+        ) : (
+          <RecipesTable list={visibleRecipes} isManager={isManager} onToggle={handleToggle} />
         )
       ) : (
         /* ── Allergens Matrix Tab ── */
-        activeRecipes.length === 0 ? (
+        visibleActive.length === 0 ? (
           <EmptyState
             icon={UtensilsCrossed}
             title="No active recipes"
@@ -339,7 +316,7 @@ export default function MenuPage() {
                 </tr>
               </thead>
               <tbody>
-                {activeRecipes.map((recipe: any) => {
+                {visibleActive.map((recipe: any) => {
                   const allergens = getAllergens(recipe)
                   return (
                     <tr key={recipe.id} className="border-b border-border last:border-0 hover:bg-muted/30">
@@ -365,6 +342,109 @@ export default function MenuPage() {
           </div>
         )
       )}
+    </div>
+  )
+}
+
+function RecipesTable({
+  list,
+  isManager,
+  onToggle,
+}: {
+  list: any[]
+  isManager: boolean
+  onToggle: (r: any) => void
+}) {
+  return (
+    <div className="overflow-hidden rounded-lg border border-border">
+      <table className="w-full text-[13px]">
+        <thead>
+          <tr className="border-b border-border bg-muted/50">
+            <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Name</th>
+            <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Tags</th>
+            <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Allergens</th>
+            <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Dietary</th>
+            <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Status</th>
+            {isManager && (
+              <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">Actions</th>
+            )}
+          </tr>
+        </thead>
+        <tbody>
+          {list.map((recipe: any) => {
+            const allergens = getAllergens(recipe)
+            const dietary = computeDietary(allergens)
+            return (
+              <tr key={recipe.id} className="border-b border-border last:border-0 hover:bg-muted/30">
+                <td className="px-4 py-3 font-medium text-foreground">{recipe.name}</td>
+                <td className="px-4 py-3">
+                  <div className="flex flex-wrap gap-1">
+                    {getRecipeTags(recipe).length === 0 ? (
+                      <span className="text-muted-foreground">—</span>
+                    ) : (
+                      getRecipeTags(recipe).map((t) => (
+                        <span
+                          key={t.id}
+                          className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-foreground border border-border"
+                        >
+                          {t.name}
+                        </span>
+                      ))
+                    )}
+                  </div>
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex flex-wrap gap-1">
+                    {allergens.length === 0 ? (
+                      <span className="text-muted-foreground">None</span>
+                    ) : (
+                      allergens.map((a) => (
+                        <span
+                          key={a}
+                          className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-medium text-red-700 border border-red-200"
+                        >
+                          {ALLERGEN_LABELS[a as EUAllergen] ?? a}
+                        </span>
+                      ))
+                    )}
+                  </div>
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex flex-wrap gap-1">
+                    {dietary.map((d) => (
+                      <span
+                        key={d}
+                        className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 border border-emerald-200"
+                      >
+                        {d}
+                      </span>
+                    ))}
+                  </div>
+                </td>
+                <td className="px-4 py-3">
+                  <StatusBadge
+                    status={recipe.active ? 'success' : 'neutral'}
+                    label={recipe.active ? 'Active' : 'Inactive'}
+                  />
+                </td>
+                {isManager && (
+                  <td className="px-4 py-3 text-right">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onToggle(recipe)}
+                      className="gap-1.5 text-[12px]"
+                    >
+                      <Power className="h-3 w-3" />
+                      {recipe.active ? 'Deactivate' : 'Activate'}
+                    </Button>
+                  </td>
+                )}
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
     </div>
   )
 }

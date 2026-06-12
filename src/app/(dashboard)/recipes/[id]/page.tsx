@@ -14,12 +14,12 @@ import { PageHeader } from '@/components/layout/page-header'
 import { StatusBadge } from '@/components/shared/status-badge'
 import { Button } from '@/components/ui/button'
 import {
-  RECIPE_CATEGORY_LABELS,
   ALLERGEN_LABELS,
   type EUAllergen,
 } from '@/lib/constants'
 import { HACCP_RECIPE_METHODS } from '@/lib/haccp-methods'
 import { effectiveDietary } from '@/lib/dietary'
+import { getRecipeTags } from '@/lib/tags'
 
 const EXTRA_CARE_LABELS: Record<string, string> = {
   eggs: 'Eggs', rice: 'Rice', pulses: 'Pulses', shellfish: 'Shellfish',
@@ -43,7 +43,8 @@ export default function RecipeDetailPage({ params }: { params: Promise<{ id: str
             quantity,
             unit,
             ingredient:ingredients (id, name, allergens)
-          )
+          ),
+          recipe_tags ( tag:tags (id, name) )
         `)
         .eq('id', id)
         .single()
@@ -169,7 +170,6 @@ export default function RecipeDetailPage({ params }: { params: Promise<{ id: str
 
       {/* Info cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <InfoCard label="Category" value={RECIPE_CATEGORY_LABELS[recipe.category] ?? recipe.category} />
         {recipe.cooking_method && (
           <InfoCard
             icon={Flame}
@@ -194,7 +194,7 @@ export default function RecipeDetailPage({ params }: { params: Promise<{ id: str
       </div>
 
       {/* Allergens + Dietary */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div className="rounded-lg border border-border p-4">
           <h3 className="text-[13px] font-medium text-foreground mb-2">Allergens</h3>
           <div className="flex flex-wrap gap-1.5">
@@ -224,6 +224,23 @@ export default function RecipeDetailPage({ params }: { params: Promise<{ id: str
                   className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700 border border-emerald-200"
                 >
                   {d}
+                </span>
+              ))
+            )}
+          </div>
+        </div>
+        <div className="rounded-lg border border-border p-4">
+          <h3 className="text-[13px] font-medium text-foreground mb-2">Tags</h3>
+          <div className="flex flex-wrap gap-1.5">
+            {getRecipeTags(recipe).length === 0 ? (
+              <span className="text-[13px] text-muted-foreground">No tags</span>
+            ) : (
+              getRecipeTags(recipe).map((t) => (
+                <span
+                  key={t.id}
+                  className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-[11px] font-medium text-foreground border border-border"
+                >
+                  {t.name}
                 </span>
               ))
             )}

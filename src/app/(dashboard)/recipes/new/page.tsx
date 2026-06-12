@@ -10,12 +10,8 @@ import { ArrowLeft, Plus, Trash2, Save } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import {
-  RECIPE_CATEGORIES,
-  RECIPE_CATEGORY_LABELS,
-  EU_ALLERGENS,
-  ALLERGEN_LABELS,
-} from '@/lib/constants'
+import { EU_ALLERGENS, ALLERGEN_LABELS } from '@/lib/constants'
+import { TagInput } from '@/components/tag-input'
 import { HACCP_RECIPE_METHODS } from '@/lib/haccp-methods'
 import { type DietaryOverrides } from '@/lib/dietary'
 import { DietaryChips } from '@/components/dietary-chips'
@@ -45,7 +41,7 @@ export default function NewRecipePage() {
   // Form state
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
-  const [category, setCategory] = useState('main')
+  const [tags, setTags] = useState<string[]>([])
   const [instructions, setInstructions] = useState('')
   const [cookingMethod, setCookingMethod] = useState('')
   const [cookingTemp, setCookingTemp] = useState('')
@@ -151,7 +147,6 @@ export default function NewRecipePage() {
           created_by: profile.id,
           name: name.trim(),
           description: description.trim() || null,
-          category,
           instructions: instructions.trim() || null,
           cooking_method: cookingMethod.trim() || null,
           cooking_temp: cookingTemp ? Number(cookingTemp) : null,
@@ -172,6 +167,15 @@ export default function NewRecipePage() {
 
       if (recipeError) throw recipeError
 
+      // Tags: attach_tag is normalised find-or-create on the DB side
+      for (const t of tags) {
+        const { error: tagError } = await supabase.rpc('attach_tag', {
+          p_recipe_id: recipe.id,
+          p_name: t,
+        })
+        if (tagError) throw tagError
+      }
+
       // 3. Create recipe_ingredients
       const recipeIngredients = validIngredients.map((ing) => ({
         recipe_id: recipe.id,
@@ -190,6 +194,9 @@ export default function NewRecipePage() {
       toast.success('Recipe created')
       queryClient.invalidateQueries({ queryKey: ['recipes'] })
       queryClient.invalidateQueries({ queryKey: ['haccp-recipes'] })
+      queryClient.invalidateQueries({ queryKey: ['tags'] })
+      queryClient.invalidateQueries({ queryKey: ['menu-recipes'] })
+      queryClient.invalidateQueries({ queryKey: ['allergen-recipes'] })
       router.push(`/recipes/${recipe.id}`)
     } catch (err: any) {
       toast.error(err.message || 'Failed to create recipe')
@@ -224,18 +231,8 @@ export default function NewRecipePage() {
                 className="text-[13px]"
               />
             </Field>
-            <Field label="Category">
-              <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                className="h-9 w-full rounded-md border border-border bg-background px-3 text-[13px] text-foreground outline-none"
-              >
-                {RECIPE_CATEGORIES.map((c) => (
-                  <option key={c} value={c}>
-                    {RECIPE_CATEGORY_LABELS[c]}
-                  </option>
-                ))}
-              </select>
+            <Field label="Tags">
+              <TagInput value={tags} onChange={setTags} />
             </Field>
           </div>
           <Field label="Description">

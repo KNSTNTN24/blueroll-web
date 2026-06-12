@@ -13,12 +13,11 @@ import { PageHeader } from '@/components/layout/page-header'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
-  RECIPE_CATEGORIES,
-  RECIPE_CATEGORY_LABELS,
   EU_ALLERGENS,
   ALLERGEN_LABELS,
 } from '@/lib/constants'
 import { HACCP_RECIPE_METHODS } from '@/lib/haccp-methods'
+import { TagInput } from '@/components/tag-input'
 import { fileToImageInput, MAX_RECIPE_IMAGES } from '@/lib/recipe-images'
 
 type TabId = 'text' | 'pdf' | 'photo'
@@ -33,7 +32,7 @@ interface ParsedIngredient {
 interface ParsedRecipe {
   name: string
   description: string
-  category: string
+  tags: string[]
   instructions: string
   cooking_method: string
   cooking_temp: string
@@ -52,7 +51,7 @@ interface ParsedRecipe {
 const emptyParsed: ParsedRecipe = {
   name: '',
   description: '',
-  category: 'main',
+  tags: [],
   instructions: '',
   cooking_method: '',
   cooking_temp: '',
@@ -126,7 +125,15 @@ export default function ImportRecipePage() {
       setParsed({
         name: r.name ?? '',
         description: r.description ?? '',
-        category: r.category ?? 'main',
+        // tags from the updated edge function; legacy responses map category -> one tag.
+        // Capitalise+s reproduces the backfill labels for all 8 legacy values
+        // (starter->Starters … beverage->Beverages), so legacy AI responses land on
+        // the existing backfilled tags instead of creating near-duplicates.
+        tags: Array.isArray(r.tags) && r.tags.length > 0
+          ? r.tags
+          : r.category && r.category !== 'other'
+            ? [r.category.charAt(0).toUpperCase() + r.category.slice(1) + 's']
+            : [],
         instructions: r.instructions ?? '',
         cooking_method: r.cookingMethod ?? r.cooking_method ?? '',
         cooking_temp: (r.cookingTemp ?? r.cooking_temp ?? '').toString(),
@@ -197,7 +204,6 @@ export default function ImportRecipePage() {
           recipe: {
             name: parsed.name.trim(),
             description: parsed.description.trim() || null,
-            category: parsed.category,
             instructions: parsed.instructions.trim() || null,
             cooking_method: parsed.cooking_method.trim() || null,
             cooking_temp: parsed.cooking_temp || null,
@@ -216,6 +222,7 @@ export default function ImportRecipePage() {
             quantity: ing.quantity?.toString().trim() || null,
             unit: ing.unit.trim() || null,
           })),
+          tags: parsed.tags,
         },
       })
       if (rpcError) throw rpcError
@@ -232,6 +239,9 @@ export default function ImportRecipePage() {
       toast.success('Recipe saved')
       queryClient.invalidateQueries({ queryKey: ['recipes'] })
       queryClient.invalidateQueries({ queryKey: ['haccp-recipes'] })
+      queryClient.invalidateQueries({ queryKey: ['tags'] })
+      queryClient.invalidateQueries({ queryKey: ['menu-recipes'] })
+      queryClient.invalidateQueries({ queryKey: ['allergen-recipes'] })
       router.push(`/recipes/${recipeId}`)
     } catch (err: any) {
       toast.error(err.message || 'Failed to save recipe')
@@ -373,18 +383,8 @@ export default function ImportRecipePage() {
                   className="text-[13px]"
                 />
               </Field>
-              <Field label="Category">
-                <select
-                  value={parsed.category}
-                  onChange={(e) => updateParsed('category', e.target.value)}
-                  className="h-9 w-full rounded-md border border-border bg-background px-3 text-[13px] text-foreground outline-none"
-                >
-                  {RECIPE_CATEGORIES.map((c) => (
-                    <option key={c} value={c}>
-                      {RECIPE_CATEGORY_LABELS[c]}
-                    </option>
-                  ))}
-                </select>
+              <Field label="Tags">
+                <TagInput value={parsed.tags} onChange={(t) => updateParsed('tags', t)} />
               </Field>
             </div>
             <Field label="Description">

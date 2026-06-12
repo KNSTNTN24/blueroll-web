@@ -51,3 +51,30 @@
 - Ключ НЕ ротирован (решение Константина: репо приватный, риск принят). При смене решения —
   Settings→API→roll + обновить env: Edge Functions, Railway CRM, scripts/sql-api.sh.
 - Тест: supabase/tests/sql/09_completion_delete_policy.test.sql.
+
+## Recipe tags — DB (2026-06-11)
+
+- `tags(business_id, name, name_norm GENERATED, uniq(business_id,name_norm))` +
+  `recipe_tags(recipe_id, tag_id)`; RLS: читают все члены бизнеса, пишут owner/manager/chef.
+- RPC `attach_tag(recipe_id, name)` — SECURITY INVOKER, normalise + find-or-create
+  + link (ON CONFLICT race-safe). Detach = обычный DELETE из recipe_tags.
+- Теги-сироты самоудаляются (`trg_cleanup_orphan_tag` AFTER DELETE ON recipe_tags,
+  lock-then-recheck против гонок attach/detach).
+- `create_recipe_with_ingredients` принимает опциональный `tags[]` (невалидные
+  имена тихо скипает с RAISE WARNING — bulk-импорт не падает из-за одного тега).
+- Правило имени тега (1–40 символов после btrim) живёт в ТРЁХ местах: CHECK на
+  tags, attach_tag, цикл в create_recipe_with_ingredients — менять синхронно.
+- Бэкфилл: категории → теги с человеческими лейблами ("Mains"), 'other' пропущен.
+  82 связи / 14 тегов / 4 бизнеса на 2026-06-11.
+- **`recipes.category` НЕ дропнута** (старые мобильные билды крашатся без неё) —
+  `DEFAULT 'other'`, новый код её игнорирует; дроп отдельной миграцией после
+  раскатки мобильного релиза с тегами.
+- **Drop-миграция (будущая) ОБЯЗАНА, в этом порядке:** (a) повторно прогнать оба
+  INSERT'а бэкфилла из 20260611120300 ДО дропа колонки (рецепты, созданные старыми
+  билдами в переходный период, имеют category без тега); (b) ASSERT, что нет
+  немаппированных значений category; (c) дропнуть колонку + CHECK; (d) обновить
+  тесты 10–12 (они вставляют/ассертят category) и удалить тест 13.
+- Тесты: supabase/tests/sql/10–12 — постоянная регрессия; **13 — point-in-time
+  acceptance бэкфилла** (завязан на живые данные: рассинхронизируется, как только
+  юзеры начнут снимать бэкфилл-теги или старые билды создадут рецепты с category;
+  тогда удалить, в вечный sweep не включать).
