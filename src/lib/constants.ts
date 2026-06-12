@@ -60,16 +60,6 @@ export const DEFAULT_EQUIPMENT = [
   'Dishwasher', 'Ice machine', 'Probe thermometer',
 ] as const
 
-// ── Recipe ──
-export const RECIPE_CATEGORIES = [
-  'starter', 'main', 'dessert', 'side', 'sauce', 'drink', 'cocktail', 'beverage', 'other',
-] as const
-
-export const RECIPE_CATEGORY_LABELS: Record<string, string> = {
-  starter: 'Starters', main: 'Mains', dessert: 'Desserts', side: 'Sides',
-  sauce: 'Sauces', drink: 'Drinks', cocktail: 'Cocktails', beverage: 'Beverages', other: 'Other',
-}
-
 // ── Document ──
 export const DOCUMENT_CATEGORIES = [
   'certificate', 'license', 'policy', 'instruction', 'contract', 'inspection', 'training', 'other',
