@@ -10,12 +10,9 @@ import { ArrowLeft, Plus, Trash2, Save } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import {
-  RECIPE_CATEGORIES,
-  RECIPE_CATEGORY_LABELS,
-  EU_ALLERGENS,
-  ALLERGEN_LABELS,
-} from '@/lib/constants'
+import { EU_ALLERGENS, ALLERGEN_LABELS } from '@/lib/constants'
+import { TagInput } from '@/components/tag-input'
+import { getRecipeTags, normalizeTag, type TagRef } from '@/lib/tags'
 import { HACCP_RECIPE_METHODS } from '@/lib/haccp-methods'
 import { type DietaryOverrides } from '@/lib/dietary'
 import { DietaryChips } from '@/components/dietary-chips'
@@ -46,7 +43,8 @@ export default function EditRecipePage({ params }: { params: Promise<{ id: strin
   // Form state
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
-  const [category, setCategory] = useState('main')
+  const [tags, setTags] = useState<string[]>([])
+  const [originalTags, setOriginalTags] = useState<TagRef[]>([])
   const [instructions, setInstructions] = useState('')
   const [cookingMethod, setCookingMethod] = useState('')
   const [cookingTemp, setCookingTemp] = useState('')
@@ -78,7 +76,8 @@ export default function EditRecipePage({ params }: { params: Promise<{ id: strin
             quantity,
             unit,
             ingredient:ingredients (id, name, allergens)
-          )
+          ),
+          recipe_tags ( tag:tags (id, name) )
         `)
         .eq('id', id)
         .single()
@@ -92,7 +91,9 @@ export default function EditRecipePage({ params }: { params: Promise<{ id: strin
     if (recipe && !loaded) {
       setName(recipe.name ?? '')
       setDescription(recipe.description ?? '')
-      setCategory(recipe.category ?? 'main')
+      const loadedTags = getRecipeTags(recipe)
+      setTags(loadedTags.map((t) => t.name))
+      setOriginalTags(loadedTags)
       setInstructions(recipe.instructions ?? '')
       setCookingMethod(recipe.cooking_method ?? '')
       setCookingTemp(recipe.cooking_temp?.toString() ?? '')
@@ -202,7 +203,6 @@ export default function EditRecipePage({ params }: { params: Promise<{ id: strin
         .update({
           name: name.trim(),
           description: description.trim() || null,
-          category,
           instructions: instructions.trim() || null,
           cooking_method: cookingMethod.trim() || null,
           cooking_temp: cookingTemp ? Number(cookingTemp) : null,
@@ -220,6 +220,28 @@ export default function EditRecipePage({ params }: { params: Promise<{ id: strin
         .eq('id', id)
 
       if (recipeError) throw recipeError
+
+      // Tags diff: detach removed (orphan tags self-delete in the DB),
+      // attach current (idempotent find-or-create on the DB side)
+      const currentNorms = new Set(tags.map(normalizeTag))
+      const removedIds = originalTags
+        .filter((t) => !currentNorms.has(normalizeTag(t.name)))
+        .map((t) => t.id)
+      if (removedIds.length > 0) {
+        const { error: detachError } = await supabase
+          .from('recipe_tags')
+          .delete()
+          .eq('recipe_id', id)
+          .in('tag_id', removedIds)
+        if (detachError) throw detachError
+      }
+      for (const t of tags) {
+        const { error: tagError } = await supabase.rpc('attach_tag', {
+          p_recipe_id: id,
+          p_name: t,
+        })
+        if (tagError) throw tagError
+      }
 
       // 3. Replace recipe_ingredients
       await supabase.from('recipe_ingredients').delete().eq('recipe_id', id)
@@ -242,6 +264,9 @@ export default function EditRecipePage({ params }: { params: Promise<{ id: strin
       queryClient.invalidateQueries({ queryKey: ['recipes'] })
       queryClient.invalidateQueries({ queryKey: ['recipe', id] })
       queryClient.invalidateQueries({ queryKey: ['haccp-recipes'] })
+      queryClient.invalidateQueries({ queryKey: ['tags'] })
+      queryClient.invalidateQueries({ queryKey: ['menu-recipes'] })
+      queryClient.invalidateQueries({ queryKey: ['allergen-recipes'] })
       router.push(`/recipes/${id}`)
     } catch (err: any) {
       toast.error(err.message || 'Failed to update recipe')
@@ -292,18 +317,8 @@ export default function EditRecipePage({ params }: { params: Promise<{ id: strin
                 className="text-[13px]"
               />
             </Field>
-            <Field label="Category">
-              <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                className="h-9 w-full rounded-md border border-border bg-background px-3 text-[13px] text-foreground outline-none"
-              >
-                {RECIPE_CATEGORIES.map((c) => (
-                  <option key={c} value={c}>
-                    {RECIPE_CATEGORY_LABELS[c]}
-                  </option>
-                ))}
-              </select>
+            <Field label="Tags">
+              <TagInput value={tags} onChange={setTags} />
             </Field>
           </div>
           <Field label="Description">
