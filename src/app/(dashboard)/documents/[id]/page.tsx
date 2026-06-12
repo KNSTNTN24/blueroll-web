@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { ArrowLeft, Download, Trash2, FileText, Eye, EyeOff } from 'lucide-react'
+import { ArrowLeft, Download, Trash2, FileText, Eye, EyeOff, Pencil } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { Button } from '@/components/ui/button'
 import { format, differenceInDays } from 'date-fns'
@@ -40,6 +40,7 @@ export default function DocumentDetailPage({ params }: { params: Promise<{ id: s
   const router = useRouter()
   const queryClient = useQueryClient()
   const isManager = profile?.role === 'owner' || profile?.role === 'manager'
+  const isOwner = profile?.role === 'owner'
 
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
@@ -228,6 +229,17 @@ export default function DocumentDetailPage({ params }: { params: Promise<{ id: s
             Download
           </Button>
           {isManager && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => router.push(`/documents/edit/${id}`)}
+              className="gap-1.5"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              Edit
+            </Button>
+          )}
+          {isOwner && (
             <Button
               variant="outline"
               size="sm"
