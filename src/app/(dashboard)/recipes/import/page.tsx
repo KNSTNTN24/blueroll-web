@@ -18,6 +18,7 @@ import {
 } from '@/lib/constants'
 import { HACCP_RECIPE_METHODS } from '@/lib/haccp-methods'
 import { TagInput } from '@/components/tag-input'
+import { fileToImageInput, MAX_RECIPE_IMAGES } from '@/lib/recipe-images'
 
 type TabId = 'text' | 'pdf' | 'photo'
 
@@ -76,6 +77,7 @@ export default function ImportRecipePage() {
   const [tab, setTab] = useState<TabId>('text')
   const [textInput, setTextInput] = useState('')
   const [file, setFile] = useState<File | null>(null)
+  const [photos, setPhotos] = useState<File[]>([])     // images (up to 5)
   const [importing, setImporting] = useState(false)
   const [saving, setSaving] = useState(false)
   const [parsed, setParsed] = useState<ParsedRecipe | null>(null)
@@ -91,10 +93,8 @@ export default function ImportRecipePage() {
       toast.error('Please paste recipe text')
       return
     }
-    if ((tab === 'pdf' || tab === 'photo') && !file) {
-      toast.error('Please select a file')
-      return
-    }
+    if (tab === 'pdf' && !file) { toast.error('Please select a file'); return }
+    if (tab === 'photo' && photos.length === 0) { toast.error('Please select at least one photo'); return }
 
     setImporting(true)
     try {
@@ -102,19 +102,15 @@ export default function ImportRecipePage() {
 
       if (tab === 'text') {
         payload.text = textInput
+      } else if (tab === 'photo') {
+        payload.images = await Promise.all(photos.map(fileToImageInput))
       } else if (file) {
         const buffer = await file.arrayBuffer()
         const base64 = btoa(
           new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
         )
-        if (tab === 'pdf') {
-          payload.pdf_base64 = base64
-          payload.filename = file.name
-        } else {
-          payload.image_base64 = base64
-          payload.image_mime = file.type
-          payload.filename = file.name
-        }
+        payload.pdf_base64 = base64
+        payload.filename = file.name
       }
 
       const { data, error } = await supabase.functions.invoke('import-recipe', {
@@ -305,26 +301,56 @@ export default function ImportRecipePage() {
           )}
 
           {(tab === 'pdf' || tab === 'photo') && (
-            <div
-              onClick={() => fileInputRef.current?.click()}
-              className="flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed border-border bg-muted/20 py-16 cursor-pointer hover:border-emerald-300 transition-colors"
-            >
-              <Upload className="h-8 w-8 text-muted-foreground" />
-              <div className="text-center">
-                <p className="text-[13px] font-medium text-foreground">
-                  {file ? file.name : `Click to upload ${tab === 'pdf' ? 'a PDF' : 'a photo'}`}
-                </p>
-                <p className="text-[12px] text-muted-foreground mt-1">
-                  {tab === 'pdf' ? 'PDF files up to 10MB' : 'JPG, PNG, or HEIC up to 10MB'}
-                </p>
+            <div>
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                className="flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed border-border bg-muted/20 py-16 cursor-pointer hover:border-emerald-300 transition-colors"
+              >
+                <Upload className="h-8 w-8 text-muted-foreground" />
+                <div className="text-center">
+                  <p className="text-[13px] font-medium text-foreground">
+                    {tab === 'photo'
+                      ? 'Click to upload photos'
+                      : file
+                      ? file.name
+                      : 'Click to upload a PDF'}
+                  </p>
+                  <p className="text-[12px] text-muted-foreground mt-1">
+                    {tab === 'pdf' ? 'PDF files up to 10MB' : `JPG, PNG, or HEIC · up to ${MAX_RECIPE_IMAGES} photos`}
+                  </p>
+                </div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept={tab === 'pdf' ? '.pdf' : 'image/*'}
+                  multiple={tab === 'photo'}
+                  className="hidden"
+                  onChange={(e) => {
+                    const picked = Array.from(e.target.files ?? [])
+                    if (tab === 'photo') {
+                      setPhotos((prev) => [...prev, ...picked].slice(0, MAX_RECIPE_IMAGES))
+                    } else {
+                      setFile(picked[0] ?? null)
+                    }
+                  }}
+                />
               </div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept={tab === 'pdf' ? '.pdf' : 'image/*'}
-                className="hidden"
-                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-              />
+              {tab === 'photo' && photos.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {photos.map((p, i) => (
+                    <div key={i} className="relative">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={URL.createObjectURL(p)} alt="" className="h-20 w-20 rounded-md object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => setPhotos((prev) => prev.filter((_, j) => j !== i))}
+                        className="absolute -right-2 -top-2 rounded-full bg-black/60 px-1.5 text-xs text-white"
+                      >×</button>
+                    </div>
+                  ))}
+                  <p className="w-full text-xs text-muted-foreground">{photos.length}/{MAX_RECIPE_IMAGES} · pages of one recipe</p>
+                </div>
+              )}
             </div>
           )}
 
