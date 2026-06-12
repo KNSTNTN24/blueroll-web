@@ -16,12 +16,11 @@ import { StatusBadge } from '@/components/shared/status-badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
-  RECIPE_CATEGORIES,
-  RECIPE_CATEGORY_LABELS,
   ALLERGEN_LABELS,
   type EUAllergen,
 } from '@/lib/constants'
 import { effectiveDietary } from '@/lib/dietary'
+import { getRecipeTags, normalizeTag } from '@/lib/tags'
 
 export default function RecipesPage() {
   const router = useRouter()
@@ -30,7 +29,7 @@ export default function RecipesPage() {
   const isManager = profile?.role === 'owner' || profile?.role === 'manager'
 
   const [search, setSearch] = useState('')
-  const [category, setCategory] = useState('')
+  const [tagFilter, setTagFilter] = useState<string[]>([])
 
   const { data: recipes = [], isLoading } = useQuery({
     queryKey: ['recipes', business?.id],
@@ -42,7 +41,8 @@ export default function RecipesPage() {
           *,
           recipe_ingredients (
             ingredient:ingredients (name, allergens)
-          )
+          ),
+          recipe_tags ( tag:tags (id, name) )
         `)
         .eq('business_id', business.id)
         .order('name')
@@ -52,11 +52,24 @@ export default function RecipesPage() {
     enabled: !!business?.id,
   })
 
+  const { data: allTags = [] } = useQuery({
+    queryKey: ['tags', business?.id],
+    queryFn: async () => {
+      if (!business?.id) return []
+      const { data, error } = await supabase
+        .from('tags').select('id, name').eq('business_id', business.id).order('name')
+      if (error) throw error
+      return data ?? []
+    },
+    enabled: !!business?.id,
+  })
+
   const filtered = recipes.filter((r: any) => {
     const matchSearch =
       !search || r.name.toLowerCase().includes(search.toLowerCase())
-    const matchCategory = !category || r.category === category
-    return matchSearch && matchCategory
+    const recipeNorms = getRecipeTags(r).map((t) => normalizeTag(t.name))
+    const matchTags = tagFilter.every((f) => recipeNorms.includes(normalizeTag(f)))
+    return matchSearch && matchTags
   })
 
   function getAllergens(recipe: any): string[] {
@@ -114,18 +127,31 @@ export default function RecipesPage() {
             className="pl-8 text-[13px]"
           />
         </div>
-        <select
-          value={category}
-          onChange={(e) => setCategory(e.target.value)}
-          className="h-9 rounded-md border border-border bg-background px-3 text-[13px] text-foreground outline-none"
-        >
-          <option value="">All Categories</option>
-          {RECIPE_CATEGORIES.map((c) => (
-            <option key={c} value={c}>
-              {RECIPE_CATEGORY_LABELS[c]}
-            </option>
-          ))}
-        </select>
+        {allTags.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {allTags.map((t: any) => {
+              const selected = tagFilter.includes(t.name)
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() =>
+                    setTagFilter((prev) =>
+                      selected ? prev.filter((x) => x !== t.name) : [...prev, t.name]
+                    )
+                  }
+                  className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-medium border transition-colors ${
+                    selected
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                      : 'bg-muted/50 text-muted-foreground border-border hover:border-emerald-200'
+                  }`}
+                >
+                  {t.name}
+                </button>
+              )
+            })}
+          </div>
+        )}
       </div>
 
       {/* Table */}
@@ -137,9 +163,9 @@ export default function RecipesPage() {
         <EmptyState
           icon={ChefHat}
           title="No recipes found"
-          description={search || category ? 'Try adjusting your filters' : 'Add your first recipe to get started'}
+          description={search || tagFilter.length > 0 ? 'Try adjusting your filters' : 'Add your first recipe to get started'}
           action={
-            isManager && !search && !category
+            isManager && !search && tagFilter.length === 0
               ? { label: 'New Recipe', onClick: () => router.push('/recipes/new') }
               : undefined
           }
@@ -150,7 +176,7 @@ export default function RecipesPage() {
             <thead>
               <tr className="border-b border-border bg-muted/50">
                 <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Name</th>
-                <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Category</th>
+                <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Tags</th>
                 <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Allergens</th>
                 <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Dietary</th>
                 <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Status</th>
@@ -168,8 +194,21 @@ export default function RecipesPage() {
                     onClick={() => router.push(`/recipes/${recipe.id}`)}
                   >
                     <td className="px-4 py-3 font-medium text-foreground">{recipe.name}</td>
-                    <td className="px-4 py-3 text-muted-foreground">
-                      {RECIPE_CATEGORY_LABELS[recipe.category] ?? recipe.category}
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap gap-1">
+                        {getRecipeTags(recipe).length === 0 ? (
+                          <span className="text-muted-foreground">—</span>
+                        ) : (
+                          getRecipeTags(recipe).map((t) => (
+                            <span
+                              key={t.id}
+                              className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-foreground border border-border"
+                            >
+                              {t.name}
+                            </span>
+                          ))
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-1">
