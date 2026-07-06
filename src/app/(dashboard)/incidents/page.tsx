@@ -277,10 +277,17 @@ export default function IncidentsPage() {
       </div>
 
       {/* ===== Report / Edit slide-over ===== */}
-      {formOpen && (
-        <div onClick={() => setFormOpen(false)} className="fixed inset-0 z-50 flex justify-end bg-[rgba(20,22,27,.36)]">
-          <form onClick={(e) => e.stopPropagation()} onSubmit={(e) => { e.preventDefault(); saveMutation.mutate() }}
-            className="flex h-full w-[460px] max-w-[92vw] flex-col bg-card shadow-[-24px_0_64px_-32px_rgba(16,24,40,.4)]">
+      {/* Kept mounted so it can animate on the way out, not just in. */}
+      <div onClick={() => setFormOpen(false)} aria-hidden={!formOpen}
+        className={cn(
+          'fixed inset-0 z-50 flex justify-end overflow-hidden bg-[rgba(20,22,27,.36)] transition-opacity duration-300 ease-out',
+          formOpen ? 'opacity-100' : 'pointer-events-none opacity-0',
+        )}>
+        <form onClick={(e) => e.stopPropagation()} onSubmit={(e) => { e.preventDefault(); saveMutation.mutate() }}
+          className={cn(
+            'flex h-full w-[460px] max-w-[92vw] flex-col bg-card shadow-[-24px_0_64px_-32px_rgba(16,24,40,.4)] transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] will-change-transform',
+            formOpen ? 'translate-x-0' : 'translate-x-full',
+          )}>
             <div className="flex items-center justify-between border-b border-[#eef0f2] px-6 py-5">
               <div>
                 <h2 className="text-[18px] font-bold text-foreground">{editingId ? 'Edit incident' : 'Report an incident'}</h2>
@@ -340,7 +347,6 @@ export default function IncidentsPage() {
             </div>
           </form>
         </div>
-      )}
 
       {/* ===== Resolve dialog ===== */}
       {resolveId && (
