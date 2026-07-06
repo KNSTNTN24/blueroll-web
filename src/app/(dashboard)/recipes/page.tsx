@@ -6,8 +6,9 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { toast } from 'sonner'
-import { Search, Plus, Sparkles, Eye, Pencil, Trash2, Image as ImageIcon } from 'lucide-react'
+import { Search, Plus, Sparkles, Eye, Pencil, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { RecipeThumb } from '@/components/shared/recipe-thumb'
 import { ALLERGEN_LABELS, type EUAllergen } from '@/lib/constants'
 import { effectiveDietary } from '@/lib/dietary'
 import { getRecipeTags, normalizeTag } from '@/lib/tags'
@@ -149,30 +150,30 @@ export default function RecipesPage() {
             const shownAllergens = allergens.slice(0, 3)
             const extra = allergens.length - shownAllergens.length
             return (
-              <div key={recipe.id} className="group flex flex-col rounded-[14px] border border-border bg-card shadow-[0_1px_2px_rgba(16,24,40,.04)] transition-shadow hover:shadow-[0_4px_14px_-8px_rgba(16,24,40,.18)]">
-                {/* Header */}
-                <div className="flex items-start gap-3 p-4">
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[9px] bg-[repeating-linear-gradient(135deg,#f1f2f4,#f1f2f4_6px,#eceef0_6px,#eceef0_12px)] text-muted-foreground">
-                    <ImageIcon className="h-4 w-4" strokeWidth={1.7} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[15px] font-bold leading-snug text-foreground" style={{ textWrap: 'pretty' } as any}>{recipe.name}</p>
-                    {tags.length > 0 && (
-                      <div className="mt-1 flex flex-wrap gap-1">
-                        {tags.slice(0, 3).map((t: any) => (
-                          <span key={t.id ?? t.name} className="inline-flex rounded-md bg-secondary px-1.5 py-0.5 text-[11px] font-medium text-secondary-foreground">{t.name}</span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <span className={cn('inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold',
-                    recipe.active ? 'bg-brand-tint text-brand-deep' : 'bg-secondary text-muted-foreground')}>
+              <div key={recipe.id} className="group flex flex-col overflow-hidden rounded-[14px] border border-border bg-card shadow-[0_1px_2px_rgba(16,24,40,.04)] transition-shadow hover:shadow-[0_4px_14px_-8px_rgba(16,24,40,.18)]">
+                {/* Banner image (from recipe name) */}
+                <div className="relative">
+                  <RecipeThumb name={recipe.name} src={recipe.image_url} w={640} h={360} className="h-[150px] w-full" />
+                  <span className={cn('absolute right-2.5 top-2.5 inline-flex items-center gap-1.5 rounded-full bg-white/90 px-2 py-0.5 text-[11px] font-semibold shadow-[0_1px_2px_rgba(16,24,40,.12)] backdrop-blur-sm',
+                    recipe.active ? 'text-brand-deep' : 'text-muted-foreground')}>
                     <span className={cn('h-1.5 w-1.5 rounded-full', recipe.active ? 'bg-brand' : 'bg-[#9aa0a8]')} />
                     {recipe.active ? 'Active' : 'Inactive'}
                   </span>
                 </div>
 
-                <div className="mx-4 border-t border-border" />
+                {/* Name + tags */}
+                <div className="px-4 pb-1 pt-3.5">
+                  <p className="text-[15px] font-bold leading-snug text-foreground" style={{ textWrap: 'pretty' } as any}>{recipe.name}</p>
+                  {tags.length > 0 && (
+                    <div className="mt-1.5 flex flex-wrap gap-1">
+                      {tags.slice(0, 3).map((t: any) => (
+                        <span key={t.id ?? t.name} className="inline-flex rounded-md bg-secondary px-1.5 py-0.5 text-[11px] font-medium text-secondary-foreground">{t.name}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="mx-4 mt-2 border-t border-border" />
 
                 {/* Allergens + dietary */}
                 <div className="space-y-2.5 px-4 py-3">
