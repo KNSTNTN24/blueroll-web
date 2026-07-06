@@ -42,7 +42,7 @@ export default function ForgotPasswordPage() {
   if (sent) {
     return (
       <div className="text-center">
-        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-600/10">
+        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-brand/10">
           <Mail className="h-7 w-7 text-emerald-600" strokeWidth={1.8} />
         </div>
         <h1 className="mt-6 text-[26px] font-bold tracking-tight text-gray-900">
@@ -111,7 +111,7 @@ export default function ForgotPasswordPage() {
           className={`mt-6 flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-[15px] font-semibold transition-colors ${
             loading || !email.trim()
               ? 'cursor-not-allowed bg-gray-200 text-gray-400'
-              : 'bg-emerald-600 text-white hover:bg-emerald-700'
+              : 'bg-brand text-white hover:opacity-90'
           }`}
         >
           {loading ? (

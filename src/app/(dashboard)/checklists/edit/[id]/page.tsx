@@ -297,7 +297,7 @@ export default function EditChecklistPage({ params }: { params: Promise<{ id: st
               <input
                 type="checkbox"
                 {...register('multi_per_day')}
-                className="h-4 w-4 rounded border-border text-emerald-600 focus:ring-emerald-500"
+                className="h-4 w-4 rounded border-border text-emerald-600 focus:ring-brand"
               />
               <span className="text-[13px] text-foreground">Can be completed multiple times per day</span>
             </label>
@@ -389,7 +389,7 @@ export default function EditChecklistPage({ params }: { params: Promise<{ id: st
                         <input
                           type="checkbox"
                           {...register(`items.${idx}.required`)}
-                          className="h-3.5 w-3.5 rounded border-border text-emerald-600 focus:ring-emerald-500"
+                          className="h-3.5 w-3.5 rounded border-border text-emerald-600 focus:ring-brand"
                         />
                         Required
                       </label>

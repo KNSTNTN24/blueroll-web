@@ -181,7 +181,7 @@ export default function TeamPage() {
                     required
                     value={inviteEmail}
                     onChange={(e) => setInviteEmail(e.target.value)}
-                    className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] text-foreground placeholder:text-muted-foreground focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] text-foreground placeholder:text-muted-foreground focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
                     placeholder="colleague@example.com"
                   />
                 </div>
@@ -190,7 +190,7 @@ export default function TeamPage() {
                   <select
                     value={inviteRole}
                     onChange={(e) => setInviteRole(e.target.value ?? '')}
-                    className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] text-foreground focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] text-foreground focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
                   >
                     {USER_ROLES.filter((r) => r !== 'owner').map((r) => (
                       <option key={r} value={r}>{ROLE_LABELS[r]}</option>

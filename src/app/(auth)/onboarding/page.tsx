@@ -131,7 +131,7 @@ function PrimaryButton({
         'mt-6 flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-[15px] font-semibold transition-colors',
         disabled || loading
           ? 'cursor-not-allowed bg-gray-200 text-gray-400'
-          : 'bg-emerald-600 text-white hover:bg-emerald-700',
+          : 'bg-brand text-white hover:opacity-90',
       )}
     >
       {loading && <Loader2 className="h-4 w-4 animate-spin" />}
@@ -314,7 +314,7 @@ function CardForm() {
           'mt-6 flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-[15px] font-semibold transition-colors',
           !stripe || !cardComplete || loading
             ? 'cursor-not-allowed bg-gray-200 text-gray-400'
-            : 'bg-emerald-600 text-white hover:bg-emerald-700',
+            : 'bg-brand text-white hover:opacity-90',
         )}
       >
         {loading ? (
@@ -596,7 +596,7 @@ export default function OnboardingPage() {
 
   const ratingColor = (rating: string) => {
     const n = parseInt(rating)
-    if (n >= 4) return 'text-emerald-700 bg-emerald-600/10'
+    if (n >= 4) return 'text-emerald-700 bg-brand/10'
     if (n >= 3) return 'text-amber-700 bg-amber-600/10'
     return 'text-red-700 bg-red-600/10'
   }
@@ -885,7 +885,7 @@ export default function OnboardingPage() {
                 >
                   <div className={cn(
                     'flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md transition-colors',
-                    active ? 'bg-emerald-600' : 'border-[1.5px] border-gray-300',
+                    active ? 'bg-brand' : 'border-[1.5px] border-gray-300',
                   )}>
                     {active && <Check className="h-3.5 w-3.5 text-white" strokeWidth={3} />}
                   </div>

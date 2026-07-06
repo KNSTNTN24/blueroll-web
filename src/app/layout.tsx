@@ -1,11 +1,13 @@
 import type { Metadata } from 'next'
-import { Inter } from 'next/font/google'
+import { Geist } from 'next/font/google'
 import { Providers } from '@/components/providers'
 import './globals.css'
 
-const inter = Inter({
+// Single product typeface — Geist (see FONTS.md). No secondary or mono family.
+const geist = Geist({
   subsets: ['latin'],
-  variable: '--font-inter',
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-geist',
 })
 
 export const metadata: Metadata = {
@@ -19,7 +21,7 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" className={inter.variable}>
+    <html lang="en" className={geist.variable} suppressHydrationWarning>
       <body className="min-h-screen font-sans">
         <Providers>{children}</Providers>
       </body>

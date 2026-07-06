@@ -49,38 +49,39 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   return (
     <aside className={cn(
       'group/sidebar flex h-screen shrink-0 flex-col bg-sidebar-background transition-all duration-300 ease-in-out',
-      collapsed ? 'w-16' : 'w-60',
+      collapsed ? 'w-16' : 'w-[234px]',
     )}>
-      <div className={cn('flex h-14 items-center gap-2.5 border-b border-sidebar-border px-4', collapsed && 'justify-center px-0')}>
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-600">
-          <LogoMark className="h-[18px] w-[18px] text-white" />
+      <div className={cn('flex h-[62px] items-center gap-2.5 px-[18px]', collapsed && 'justify-center px-0')}>
+        <div className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[9px] bg-brand">
+          <LogoMark className="h-[17px] w-[17px] text-[#06281a]" />
         </div>
-        {!collapsed && <span className="text-sm font-semibold tracking-tight text-sidebar-accent-foreground">BlueRoll</span>}
+        {!collapsed && <span className="text-[17px] font-bold tracking-tight text-white">BlueRoll</span>}
       </div>
 
-      <nav className="flex-1 overflow-y-auto py-3">
+      <nav className="flex-1 overflow-y-auto px-[14px] pb-2">
         {nav.map((group, gi) => (
-          <div key={gi} className={cn(gi > 0 && 'mt-4')}>
+          <div key={gi}>
             {!collapsed && group.section && (
-              <p className="mb-1 px-4 text-[10px] font-semibold uppercase tracking-[0.08em] text-sidebar-foreground/50">
+              <p className="px-2.5 pb-2 pt-[17px] font-mono text-[10.5px] font-medium uppercase tracking-[0.13em] text-[#646a73]">
                 {group.section}
               </p>
             )}
             {collapsed && gi > 0 && <div className="mx-auto my-2 h-px w-6 bg-sidebar-border" />}
-            <div className="space-y-0.5 px-2">
+            {!collapsed && !group.section && <div className="h-1.5" />}
+            <div className="space-y-0.5">
               {group.items.map((item) => {
                 const active = pathname === item.href || pathname.startsWith(item.href + '/')
                 const Icon = item.icon
                 return (
                   <Link key={item.href} href={item.href} title={collapsed ? item.label : undefined}
                     className={cn(
-                      'flex items-center gap-3 rounded-lg px-3 py-2.5 text-[14px] font-medium transition-all duration-200 ease-out',
+                      'flex items-center gap-[11px] rounded-[10px] px-[11px] py-[9px] text-[14px] font-semibold transition-colors duration-150 ease-out',
                       active
                         ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                        : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+                        : 'text-sidebar-foreground hover:bg-white/[0.06] hover:text-[#e7e9ec]',
                       collapsed && 'justify-center px-0',
                     )}>
-                    <Icon className={cn('h-[18px] w-[18px] shrink-0 transition-colors duration-200', active ? 'text-sidebar-accent-foreground' : '')} strokeWidth={active ? 1.8 : 1.5} />
+                    <Icon className={cn('h-[18px] w-[18px] shrink-0', active ? 'text-sidebar-accent-foreground' : 'text-[#7b8089]')} strokeWidth={1.7} />
                     {!collapsed && item.label}
                   </Link>
                 )
@@ -90,20 +91,22 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         ))}
       </nav>
 
-      <div className="border-t border-sidebar-border px-2 py-3 space-y-0.5">
+      <div className="mx-[14px] border-t border-sidebar-border pb-[14px] pt-[14px] space-y-0.5">
         <Link href="/settings" className={cn(
-          'flex items-center gap-3 rounded-lg px-3 py-2.5 text-[14px] font-medium transition-all duration-200 ease-out',
-          pathname.startsWith('/settings') ? 'bg-sidebar-accent text-sidebar-accent-foreground' : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+          'flex items-center gap-[11px] rounded-[10px] px-[11px] py-[9px] text-[14px] font-semibold transition-colors duration-150 ease-out',
+          pathname.startsWith('/settings')
+            ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+            : 'text-sidebar-foreground hover:bg-white/[0.06] hover:text-[#e7e9ec]',
           collapsed && 'justify-center px-0',
         )}>
-          <Settings className="h-[18px] w-[18px] shrink-0" strokeWidth={1.5} />
+          <Settings className={cn('h-[18px] w-[18px] shrink-0', pathname.startsWith('/settings') ? 'text-sidebar-accent-foreground' : 'text-[#7b8089]')} strokeWidth={1.7} />
           {!collapsed && 'Settings'}
         </Link>
         <button onClick={onToggle} className={cn(
-          'flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-[14px] font-medium text-sidebar-foreground/60 transition-all duration-200 ease-out hover:bg-sidebar-accent hover:text-sidebar-foreground',
+          'flex w-full items-center gap-[11px] rounded-[10px] px-[11px] py-[9px] text-[14px] font-semibold text-sidebar-foreground/60 transition-colors duration-150 ease-out hover:bg-white/[0.06] hover:text-[#e7e9ec]',
           collapsed && 'justify-center px-0',
         )}>
-          {collapsed ? <ChevronsRight className="h-4 w-4" strokeWidth={1.5} /> : <><ChevronsLeft className="h-4 w-4" strokeWidth={1.5} /><span>Collapse</span></>}
+          {collapsed ? <ChevronsRight className="h-4 w-4 text-[#7b8089]" strokeWidth={1.7} /> : <><ChevronsLeft className="h-4 w-4 text-[#7b8089]" strokeWidth={1.7} /><span>Collapse</span></>}
         </button>
       </div>
     </aside>

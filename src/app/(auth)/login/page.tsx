@@ -155,7 +155,7 @@ export default function LoginPage() {
         <button
           type="submit"
           disabled={loading}
-          className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-6 py-3.5 text-[15px] font-semibold text-white transition-colors hover:bg-emerald-700 disabled:opacity-60"
+          className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-brand px-6 py-3.5 text-[15px] font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-60"
         >
           {loading ? (
             <>

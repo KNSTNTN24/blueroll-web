@@ -146,7 +146,7 @@ export default function SettingsPage() {
               <input
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
-                className="flex-1 rounded-md border border-border bg-white px-3 py-2 text-[13px] text-foreground focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                className="flex-1 rounded-md border border-border bg-white px-3 py-2 text-[13px] text-foreground focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
                 placeholder="Your name"
               />
               <Button
@@ -235,7 +235,7 @@ export default function SettingsPage() {
               onChange={(e) => setCustomEquipment(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addCustomEquipment())}
               placeholder="Add custom equipment..."
-              className="flex-1 rounded-md border border-border bg-white px-3 py-1.5 text-[12px] text-foreground focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              className="flex-1 rounded-md border border-border bg-white px-3 py-1.5 text-[12px] text-foreground focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
             />
             <Button variant="outline" size="sm" onClick={addCustomEquipment} disabled={!customEquipment.trim()}>
               <Plus className="h-3 w-3" />
