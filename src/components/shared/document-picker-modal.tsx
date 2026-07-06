@@ -176,7 +176,7 @@ export function DocumentPickerModal({
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search documents..."
-                className="w-full rounded-md border border-border bg-white pl-8 pr-3 py-1.5 text-[13px] focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                className="w-full rounded-md border border-border bg-white pl-8 pr-3 py-1.5 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
               />
             </div>
 
@@ -257,7 +257,7 @@ export function DocumentPickerModal({
               <input
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
                 placeholder="Document title"
               />
             </div>
@@ -269,7 +269,7 @@ export function DocumentPickerModal({
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 rows={2}
-                className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
                 placeholder="Optional description"
               />
             </div>
@@ -281,7 +281,7 @@ export function DocumentPickerModal({
                 <select
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
-                  className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] capitalize focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] capitalize focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
                 >
                   {DOCUMENT_CATEGORIES.map((c) => (
                     <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>
@@ -293,7 +293,7 @@ export function DocumentPickerModal({
                 <select
                   value={accessLevel}
                   onChange={(e) => setAccessLevel(e.target.value)}
-                  className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
                 >
                   <option value="all">All team members</option>
                   <option value="managers_only">Managers only</option>
@@ -309,7 +309,7 @@ export function DocumentPickerModal({
                 type="date"
                 value={expiresAt}
                 onChange={(e) => setExpiresAt(e.target.value)}
-                className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
               />
               <p className="text-[12px] text-muted-foreground">Leave empty if the document does not expire</p>
             </div>

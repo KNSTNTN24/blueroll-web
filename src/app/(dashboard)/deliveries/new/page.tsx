@@ -78,7 +78,7 @@ export default function NewDeliveryPage() {
                 required
                 value={supplierId}
                 onChange={(e) => setSupplierId(e.target.value ?? '')}
-                className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] text-foreground focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] text-foreground focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
               >
                 <option value="">Select a supplier</option>
                 {suppliers.map((s: { id: string; name: string }) => (
@@ -94,7 +94,7 @@ export default function NewDeliveryPage() {
                 required
                 value={deliveredAt}
                 onChange={(e) => setDeliveredAt(e.target.value)}
-                className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] text-foreground focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] text-foreground focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
               />
             </div>
 
@@ -105,7 +105,7 @@ export default function NewDeliveryPage() {
                 step="0.1"
                 value={temperature}
                 onChange={(e) => setTemperature(e.target.value)}
-                className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] text-foreground tabular-nums focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] text-foreground tabular-nums focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
                 placeholder="e.g. 3.5"
               />
               <p className="text-[12px] text-muted-foreground">Leave empty if not applicable</p>
@@ -117,7 +117,7 @@ export default function NewDeliveryPage() {
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 rows={3}
-                className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] text-foreground focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] text-foreground focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
                 placeholder="Any notes about the delivery..."
               />
             </div>

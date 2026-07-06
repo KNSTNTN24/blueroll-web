@@ -396,7 +396,7 @@ export default function ChecklistDetailPage({ params }: { params: Promise<{ id: 
                     disabled={readOnly}
                     checked={readOnly ? existingResp?.value === 'true' : getResponse(item.id).value === 'true'}
                     onChange={(e) => setResponse(item.id, { value: e.target.checked ? 'true' : 'false' })}
-                    className="h-4 w-4 rounded border-border text-emerald-600 focus:ring-emerald-500"
+                    className="h-4 w-4 rounded border-border text-emerald-600 focus:ring-brand"
                   />
                   <span className="text-[13px] text-muted-foreground">Done</span>
                 </label>
@@ -477,7 +477,7 @@ export default function ChecklistDetailPage({ params }: { params: Promise<{ id: 
                         variant={getResponse(item.id).value === 'yes' ? 'default' : 'outline'}
                         className={cn(
                           'gap-1.5',
-                          getResponse(item.id).value === 'yes' && 'bg-emerald-600 hover:bg-emerald-700',
+                          getResponse(item.id).value === 'yes' && 'bg-brand hover:opacity-90',
                         )}
                         onClick={() => setResponse(item.id, { value: 'yes', flagged: false })}
                       >

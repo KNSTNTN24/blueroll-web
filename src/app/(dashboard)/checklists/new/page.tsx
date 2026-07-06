@@ -391,7 +391,7 @@ export default function NewChecklistPage() {
                     }
                   }}
                   placeholder="Add custom..."
-                  className="flex-1 rounded-md border border-border bg-white px-3 py-1.5 text-[12px] focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  className="flex-1 rounded-md border border-border bg-white px-3 py-1.5 text-[12px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
                 />
                 <Button
                   type="button"
@@ -449,7 +449,7 @@ export default function NewChecklistPage() {
                   <select
                     value={wizardData.supervisorRole}
                     onChange={(e) => setWizardData((d) => ({ ...d, supervisorRole: e.target.value }))}
-                    className="rounded-md border border-border bg-white px-2 py-1 text-[12px] focus:border-emerald-500 focus:outline-none"
+                    className="rounded-md border border-border bg-white px-2 py-1 text-[12px] focus:border-brand focus:outline-none"
                   >
                     <option value="">Select role</option>
                     {USER_ROLES.filter((r) => r === 'owner' || r === 'manager').map((r) => (
@@ -470,7 +470,7 @@ export default function NewChecklistPage() {
                 onChange={(e) => setWizardData((d) => ({ ...d, additionalNotes: e.target.value }))}
                 placeholder="e.g. We serve raw fish, have an outdoor terrace, use colour-coded chopping boards..."
                 rows={3}
-                className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] text-foreground outline-none resize-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] text-foreground outline-none resize-none focus:border-brand focus:ring-1 focus:ring-brand"
               />
             </div>
           )}
@@ -489,7 +489,7 @@ export default function NewChecklistPage() {
                 size="sm"
                 onClick={() => setWizardStep((s) => s + 1)}
                 disabled={wizardStep === 1 && !wizardData.checklistType}
-                className="gap-1.5 bg-emerald-600 hover:bg-emerald-700"
+                className="gap-1.5 bg-brand hover:opacity-90"
               >
                 Next
                 <ArrowRight className="h-3.5 w-3.5" />
@@ -500,7 +500,7 @@ export default function NewChecklistPage() {
                 size="sm"
                 onClick={handleAiGenerate}
                 disabled={aiGenerating}
-                className="gap-1.5 bg-emerald-600 hover:bg-emerald-700"
+                className="gap-1.5 bg-brand hover:opacity-90"
               >
                 {aiGenerating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
                 {aiGenerating ? 'Generating...' : 'Generate checklist'}
@@ -584,7 +584,7 @@ export default function NewChecklistPage() {
               <input
                 type="checkbox"
                 {...register('multi_per_day')}
-                className="h-4 w-4 rounded border-border text-emerald-600 focus:ring-emerald-500"
+                className="h-4 w-4 rounded border-border text-emerald-600 focus:ring-brand"
               />
               <span className="text-[13px] text-foreground">Can be completed multiple times per day</span>
             </label>
@@ -676,7 +676,7 @@ export default function NewChecklistPage() {
                         <input
                           type="checkbox"
                           {...register(`items.${idx}.required`)}
-                          className="h-3.5 w-3.5 rounded border-border text-emerald-600 focus:ring-emerald-500"
+                          className="h-3.5 w-3.5 rounded border-border text-emerald-600 focus:ring-brand"
                         />
                         Required
                       </label>

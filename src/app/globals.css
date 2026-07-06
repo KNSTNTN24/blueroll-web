@@ -4,46 +4,54 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  /* ── Everything in neutral hue 264 (cool gray) ── */
-  --primary: oklch(0.27 0.01 264);
-  --primary-foreground: oklch(0.99 0 0);
+  /* ── BlueRoll "calm" palette — one green accent, ink text, amber/red for alerts only ── */
+  --brand: #1f9d63;        /* brand green */
+  --brand-deep: #1f7a52;   /* green text on light, avatars, success */
+  --brand-tint: #e9f4ee;   /* success/active backgrounds, dietary chips */
+  --amber: #c8861a;        /* alert text */
+  --amber-tint: #fbf1e1;   /* incident chip / allergen cells */
+  --warn: #d2453f;         /* critical / notification dot / delete */
+  --warn-tint: #fbecec;
 
-  --background: oklch(0.955 0.003 264);
-  --foreground: oklch(0.14 0.005 264);
+  --primary: #1f9d63;
+  --primary-foreground: #ffffff;
 
-  --card: oklch(0.995 0 0);
-  --card-foreground: oklch(0.14 0.005 264);
+  --background: #f6f7f8;   /* app canvas */
+  --foreground: #16181d;   /* ink */
 
-  --popover: oklch(0.995 0 0);
-  --popover-foreground: oklch(0.14 0.005 264);
+  --card: #ffffff;
+  --card-foreground: #16181d;
 
-  --secondary: oklch(0.94 0.003 264);
-  --secondary-foreground: oklch(0.2 0.005 264);
+  --popover: #ffffff;
+  --popover-foreground: #16181d;
 
-  --muted: oklch(0.94 0.003 264);
-  --muted-foreground: oklch(0.5 0.005 264);
+  --secondary: #f1f2f4;    /* neutral chip bg */
+  --secondary-foreground: #1c1f24;
 
-  --accent: oklch(0.92 0.004 264);
-  --accent-foreground: oklch(0.14 0.005 264);
+  --muted: #f3f4f6;        /* search field bg */
+  --muted-foreground: #6b7280;
 
-  --destructive: oklch(0.55 0.22 29);
-  --destructive-foreground: oklch(0.99 0 0);
+  --accent: #f7f8f9;       /* row / list hover */
+  --accent-foreground: #16181d;
 
-  --border: oklch(0.91 0.003 264);
-  --input: oklch(0.91 0.003 264);
-  --ring: oklch(0.27 0.01 264);
+  --destructive: #d2453f;
+  --destructive-foreground: #ffffff;
 
-  --radius: 0.5rem;
+  --border: #e9eaed;       /* hairline */
+  --input: #e2e4e8;        /* field borders */
+  --ring: #1f9d63;
 
-  /* ── Sidebar: dark version of same gray ── */
-  --sidebar-background: oklch(0.2 0.01 264);
-  --sidebar-foreground: oklch(0.72 0.005 264);
-  --sidebar-primary: oklch(0.99 0 0);
-  --sidebar-primary-foreground: oklch(0.2 0.01 264);
-  --sidebar-accent: oklch(0.35 0.015 264);
-  --sidebar-accent-foreground: oklch(0.95 0.003 264);
-  --sidebar-border: oklch(0.27 0.01 264);
-  --sidebar-ring: oklch(0.27 0.01 264);
+  --radius: 0.625rem;
+
+  /* ── Sidebar: near-black ── */
+  --sidebar-background: #14161b;
+  --sidebar-foreground: #a3a8b0;
+  --sidebar-primary: #ffffff;
+  --sidebar-primary-foreground: #14161b;
+  --sidebar-accent: #1f9d63;        /* active nav bg */
+  --sidebar-accent-foreground: #eafff4;
+  --sidebar-border: #23262d;
+  --sidebar-ring: #1f9d63;
 }
 
 @theme inline {
@@ -74,11 +82,19 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+  --color-brand: var(--brand);
+  --color-brand-deep: var(--brand-deep);
+  --color-brand-tint: var(--brand-tint);
+  --color-amber: var(--amber);
+  --color-amber-tint: var(--amber-tint);
+  --color-warn: var(--warn);
+  --color-warn-tint: var(--warn-tint);
   --radius-sm: calc(var(--radius) * 0.75);
   --radius-md: var(--radius);
   --radius-lg: calc(var(--radius) * 1.5);
   --radius-xl: calc(var(--radius) * 2);
-  --font-sans: var(--font-inter);
+  --font-sans: var(--font-geist);
+  --font-mono: var(--font-geist);
 }
 
 @layer base {
@@ -87,6 +103,8 @@
     @apply bg-background text-foreground antialiased;
     font-feature-settings: 'rlig' 1, 'calt' 1;
   }
+  /* Geist must be applied to form controls explicitly — they don't inherit it. */
+  input, textarea, select, button { font-family: inherit; }
   /* Pointer cursor on all interactive elements */
   button:not(:disabled),
   [role="button"]:not([aria-disabled="true"]),

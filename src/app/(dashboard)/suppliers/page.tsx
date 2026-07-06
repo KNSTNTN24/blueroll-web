@@ -180,7 +180,7 @@ export default function SuppliersPage() {
                   required
                   value={fName}
                   onChange={(e) => setFName(e.target.value)}
-                  className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
                   placeholder="Supplier name"
                 />
               </div>
@@ -189,7 +189,7 @@ export default function SuppliersPage() {
                 <input
                   value={fContact}
                   onChange={(e) => setFContact(e.target.value)}
-                  className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
                   placeholder="Contact person"
                 />
               </div>
@@ -198,7 +198,7 @@ export default function SuppliersPage() {
                 <input
                   value={fPhone}
                   onChange={(e) => setFPhone(e.target.value)}
-                  className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
                   placeholder="Phone number"
                 />
               </div>
@@ -207,7 +207,7 @@ export default function SuppliersPage() {
                 <input
                   value={fGoods}
                   onChange={(e) => setFGoods(e.target.value)}
-                  className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
                   placeholder="e.g. Fresh produce, dairy"
                 />
               </div>
@@ -217,7 +217,7 @@ export default function SuppliersPage() {
               <input
                 value={fAddress}
                 onChange={(e) => setFAddress(e.target.value)}
-                className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
                 placeholder="Full address"
               />
             </div>

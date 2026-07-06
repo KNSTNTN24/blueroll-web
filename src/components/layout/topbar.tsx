@@ -7,14 +7,14 @@ import { useAuthStore } from '@/stores/auth-store'
 import { supabase } from '@/lib/supabase'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { CommandPalette } from '@/components/layout/command-palette'
-import { Bell, Search, ChevronDown, Settings, LogOut } from 'lucide-react'
+import { Bell, Search, ChevronDown, Settings, LogOut, Check, Menu } from 'lucide-react'
 
 function getInitials(name: string | null | undefined): string {
   if (!name) return '?'
   return name.split(' ').map((w) => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()
 }
 
-export function Topbar() {
+export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
   const router = useRouter()
   const { profile, business, user } = useAuthStore()
   const displayName = profile?.full_name || user?.email?.split('@')[0] || 'User'
@@ -48,30 +48,37 @@ export function Topbar() {
 
   return (
     <>
-      <header className="flex h-16 shrink-0 items-center justify-between border-b border-border bg-card px-5">
+      <header className="flex h-[62px] shrink-0 items-center justify-between gap-2 border-b border-[#eceef0] bg-card px-4 sm:px-6">
         {/* Left */}
-        <div className="flex items-center gap-2.5 shrink-0">
-          <h1 className="text-[13px] font-semibold text-foreground">{businessName}</h1>
+        <div className="flex min-w-0 items-center gap-2.5">
+          <button onClick={onMenuClick} aria-label="Open menu"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[#5c626b] transition-colors hover:bg-muted hover:text-foreground lg:hidden">
+            <Menu className="h-5 w-5" strokeWidth={1.8} />
+          </button>
+          <h1 className="truncate text-[15px] font-bold text-foreground">{businessName}</h1>
           {business?.fsa_rating && (
-            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
+            <span className="hidden shrink-0 items-center gap-1 rounded-full bg-brand-tint px-2 py-0.5 text-[11px] font-semibold text-brand-deep sm:inline-flex">
+              <Check className="h-3 w-3" strokeWidth={2.4} />
               {business.fsa_rating}/5
             </span>
           )}
         </div>
 
-        {/* Center: search */}
+        {/* Center: search — hidden on small screens */}
         <button onClick={() => setCommandOpen(true)}
-          className="mx-6 flex h-10 w-full max-w-md items-center gap-2.5 rounded-xl border border-input bg-muted/40 px-4 text-[13px] text-muted-foreground transition-colors hover:bg-muted">
+          className="mx-4 hidden h-[38px] w-full max-w-[420px] items-center gap-2.5 rounded-[10px] border border-[#ebedf0] bg-muted px-3 text-[13px] text-muted-foreground transition-colors hover:bg-[#eceef1] md:flex">
           <Search className="h-4 w-4 shrink-0" />
           <span className="flex-1 text-left">Search...</span>
-          <kbd className="pointer-events-none hidden rounded-md border border-border bg-card px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground sm:inline">&#8984;K</kbd>
+          <kbd className="pointer-events-none hidden rounded-md border border-[#e5e7eb] bg-card px-1.5 py-0.5 font-mono text-[11px] font-medium text-muted-foreground sm:inline">&#8984;K</kbd>
         </button>
 
         {/* Right */}
         <div className="flex items-center gap-1.5 shrink-0">
-          <Link href="/notifications" className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
-            <Bell className="h-[18px] w-[18px]" strokeWidth={1.5} />
+          <Link href="/notifications" className="relative flex h-9 w-9 items-center justify-center rounded-lg text-[#5c626b] transition-colors hover:bg-muted hover:text-foreground">
+            <Bell className="h-[18px] w-[18px]" strokeWidth={1.7} />
+            <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-warn ring-2 ring-card" />
           </Link>
+          <span className="mx-1 h-6 w-px bg-[#eceef0]" />
 
           {/* Custom dropdown — no Base UI */}
           <div ref={menuRef} className="relative">
@@ -80,7 +87,7 @@ export function Topbar() {
               className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[13px] transition-colors hover:bg-muted"
             >
               <Avatar className="h-7 w-7">
-                <AvatarFallback className="bg-primary text-[10px] font-bold text-primary-foreground">{getInitials(displayName)}</AvatarFallback>
+                <AvatarFallback className="bg-brand-deep text-[10px] font-bold text-white">{getInitials(displayName)}</AvatarFallback>
               </Avatar>
               <span className="hidden font-medium text-foreground sm:inline">{displayName}</span>
               <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />

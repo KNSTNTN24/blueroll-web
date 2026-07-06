@@ -357,7 +357,7 @@ export default function ImportRecipePage() {
           <Button
             onClick={handleImport}
             disabled={importing}
-            className="gap-1.5 bg-emerald-600 hover:bg-emerald-700"
+            className="gap-1.5 bg-brand hover:opacity-90"
           >
             {importing ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -619,7 +619,7 @@ export default function ImportRecipePage() {
             <Button
               onClick={handleSave}
               disabled={saving}
-              className="gap-1.5 bg-emerald-600 hover:bg-emerald-700"
+              className="gap-1.5 bg-brand hover:opacity-90"
             >
               <Save className="h-3.5 w-3.5" />
               {saving ? 'Saving...' : 'Save Recipe'}

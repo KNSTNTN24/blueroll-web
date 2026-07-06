@@ -919,7 +919,7 @@ export default function HaccpPackPage() {
             <span
               className={cn(
                 'h-1.5 w-1.5 rounded-full',
-                reviewInfo.overdue ? 'bg-rose-500' : 'bg-emerald-600',
+                reviewInfo.overdue ? 'bg-rose-500' : 'bg-primary',
               )}
             />
             {reviewInfo.label}
@@ -935,7 +935,7 @@ export default function HaccpPackPage() {
             <span
               className={cn(
                 'relative block h-4 w-7 shrink-0 rounded-full transition-colors',
-                autoFillEnabled ? 'bg-emerald-600' : 'bg-zinc-300',
+                autoFillEnabled ? 'bg-primary' : 'bg-zinc-300',
               )}
             >
               <span
@@ -969,7 +969,7 @@ export default function HaccpPackPage() {
         </span>
         <span className="relative h-1 flex-1 overflow-hidden rounded-full bg-accent">
           <span
-            className="absolute inset-y-0 left-0 rounded-full bg-emerald-600 transition-[width] duration-500"
+            className="absolute inset-y-0 left-0 rounded-full bg-primary transition-[width] duration-500"
             style={{ width: `${totalProgress.pct}%` }}
           />
         </span>
@@ -993,7 +993,7 @@ export default function HaccpPackPage() {
           <span
             ref={indicatorRef}
             aria-hidden
-            className="pointer-events-none absolute left-1 top-1 z-0 h-[calc(100%-8px)] rounded-lg bg-emerald-600 transition-[transform,width] duration-[380ms] will-change-[transform,width]"
+            className="pointer-events-none absolute left-1 top-1 z-0 h-[calc(100%-8px)] rounded-lg bg-primary transition-[transform,width] duration-[380ms] will-change-[transform,width]"
             style={{ transitionTimingFunction: 'cubic-bezier(.28,.85,.34,1)' }}
           />
         {HACCP_SECTIONS.map((section) => {
@@ -1033,7 +1033,7 @@ export default function HaccpPackPage() {
                   <span
                     className={cn(
                       'absolute inset-y-0 left-0 rounded-full',
-                      isActive ? 'bg-white' : 'bg-emerald-600',
+                      isActive ? 'bg-white' : 'bg-primary',
                     )}
                     style={{ width: `${sp?.pct ?? 0}%` }}
                   />
@@ -1066,7 +1066,7 @@ export default function HaccpPackPage() {
               >
                 <span className="inline-flex items-center gap-3.5">
                   {isDone ? (
-                    <span className="flex h-[26px] w-[26px] items-center justify-center rounded-full bg-emerald-600">
+                    <span className="flex h-[26px] w-[26px] items-center justify-center rounded-full bg-primary">
                       <svg
                         viewBox="0 0 14 14"
                         className="h-[15px] w-[15px] text-white"
@@ -1101,7 +1101,7 @@ export default function HaccpPackPage() {
                   {methodFilled} of {methodTotal}
                   <span className="block h-[3px] w-12 overflow-hidden rounded-full bg-zinc-200">
                     <span
-                      className="block h-full rounded-full bg-emerald-600"
+                      className="block h-full rounded-full bg-primary"
                       style={{ width: `${methodPct}%` }}
                     />
                   </span>
@@ -1227,7 +1227,7 @@ function FieldRenderer({
             className={cn(
               'relative inline-flex h-[22px] w-[22px] flex-shrink-0 items-center justify-center rounded-full border-[1.5px] bg-card transition-[background,border-color,transform] duration-200',
               isChecked
-                ? 'border-emerald-600 bg-emerald-600 [animation:haccp-check-pop_.35s_cubic-bezier(.5,1.5,.4,1)]'
+                ? 'border-emerald-600 bg-primary [animation:haccp-check-pop_.35s_cubic-bezier(.5,1.5,.4,1)]'
                 : 'border-zinc-300',
             )}
           >
@@ -1271,7 +1271,7 @@ function FieldRenderer({
             >
               <div className="mb-2 flex items-center justify-between gap-3">
                 <span className="inline-flex items-center gap-2 text-[10.5px] font-semibold uppercase tracking-[.08em] text-emerald-600">
-                  <span className="h-[5px] w-[5px] rounded-full bg-emerald-600" />
+                  <span className="h-[5px] w-[5px] rounded-full bg-primary" />
                   Auto-filled
                   {field.autoSource && (
                     <span className="text-[11.5px] font-medium normal-case tracking-normal text-emerald-600/70">
