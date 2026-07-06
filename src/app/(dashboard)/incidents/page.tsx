@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
@@ -46,6 +46,7 @@ export default function IncidentsPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [resolveId, setResolveId] = useState<string | null>(null)
   const [resolveNote, setResolveNote] = useState('')
+  const [viewId, setViewId] = useState<string | null>(null)
 
   // Unified report/edit form state
   const [fType, setFType] = useState('incident')
@@ -155,7 +156,16 @@ export default function IncidentsPage() {
   }
 
   const resolveTarget = incidents.find((i) => i.id === resolveId)
+  const viewTarget = incidents.find((i) => i.id === viewId)
+  // Retain the last-viewed incident so the detail panel keeps its content while sliding out.
+  const lastView = useRef<Incident | null>(null)
+  if (viewTarget) lastView.current = viewTarget
+  const shownView = viewTarget ?? lastView.current
   const tabs: { key: Tab; label: string }[] = [{ key: 'all', label: 'All' }, { key: 'open', label: 'Open' }, { key: 'resolved', label: 'Resolved' }]
+
+  function confirmDelete(id: string) {
+    if (confirm('Delete this incident?')) { deleteMutation.mutate(id); setViewId(null) }
+  }
 
   return (
     <div className="flex flex-col gap-[18px]">
@@ -207,8 +217,10 @@ export default function IncidentsPage() {
           const isOpen = inc.status === 'open'
           const accent = isOpen ? '#e2b87e' : '#cde3d4'
           return (
-            <div key={inc.id} className="group grid min-h-[66px] items-center gap-3.5 border-b border-[#f2f3f5] pr-[18px] transition-colors last:border-0 hover:bg-[#fafbfb]"
-              style={{ gridTemplateColumns: '4px 1fr 150px 116px 116px' }}>
+            <div key={inc.id} role="button" tabIndex={0} onClick={() => setViewId(inc.id)}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setViewId(inc.id) } }}
+              className="group grid min-h-[66px] cursor-pointer items-center gap-3.5 border-b border-[#f2f3f5] pr-[14px] transition-colors last:border-0 hover:bg-[#fafbfb]"
+              style={{ gridTemplateColumns: '4px 1fr 150px 116px 132px' }}>
               {/* accent bar */}
               <div className="self-stretch rounded-r-[3px]" style={{ background: accent }} />
               {/* main */}
@@ -245,28 +257,28 @@ export default function IncidentsPage() {
                   {isOpen ? 'Open' : 'Resolved'}
                 </span>
               </div>
-              {/* actions */}
-              <div className="flex justify-end gap-[3px] opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+              {/* actions — always visible, comfortable tap targets */}
+              <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
                 {isOpen ? (
                   <button onClick={() => { setResolveNote(''); setResolveId(inc.id) }} title="Mark resolved"
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-[#bfe0cd] bg-[#eaf4ee] px-[11px] py-1.5 text-[12.5px] font-semibold text-[#1a6e49] transition-colors hover:bg-[#dcefe4]">
-                    <Check className="h-3.5 w-3.5" strokeWidth={2.4} /> Resolve
+                    className="inline-flex h-9 items-center gap-1.5 rounded-[9px] border border-[#bfe0cd] bg-[#eaf4ee] px-3 text-[12.5px] font-semibold text-[#1a6e49] transition-colors hover:bg-[#dcefe4]">
+                    <Check className="h-4 w-4" strokeWidth={2.4} /> Resolve
                   </button>
                 ) : (
                   <button onClick={() => reopenMutation.mutate(inc.id)} title="Reopen"
-                    className="flex h-8 w-8 items-center justify-center rounded-lg text-[#9aa0a8] transition-colors hover:bg-[#f1f2f4] hover:text-[#1c1f24]">
-                    <RotateCcw className="h-4 w-4" strokeWidth={1.8} />
+                    className="flex h-9 w-9 items-center justify-center rounded-[9px] border border-input bg-card text-[#5c626b] transition-colors hover:bg-accent hover:text-foreground">
+                    <RotateCcw className="h-[18px] w-[18px]" strokeWidth={1.8} />
                   </button>
                 )}
                 {isManager && (
                   <>
-                    <button onClick={() => openEdit(inc)} title="Edit"
-                      className="flex h-8 w-8 items-center justify-center rounded-lg text-[#9aa0a8] transition-colors hover:bg-[#f1f2f4] hover:text-[#1c1f24]">
-                      <Pencil className="h-[15px] w-[15px]" strokeWidth={1.7} />
+                    <button onClick={() => openEdit(inc)} title="Edit" aria-label="Edit incident"
+                      className="flex h-9 w-9 items-center justify-center rounded-[9px] border border-input bg-card text-[#5c626b] transition-colors hover:bg-accent hover:text-foreground">
+                      <Pencil className="h-[17px] w-[17px]" strokeWidth={1.8} />
                     </button>
-                    <button onClick={() => { if (confirm('Delete this incident?')) deleteMutation.mutate(inc.id) }} title="Delete"
-                      className="flex h-8 w-8 items-center justify-center rounded-lg text-[#cf9a9a] transition-colors hover:bg-warn-tint hover:text-warn">
-                      <Trash2 className="h-[15px] w-[15px]" strokeWidth={1.7} />
+                    <button onClick={() => confirmDelete(inc.id)} title="Delete" aria-label="Delete incident"
+                      className="flex h-9 w-9 items-center justify-center rounded-[9px] border border-input bg-card text-[#5c626b] transition-colors hover:border-transparent hover:bg-warn-tint hover:text-warn">
+                      <Trash2 className="h-[17px] w-[17px]" strokeWidth={1.8} />
                     </button>
                   </>
                 )}
@@ -379,6 +391,115 @@ export default function IncidentsPage() {
           </div>
         </div>
       )}
+
+      {/* ===== Detail slide-over (read-only) ===== */}
+      <div onClick={() => setViewId(null)} aria-hidden={!viewId}
+        className={cn(
+          'fixed inset-0 z-50 flex justify-end overflow-hidden bg-[rgba(20,22,27,.36)] transition-opacity duration-300 ease-out',
+          viewId ? 'opacity-100' : 'pointer-events-none opacity-0',
+        )}>
+        <div onClick={(e) => e.stopPropagation()}
+          className={cn(
+            'flex h-full w-[460px] max-w-[92vw] flex-col bg-card shadow-[-24px_0_64px_-32px_rgba(16,24,40,.4)] transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] will-change-transform',
+            viewId ? 'translate-x-0' : 'translate-x-full',
+          )}>
+          {shownView && (() => {
+            const vOpen = shownView.status !== 'resolved'
+            return (
+              <>
+                <div className="flex items-start justify-between gap-3 border-b border-[#eef0f2] px-6 py-5">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className={cn('rounded-md px-2 py-[3px] text-[11px] font-semibold tracking-[0.02em]',
+                        shownView.type === 'complaint' ? 'bg-[#f8f0e8] text-[#9a5b2a]' : 'bg-[#f1f2f4] text-[#5c626b]')}>
+                        {shownView.type === 'complaint' ? 'Complaint' : 'Incident'}
+                      </span>
+                      <span className={cn('inline-flex items-center gap-1.5 rounded-full px-[11px] py-[4px] text-[12px] font-semibold',
+                        vOpen ? 'bg-[#fbf1e1] text-[#b07d1e]' : 'bg-[#eaf4ee] text-[#1f7a52]')}>
+                        <span className="h-1.5 w-1.5 rounded-full" style={{ background: vOpen ? '#d98a1a' : '#1f9d63' }} />
+                        {vOpen ? 'Open' : 'Resolved'}
+                      </span>
+                    </div>
+                    <h2 className="mt-2 text-[18px] font-bold leading-snug text-foreground" style={{ textWrap: 'pretty' } as any}>{shownView.description}</h2>
+                  </div>
+                  <button type="button" onClick={() => setViewId(null)} aria-label="Close"
+                    className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[9px] bg-[#f1f2f4] text-[#5c626b] transition-colors hover:bg-[#e7e9ec]">
+                    <X className="h-[17px] w-[17px]" strokeWidth={2} />
+                  </button>
+                </div>
+
+                <div className="flex flex-1 flex-col gap-5 overflow-y-auto px-6 py-[22px]">
+                  <div>
+                    <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-[#8a9099]">Reported by</p>
+                    <div className="flex items-center gap-2.5">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#5b6472] text-[11px] font-bold text-white">
+                        {initials(shownView.reporter?.full_name, shownView.reporter?.email)}
+                      </div>
+                      <span className="text-[14px] text-foreground">{shownView.reporter?.full_name || shownView.reporter?.email || 'Unknown'}</span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-[#8a9099]">Date</p>
+                      <p className="text-[14px] text-foreground">{format(new Date(shownView.date || shownView.created_at), 'dd MMM yyyy')}</p>
+                    </div>
+                    <div>
+                      <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-[#8a9099]">Logged</p>
+                      <p className="text-[14px] text-foreground">{format(new Date(shownView.created_at), 'dd MMM yyyy, HH:mm')}</p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-[#8a9099]">Action taken</p>
+                    <p className={cn('text-[14px] leading-[1.55]', shownView.action_taken ? 'text-foreground' : 'text-[#b0b5bc]')} style={{ textWrap: 'pretty' } as any}>{shownView.action_taken || '—'}</p>
+                  </div>
+
+                  <div>
+                    <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-[#8a9099]">Follow up</p>
+                    <p className={cn('text-[14px] leading-[1.55]', shownView.follow_up ? 'text-foreground' : 'text-[#b0b5bc]')} style={{ textWrap: 'pretty' } as any}>{shownView.follow_up || '—'}</p>
+                  </div>
+
+                  {!vOpen && shownView.resolved_notes && (
+                    <div className="rounded-[12px] border border-[#d7eade] bg-[#f5faf7] p-3.5">
+                      <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-[#1f7a52]">
+                        <Check className="h-3.5 w-3.5" strokeWidth={2.4} /> Resolution note
+                      </p>
+                      <p className="text-[14px] leading-[1.55] text-[#3a5a4a]" style={{ textWrap: 'pretty' } as any}>{shownView.resolved_notes}</p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex gap-2.5 border-t border-[#eef0f2] px-6 py-4">
+                  {vOpen ? (
+                    <button onClick={() => { setViewId(null); setResolveNote(''); setResolveId(shownView.id) }}
+                      className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-[11px] bg-brand py-[11px] text-[14px] font-semibold text-white shadow-[0_1px_2px_rgba(16,24,40,.1)] transition-opacity hover:opacity-90">
+                      <Check className="h-4 w-4" strokeWidth={2.4} /> Resolve
+                    </button>
+                  ) : (
+                    <button onClick={() => { reopenMutation.mutate(shownView.id); setViewId(null) }}
+                      className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-[11px] border border-input bg-card py-[11px] text-[14px] font-semibold text-[#5c626b] transition-colors hover:bg-[#f4f5f6]">
+                      <RotateCcw className="h-4 w-4" strokeWidth={1.8} /> Reopen
+                    </button>
+                  )}
+                  {isManager && (
+                    <button onClick={() => { setViewId(null); openEdit(shownView) }}
+                      className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-[11px] border border-input bg-card py-[11px] text-[14px] font-semibold text-foreground transition-colors hover:bg-accent">
+                      <Pencil className="h-4 w-4" strokeWidth={1.8} /> Edit
+                    </button>
+                  )}
+                  {isManager && (
+                    <button onClick={() => confirmDelete(shownView.id)} aria-label="Delete incident"
+                      className="flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-[11px] border border-input bg-card text-[#5c626b] transition-colors hover:border-transparent hover:bg-warn-tint hover:text-warn">
+                      <Trash2 className="h-[18px] w-[18px]" strokeWidth={1.8} />
+                    </button>
+                  )}
+                </div>
+              </>
+            )
+          })()}
+        </div>
+      </div>
     </div>
   )
 }
