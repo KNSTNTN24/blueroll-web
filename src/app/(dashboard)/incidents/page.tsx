@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { toast } from 'sonner'
-import { Plus, Search, Check, Pencil, Trash2, X, RotateCcw, CircleCheck } from 'lucide-react'
+import { Plus, Search, Check, Pencil, Trash2, X, RotateCcw, CircleCheck, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { notifyNewIncident, notifyIncidentResolved } from '@/lib/notifications'
@@ -220,7 +220,7 @@ export default function IncidentsPage() {
             <div key={inc.id} role="button" tabIndex={0} onClick={() => setViewId(inc.id)}
               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setViewId(inc.id) } }}
               className="group grid min-h-[66px] cursor-pointer items-center gap-3.5 border-b border-[#f2f3f5] pr-[14px] transition-colors last:border-0 hover:bg-[#fafbfb]"
-              style={{ gridTemplateColumns: '4px 1fr 150px 116px 132px' }}>
+              style={{ gridTemplateColumns: '4px 1fr 150px 116px 120px' }}>
               {/* accent bar */}
               <div className="self-stretch rounded-r-[3px]" style={{ background: accent }} />
               {/* main */}
@@ -257,31 +257,16 @@ export default function IncidentsPage() {
                   {isOpen ? 'Open' : 'Resolved'}
                 </span>
               </div>
-              {/* actions — always visible, comfortable tap targets */}
-              <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
-                {isOpen ? (
-                  <button onClick={() => { setResolveNote(''); setResolveId(inc.id) }} title="Mark resolved"
-                    className="inline-flex h-9 items-center gap-1.5 rounded-[9px] border border-[#bfe0cd] bg-[#eaf4ee] px-3 text-[12.5px] font-semibold text-[#1a6e49] transition-colors hover:bg-[#dcefe4]">
-                    <Check className="h-4 w-4" strokeWidth={2.4} /> Resolve
-                  </button>
-                ) : (
-                  <button onClick={() => reopenMutation.mutate(inc.id)} title="Reopen"
-                    className="flex h-9 w-9 items-center justify-center rounded-[9px] border border-input bg-card text-[#5c626b] transition-colors hover:bg-accent hover:text-foreground">
-                    <RotateCcw className="h-[18px] w-[18px]" strokeWidth={1.8} />
+              {/* actions — Resolve quick-action + a chevron that hints "open detail".
+                  Edit / Delete / Reopen live in the detail view (opened on row click). */}
+              <div className="flex items-center justify-end gap-2.5">
+                {isOpen && (
+                  <button onClick={(e) => { e.stopPropagation(); setResolveNote(''); setResolveId(inc.id) }} title="Mark resolved"
+                    className="inline-flex items-center gap-1.5 rounded-[8px] border border-[#bfe0cd] bg-[#eaf4ee] px-3 py-1.5 text-[12.5px] font-semibold text-[#1a6e49] transition-colors hover:bg-[#dcefe4]">
+                    <Check className="h-3.5 w-3.5" strokeWidth={2.4} /> Resolve
                   </button>
                 )}
-                {isManager && (
-                  <>
-                    <button onClick={() => openEdit(inc)} title="Edit" aria-label="Edit incident"
-                      className="flex h-9 w-9 items-center justify-center rounded-[9px] border border-input bg-card text-[#5c626b] transition-colors hover:bg-accent hover:text-foreground">
-                      <Pencil className="h-[17px] w-[17px]" strokeWidth={1.8} />
-                    </button>
-                    <button onClick={() => confirmDelete(inc.id)} title="Delete" aria-label="Delete incident"
-                      className="flex h-9 w-9 items-center justify-center rounded-[9px] border border-input bg-card text-[#5c626b] transition-colors hover:border-transparent hover:bg-warn-tint hover:text-warn">
-                      <Trash2 className="h-[17px] w-[17px]" strokeWidth={1.8} />
-                    </button>
-                  </>
-                )}
+                <ChevronRight className="h-4 w-4 shrink-0 text-[#c2c6cc]" strokeWidth={1.8} />
               </div>
             </div>
           )
