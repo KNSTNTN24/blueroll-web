@@ -25,6 +25,7 @@ interface Incident {
   date: string
   created_at: string
   reporter?: { full_name: string | null; email: string }
+  site?: { name: string } | null
 }
 
 type Tab = 'all' | 'open' | 'resolved'
@@ -56,13 +57,16 @@ export default function IncidentsPage() {
   const [fDate, setFDate] = useState(format(new Date(), 'yyyy-MM-dd'))
 
   const currentSiteId = useAuthStore((s) => s.currentSiteId)
+  const sites = useAuthStore((s) => s.sites)
+  // In the estate ("All sites") view, tag each row with its origin site
+  const showSiteChip = sites.length > 1 && !currentSiteId
   const { data: incidents = [], isLoading } = useQuery({
     queryKey: ['incidents', business?.id, currentSiteId],
     queryFn: async () => {
       if (!business?.id) return []
       let q = supabase
         .from('incidents')
-        .select('*, reporter:profiles!incidents_reported_by_fkey(full_name, email)')
+        .select('*, reporter:profiles!incidents_reported_by_fkey(full_name, email), site:sites(name)')
         .eq('business_id', business.id)
       if (currentSiteId) q = q.eq('site_id', currentSiteId)
       const { data, error } = await q.order('created_at', { ascending: false })
@@ -236,6 +240,12 @@ export default function IncidentsPage() {
                 </div>
                 <div className="mt-[5px] flex items-center gap-2 text-[12.5px] text-[#8a9099]">
                   <span className="text-[12px] font-medium text-[#9aa0a8]">{format(new Date(inc.date || inc.created_at), 'dd MMM yyyy')}</span>
+                  {showSiteChip && inc.site?.name && (
+                    <>
+                      <span className="text-[#d4d7db]">·</span>
+                      <span className="rounded-[5px] bg-[#f1f2f4] px-1.5 py-[1px] text-[11px] font-semibold text-[#5c626b]">{inc.site.name}</span>
+                    </>
+                  )}
                 </div>
                 {inc.status === 'resolved' && inc.resolved_notes && (
                   <div className="mt-[7px] flex items-start gap-1.5 text-[12.5px] leading-[1.45] text-[#1f7a52]">

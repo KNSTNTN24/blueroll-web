@@ -13,6 +13,8 @@ import { StatusBadge } from '@/components/shared/status-badge'
 import { ROLE_LABELS, DEFAULT_EQUIPMENT, type UserRole } from '@/lib/constants'
 import { cn } from '@/lib/utils'
 import { SitesSettings } from './sites-settings'
+import { MembersRoles } from './members-roles'
+import { NotificationsSettings } from './notifications-settings'
 
 export default function SettingsPage() {
   const profile = useAuthStore((s) => s.profile)
@@ -20,6 +22,20 @@ export default function SettingsPage() {
   const reset = useAuthStore((s) => s.reset)
   const isGroupAdmin = profile?.is_group_admin || profile?.role === 'owner' || profile?.role === 'manager'
   const router = useRouter()
+
+  type Tab = 'general' | 'sites' | 'members' | 'notifications' | 'billing'
+  const [tab, setTab] = useState<Tab>('general')
+  const tabs: { id: Tab; label: string }[] = [
+    { id: 'general', label: 'General' },
+    ...(isGroupAdmin
+      ? ([
+          { id: 'sites', label: 'Sites' },
+          { id: 'members', label: 'Members & roles' },
+          { id: 'notifications', label: 'Notifications' },
+        ] as { id: Tab; label: string }[])
+      : []),
+    { id: 'billing', label: 'Billing' },
+  ]
 
   const [fullName, setFullName] = useState(profile?.full_name ?? '')
   const [saving, setSaving] = useState(false)
@@ -137,8 +153,29 @@ export default function SettingsPage() {
     <div className="space-y-6">
       <PageHeader title="Settings" description="Manage your account and business settings" />
 
-      {isGroupAdmin && <SitesSettings />}
+      <div className="flex flex-col gap-6 md:flex-row md:items-start">
+        {/* Tab nav */}
+        <nav className="flex shrink-0 gap-1 overflow-x-auto pb-1 md:w-48 md:flex-col md:gap-0.5 md:pb-0">
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={cn(
+                'whitespace-nowrap rounded-lg px-3 py-2 text-left text-[13.5px] font-semibold transition-colors',
+                tab === t.id ? 'bg-brand-tint text-brand-deep' : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+              )}
+            >
+              {t.label}
+            </button>
+          ))}
+        </nav>
 
+        <div className="min-w-0 flex-1">
+      {tab === 'sites' && <SitesSettings />}
+      {tab === 'members' && <MembersRoles />}
+      {tab === 'notifications' && <NotificationsSettings />}
+
+      {tab === 'general' && (
       <div className="max-w-lg space-y-6">
         {/* Profile */}
         <div className="rounded-lg border border-border bg-white p-4 space-y-4">
@@ -248,6 +285,11 @@ export default function SettingsPage() {
           </div>
         </div>
 
+      </div>
+      )}
+
+      {tab === 'billing' && (
+      <div className="max-w-lg space-y-6">
         {/* Subscription */}
         <div className="rounded-lg border border-border bg-white p-4 space-y-4">
           <div className="flex items-center justify-between">
@@ -293,6 +335,9 @@ export default function SettingsPage() {
               Delete account (coming soon)
             </Button>
           </div>
+        </div>
+      </div>
+      )}
         </div>
       </div>
     </div>

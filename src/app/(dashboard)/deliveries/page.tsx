@@ -21,6 +21,7 @@ interface Delivery {
   received_at: string
   created_at: string
   supplier?: { name: string }
+  site?: { name: string } | null
   receiver?: { full_name: string | null; email: string }
 }
 
@@ -41,6 +42,8 @@ function tempBg(temp: number | null): string {
 export default function DeliveriesPage() {
   const business = useAuthStore((s) => s.business)
   const currentSiteId = useAuthStore((s) => s.currentSiteId)
+  const sites = useAuthStore((s) => s.sites)
+  const showSiteChip = sites.length > 1 && !currentSiteId
   const router = useRouter()
 
   const { data: deliveries = [], isLoading } = useQuery({
@@ -49,7 +52,7 @@ export default function DeliveriesPage() {
       if (!business?.id) return []
       let q = supabase
         .from('deliveries')
-        .select('*, supplier:suppliers(name), receiver:profiles!deliveries_received_by_fkey(full_name, email)')
+        .select('*, supplier:suppliers(name), receiver:profiles!deliveries_received_by_fkey(full_name, email), site:sites(name)')
         .eq('business_id', business.id)
       if (currentSiteId) q = q.eq('site_id', currentSiteId)
       const { data, error } = await q.order('received_at', { ascending: false })
@@ -106,7 +109,12 @@ export default function DeliveriesPage() {
                     {format(new Date(d.received_at || d.created_at), 'dd MMM yyyy HH:mm')}
                   </td>
                   <td className="px-4 py-2.5 text-[13px] font-medium text-foreground">
-                    {d.supplier?.name ?? 'Unknown'}
+                    <div className="flex items-center gap-2">
+                      <span>{d.supplier?.name ?? 'Unknown'}</span>
+                      {showSiteChip && d.site?.name && (
+                        <span className="rounded-[5px] bg-secondary px-1.5 py-[1px] text-[11px] font-semibold text-muted-foreground">{d.site.name}</span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-4 py-2.5 text-[13px] text-muted-foreground">
                     {d.receiver?.full_name || d.receiver?.email || 'Unknown'}

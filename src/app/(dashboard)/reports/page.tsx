@@ -17,6 +17,7 @@ import { Input } from '@/components/ui/input'
 
 export default function ReportsPage() {
   const business = useAuthStore((s) => s.business)
+  const currentSiteId = useAuthStore((s) => s.currentSiteId)
 
   const now = new Date()
   const [dateFrom, setDateFrom] = useState(format(startOfMonth(now), 'yyyy-MM-dd'))
@@ -26,14 +27,15 @@ export default function ReportsPage() {
 
   // Fetch templates for the filter
   const { data: templates = [] } = useQuery({
-    queryKey: ['report-templates', business?.id],
+    queryKey: ['report-templates', business?.id, currentSiteId],
     queryFn: async () => {
       if (!business?.id) return []
-      const { data, error } = await supabase
+      let q = supabase
         .from('checklist_templates')
         .select('id, name')
         .eq('business_id', business.id)
-        .order('name')
+      if (currentSiteId) q = q.eq('site_id', currentSiteId)
+      const { data, error } = await q.order('name')
       if (error) throw error
       return data ?? []
     },
@@ -42,7 +44,7 @@ export default function ReportsPage() {
 
   // Fetch completions with responses
   const { data: completions = [], isLoading } = useQuery({
-    queryKey: ['report-completions', business?.id, dateFrom, dateTo, selectedTemplates],
+    queryKey: ['report-completions', business?.id, currentSiteId, dateFrom, dateTo, selectedTemplates],
     queryFn: async () => {
       if (!business?.id) return []
       let query = supabase
@@ -57,6 +59,8 @@ export default function ReportsPage() {
         .gte('completed_at', dateFrom)
         .lte('completed_at', endOfDay(parseISO(dateTo)).toISOString())
         .order('completed_at', { ascending: false })
+
+      if (currentSiteId) query = query.eq('site_id', currentSiteId)
 
       if (selectedTemplates.length > 0) {
         query = query.in('template_id', selectedTemplates)
