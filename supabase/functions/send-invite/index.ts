@@ -3,8 +3,10 @@
 // Requires an Authorization bearer (any signed-in user); the invite code itself
 // is minted by create_invite() which already enforces owner/manager via RLS.
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')!
-// Switch to 'BlueRoll <noreply@blueroll.app>' once the domain is verified in Resend.
-const FROM = Deno.env.get('RESEND_FROM') ?? 'BlueRoll <onboarding@resend.dev>'
+// Prefer the branded sender; auto-fall back to Resend's shared sender until the
+// blueroll.app domain finishes verifying (then it upgrades itself, no redeploy).
+const FROM_PRIMARY = Deno.env.get('RESEND_FROM') ?? 'BlueRoll <noreply@blueroll.app>'
+const FROM_FALLBACK = 'BlueRoll <onboarding@resend.dev>'
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -47,17 +49,20 @@ Deno.serve(async (req) => {
   </div>
 </body></html>`
 
-    const res = await fetch('https://api.resend.com/emails', {
+    const subject = `You're invited to join ${group} on BlueRoll`
+    const send = (from: string) => fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        from: FROM,
-        to: [to],
-        subject: `You're invited to join ${group} on BlueRoll`,
-        html,
-      }),
+      body: JSON.stringify({ from, to: [to], subject, html }),
     })
-    const data = await res.json()
+
+    let res = await send(FROM_PRIMARY)
+    let data = await res.json()
+    // Domain not verified yet → fall back to Resend's shared sender.
+    if (!res.ok && res.status === 403 && FROM_PRIMARY !== FROM_FALLBACK) {
+      res = await send(FROM_FALLBACK)
+      data = await res.json()
+    }
     if (!res.ok) {
       return new Response(JSON.stringify({ error: data?.message || 'Resend error', detail: data }), { status: 502, headers: { ...cors, 'Content-Type': 'application/json' } })
     }
