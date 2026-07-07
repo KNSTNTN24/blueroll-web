@@ -12,11 +12,13 @@ import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/shared/status-badge'
 import { ROLE_LABELS, DEFAULT_EQUIPMENT, type UserRole } from '@/lib/constants'
 import { cn } from '@/lib/utils'
+import { SitesSettings } from './sites-settings'
 
 export default function SettingsPage() {
   const profile = useAuthStore((s) => s.profile)
   const business = useAuthStore((s) => s.business)
   const reset = useAuthStore((s) => s.reset)
+  const isGroupAdmin = profile?.is_group_admin || profile?.role === 'owner' || profile?.role === 'manager'
   const router = useRouter()
 
   const [fullName, setFullName] = useState(profile?.full_name ?? '')
@@ -134,6 +136,8 @@ export default function SettingsPage() {
   return (
     <div className="space-y-6">
       <PageHeader title="Settings" description="Manage your account and business settings" />
+
+      {isGroupAdmin && <SitesSettings />}
 
       <div className="max-w-lg space-y-6">
         {/* Profile */}
