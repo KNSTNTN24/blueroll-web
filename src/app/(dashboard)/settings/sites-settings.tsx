@@ -1,16 +1,31 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAuth } from '@/hooks/use-auth'
 import { toast } from 'sonner'
-import { cn } from '@/lib/utils'
-import { Plus, Building2, Trash2, Check, X } from 'lucide-react'
 
-const AVATAR = ['#1f7a52', '#5b6472', '#8a6d52', '#4e6e81']
-const initials = (n: string) => { const p = n.split(' ').filter(Boolean); return (p.length >= 2 ? p[0][0] + p[1][0] : n.slice(0, 2)).toUpperCase() }
+const TILE = ['#1f7a52', '#5b6472', '#8a6d52', '#4e6e81']
+const codeOf = (n: string) => {
+  const p = n.split(' ').filter(Boolean)
+  return (p.length >= 2 ? p[0][0] + p[1][0] : n.slice(0, 2)).toUpperCase()
+}
+const ratingMeta = (r: number) =>
+  r >= 4 ? { bg: '#eaf4ee', color: '#1f7a52' }
+    : r === 3 ? { bg: '#fbf1e1', color: '#b07d1e' }
+    : { bg: '#fbecec', color: '#c0403a' }
+
+interface FsaEstablishment {
+  FHRSID: number
+  BusinessName: string
+  AddressLine1: string
+  AddressLine2: string
+  AddressLine3: string
+  PostCode: string
+  RatingValue: string
+}
 
 export function SitesSettings() {
   const business = useAuthStore((s) => s.business)
@@ -18,155 +33,251 @@ export function SitesSettings() {
   const { refreshProfile } = useAuth()
   const bid = business?.id
 
-  const [adding, setAdding] = useState(false)
-  const [name, setName] = useState('')
-  const [postcode, setPostcode] = useState('')
-  const [rating, setRating] = useState('5')
-  const [kitchen, setKitchen] = useState<'copy' | 'own' | 'shared'>('shared')
-  const [copyFrom, setCopyFrom] = useState<string>('')
-  const [busy, setBusy] = useState(false)
+  const [addOpen, setAddOpen] = useState(false)
 
   const { data: members = [] } = useQuery({
     queryKey: ['sites-members', bid],
     enabled: !!bid,
     queryFn: async () => (await supabase.from('profiles').select('id, full_name, site_id').eq('business_id', bid!)).data ?? [],
   })
-  const memberCount = (siteId: string) => (members as any[]).filter((m) => m.site_id === siteId).length
-  const managerName = (id: string | null) => (members as any[]).find((m) => m.id === id)?.full_name ?? null
+  const memberCount = (siteId: string) => (members as { site_id: string }[]).filter((m) => m.site_id === siteId).length
+  const managerName = (id: string | null) => (members as { id: string; full_name: string }[]).find((m) => m.id === id)?.full_name ?? null
 
-  async function addSite(e: React.FormEvent) {
-    e.preventDefault()
-    if (!bid || !name.trim()) return
-    setBusy(true)
-    try {
-      const { data: site, error } = await supabase.from('sites').insert({
-        business_id: bid, name: name.trim(), postcode: postcode.trim() || null, fsa_rating: rating, status: 'onboarding',
-      }).select('id').single()
-      if (error) throw error
-      if (kitchen === 'copy' && copyFrom && site?.id) {
-        const { error: cerr } = await supabase.rpc('copy_kitchen', { from_site: copyFrom, to_site: site.id })
-        if (cerr) throw cerr
-      }
-      toast.success('Site added')
-      setAdding(false); setName(''); setPostcode(''); setRating('5'); setKitchen('shared'); setCopyFrom('')
-      await refreshProfile()
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to add site')
-    } finally { setBusy(false) }
-  }
-
-  async function removeSite(id: string, siteName: string) {
+  async function removeSite(id: string, name: string) {
     if (sites.length <= 1) { toast.error('A group must keep at least one site.'); return }
-    if (!confirm(`Delete ${siteName}? Its checklists, incidents and other site data will be removed. This cannot be undone.`)) return
+    if (!confirm(`Remove ${name}? Its checklists, incidents and other site data will be deleted. This cannot be undone.`)) return
     const { error } = await supabase.from('sites').delete().eq('id', id)
     if (error) { toast.error(error.message); return }
-    toast.success('Site deleted')
+    toast.success('Site removed')
     await refreshProfile()
   }
 
   return (
-    <div className="rounded-[14px] border border-border bg-card p-5 shadow-[0_1px_2px_rgba(16,24,40,.04)]">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* header */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 20 }}>
         <div>
-          <h2 className="text-[16px] font-bold text-foreground">Sites</h2>
-          <p className="mt-0.5 text-[13px] text-muted-foreground">Kitchens in {business?.name ?? 'your group'} · {sites.length} {sites.length === 1 ? 'site' : 'sites'}</p>
+          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, letterSpacing: '-.01em', color: '#16181d' }}>Sites</h1>
+          <div style={{ color: '#6b7280', fontSize: 13.5, marginTop: 4 }}>{business?.name ?? 'Your group'} · plan includes up to 10 sites</div>
         </div>
-        {!adding && (
-          <button onClick={() => setAdding(true)} className="inline-flex items-center gap-1.5 rounded-[10px] bg-brand px-3.5 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90">
-            <Plus className="h-4 w-4" strokeWidth={2} /> Add site
-          </button>
-        )}
+        <button onClick={() => setAddOpen(true)}
+          style={{ display: 'flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap', background: '#1f9d63', border: 'none', color: '#fff', fontSize: 14, fontWeight: 600, padding: '11px 17px', borderRadius: 11, cursor: 'pointer', boxShadow: '0 1px 2px rgba(16,24,40,.1)' }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = '#1c8e5a')}
+          onMouseLeave={(e) => (e.currentTarget.style.background = '#1f9d63')}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+          Add site
+        </button>
       </div>
 
-      {/* Add-site form */}
-      {adding && (
-        <form onSubmit={addSite} className="mt-4 rounded-[12px] border border-border bg-[#fafbfb] p-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-[14px] font-bold text-foreground">Add a site</h3>
-            <button type="button" onClick={() => setAdding(false)} className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted"><X className="h-4 w-4" /></button>
-          </div>
-          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Field label="Site name">
-              <input value={name} onChange={(e) => setName(e.target.value)} required placeholder="e.g. Camden" className={inputCls} />
-            </Field>
-            <Field label="Postcode">
-              <input value={postcode} onChange={(e) => setPostcode(e.target.value)} placeholder="e.g. NW1 8QP" className={inputCls} />
-            </Field>
-            <Field label="FSA rating">
-              <select value={rating} onChange={(e) => setRating(e.target.value)} className={inputCls}>
-                {['5', '4', '3', '2', '1', '0', 'Exempt', 'Awaiting'].map((r) => <option key={r} value={r}>{r}</option>)}
-              </select>
-            </Field>
-          </div>
-
-          <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">Kitchen for this site</p>
-          <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
-            <KitchenOpt active={kitchen === 'shared'} onClick={() => setKitchen('shared')} title="Use shared" body="Reads the group's recipes & suppliers." />
-            <KitchenOpt active={kitchen === 'copy'} onClick={() => setKitchen('copy')} title="Copy" body="Start with an editable copy of another site." />
-            <KitchenOpt active={kitchen === 'own'} onClick={() => setKitchen('own')} title="Start own" body="Empty — define its own from scratch." />
-          </div>
-          {kitchen === 'copy' && (
-            <div className="mt-2">
-              <select value={copyFrom} onChange={(e) => setCopyFrom(e.target.value)} required className={inputCls}>
-                <option value="">Copy kitchen from…</option>
-                <option value="">The group (shared recipes)</option>
-                {sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-            </div>
-          )}
-
-          <div className="mt-4 flex justify-end gap-2">
-            <button type="button" onClick={() => setAdding(false)} className="rounded-[10px] border border-input bg-card px-3.5 py-2 text-[13px] font-semibold text-[#5c626b] hover:bg-accent">Cancel</button>
-            <button type="submit" disabled={busy || !name.trim()} className="rounded-[10px] bg-brand px-3.5 py-2 text-[13px] font-semibold text-white hover:opacity-90 disabled:opacity-50">
-              {busy ? 'Adding…' : 'Add site'}
-            </button>
-          </div>
-        </form>
-      )}
-
-      {/* Sites list */}
-      <div className="mt-4 divide-y divide-[#f2f3f5]">
-        {sites.map((s, i) => (
-          <div key={s.id} className="group flex items-center gap-3 py-3">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] text-[12px] font-bold text-white" style={{ background: AVATAR[i % AVATAR.length] }}>
-              {s.name ? initials(s.name) : <Building2 className="h-4 w-4" />}
-            </span>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <span className="truncate text-[14px] font-semibold text-foreground">{s.name}</span>
-                {s.status === 'onboarding' && <span className="rounded-md bg-[#fbf1e1] px-1.5 py-0.5 text-[10.5px] font-semibold text-[#b07d1e]">Onboarding</span>}
+      {/* rows */}
+      <div style={{ background: '#fff', border: '1px solid #e9eaed', borderRadius: 16, boxShadow: '0 1px 2px rgba(16,24,40,.03),0 14px 36px -28px rgba(16,24,40,.16)', overflow: 'hidden' }}>
+        {sites.map((s, i) => {
+          const r = parseInt(s.fsa_rating ?? '')
+          const hasFsa = !Number.isNaN(r)
+          const rm = hasFsa ? ratingMeta(r) : null
+          const mgr = managerName(s.manager_id)
+          const mc = memberCount(s.id)
+          const meta = [s.postcode, mgr || 'No manager yet', `${mc} member${mc === 1 ? '' : 's'}`].filter(Boolean).join(' · ')
+          return (
+            <div key={s.id} className="st-row" style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '15px 20px', borderBottom: i === sites.length - 1 ? 'none' : '1px solid #f2f3f5', transition: 'background .14s' }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = '#fafbfb')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
+              <div style={{ width: 38, height: 38, borderRadius: 10, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12.5, fontWeight: 700, flex: 'none', background: TILE[i % TILE.length] }}>{codeOf(s.name)}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 14.5, fontWeight: 600, color: '#1c1f24', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.name}</span>
+                  {s.status === 'onboarding' && (
+                    <span style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: '#7c828b', background: '#f1f2f4', padding: '3px 7px', borderRadius: 5, flex: 'none' }}>Onboarding</span>
+                  )}
+                </div>
+                <div style={{ fontSize: 12.5, color: '#8a9099', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{meta}</div>
               </div>
-              <p className="text-[12px] text-muted-foreground">
-                {[s.postcode, managerName(s.manager_id) && `Manager: ${managerName(s.manager_id)}`, `${memberCount(s.id)} member${memberCount(s.id) === 1 ? '' : 's'}`].filter(Boolean).join(' · ')}
-              </p>
+              {hasFsa && rm ? (
+                <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: 12, fontWeight: 700, padding: '5px 9px', borderRadius: 7, background: rm.bg, color: rm.color, whiteSpace: 'nowrap', flex: 'none' }}>FSA {s.fsa_rating}</span>
+              ) : (
+                <span style={{ fontSize: 12, fontWeight: 500, color: '#b0b5bc', whiteSpace: 'nowrap', flex: 'none' }}>FSA pending</span>
+              )}
+              <button onClick={() => removeSite(s.id, s.name)} className="st-remove" title="Remove site"
+                style={{ border: 'none', background: 'none', color: '#c2c6cc', cursor: 'pointer', padding: 6, display: 'flex', borderRadius: 8, flex: 'none' }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = '#fbecec'; e.currentTarget.style.color = '#d2453f' }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = '#c2c6cc' }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7h16" /><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /><path d="M6.5 7l1 12a1.5 1.5 0 0 0 1.5 1.4h6a1.5 1.5 0 0 0 1.5-1.4l1-12" /></svg>
+              </button>
             </div>
-            {s.fsa_rating && (
-              <span className={cn('inline-flex h-7 w-7 items-center justify-center rounded-md text-[13px] font-bold', s.fsa_rating === '5' ? 'bg-brand-tint text-brand-deep' : 'bg-secondary text-[#5c626b]')}>
-                {s.fsa_rating === 'Exempt' || s.fsa_rating === 'Awaiting' ? '—' : s.fsa_rating}
-              </span>
-            )}
-            <button onClick={() => removeSite(s.id, s.name)} aria-label="Delete site"
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-[#c2c6cc] opacity-0 transition hover:bg-warn-tint hover:text-warn group-hover:opacity-100">
-              <Trash2 className="h-4 w-4" strokeWidth={1.8} />
-            </button>
-          </div>
-        ))}
+          )
+        })}
       </div>
+
+      {/* info banner */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#f5faf7', border: '1px solid #dcefe4', borderRadius: 12, padding: '12px 15px' }}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1f7a52" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none' }}><circle cx="12" cy="12" r="8.5" /><path d="M12 11v5" /><circle cx="12" cy="8" r="0.8" fill="#1f7a52" /></svg>
+        <span style={{ fontSize: 12.5, color: '#1a6e49', lineHeight: 1.5 }}>A new site gets its own checklists, incidents and team. Recipes and the HACCP pack are shared across the group. It appears in the site switcher for everyone with estate access.</span>
+      </div>
+
+      {addOpen && <AddSiteSlideOver onClose={() => setAddOpen(false)} onDone={async () => { setAddOpen(false); await refreshProfile() }} businessId={bid!} />}
+
+      <style>{`.st-row .st-remove{opacity:0;transition:opacity .14s}.st-row:hover .st-remove{opacity:1}`}</style>
     </div>
   )
 }
 
-const inputCls = 'w-full rounded-[10px] border border-input bg-card px-3 py-2 text-[14px] text-foreground outline-none transition-shadow placeholder:text-muted-foreground focus:border-brand focus:ring-[3px] focus:ring-[rgba(31,157,99,.12)]'
+// ── Add-site slide-over ─────────────────────────────────────────────
+function AddSiteSlideOver({ onClose, onDone, businessId }: { onClose: () => void; onDone: () => void; businessId: string }) {
+  const [pc, setPc] = useState('')
+  const [results, setResults] = useState<FsaEstablishment[]>([])
+  const [loading, setLoading] = useState(false)
+  const [sel, setSel] = useState<FsaEstablishment | null>(null)
+  const [email, setEmail] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [shown, setShown] = useState(false)
+  const debRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return <label className="block"><span className="mb-1.5 block text-[13px] font-semibold text-[#41464d]">{label}</span>{children}</label>
-}
+  useEffect(() => { const t = setTimeout(() => setShown(true), 10); return () => clearTimeout(t) }, [])
 
-function KitchenOpt({ active, onClick, title, body }: { active: boolean; onClick: () => void; title: string; body: string }) {
+  // Debounced FSA lookup once postcode ≥ 5 chars
+  useEffect(() => {
+    if (sel) return
+    if (pc.trim().length < 5) { setResults([]); return }
+    if (debRef.current) clearTimeout(debRef.current)
+    debRef.current = setTimeout(async () => {
+      setLoading(true)
+      try {
+        const res = await fetch(
+          `https://api.ratings.food.gov.uk/Establishments?address=${encodeURIComponent(pc.trim())}&pageSize=8&sortOptionKey=distance`,
+          { headers: { 'x-api-version': '2', Accept: 'application/json' } },
+        )
+        const json = await res.json()
+        setResults((json.establishments ?? []).slice(0, 6))
+      } catch { setResults([]) } finally { setLoading(false) }
+    }, 350)
+    return () => { if (debRef.current) clearTimeout(debRef.current) }
+  }, [pc, sel])
+
+  const addr = (e: FsaEstablishment) => [e.AddressLine1, e.AddressLine2, e.AddressLine3, e.PostCode].filter(Boolean).join(', ')
+
+  async function confirm() {
+    if (!sel) return
+    setBusy(true)
+    try {
+      const { error } = await supabase.from('sites').insert({
+        business_id: businessId,
+        name: sel.BusinessName,
+        postcode: sel.PostCode || pc.trim().toUpperCase(),
+        fsa_rating: sel.RatingValue,
+        status: 'onboarding',
+      })
+      if (error) throw error
+      if (email.trim()) {
+        await supabase.rpc('create_invite', { p_email: email.trim(), p_role: 'manager' }).catch(() => {})
+      }
+      toast.success('Site added')
+      onDone()
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to add site')
+    } finally { setBusy(false) }
+  }
+
+  const inputStyle: React.CSSProperties = { width: '100%', background: '#fff', border: '1px solid #e2e4e8', borderRadius: 10, padding: '11px 13px', fontSize: 14, color: '#1c1f24', outline: 'none' }
+
   return (
-    <button type="button" onClick={onClick} className={cn('rounded-[10px] border p-3 text-left transition-colors', active ? 'border-[1.5px] border-brand bg-[#f5faf7]' : 'border-input bg-card hover:border-[#cdd1d6]')}>
-      <span className="flex items-center gap-1.5 text-[13px] font-semibold text-foreground">{active && <Check className="h-3.5 w-3.5 text-brand" strokeWidth={2.4} />}{title}</span>
-      <span className="mt-0.5 block text-[11.5px] leading-snug text-muted-foreground">{body}</span>
-    </button>
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(20,22,27,.36)', zIndex: 60, display: 'flex', justifyContent: 'flex-end', opacity: shown ? 1 : 0, transition: 'opacity .3s ease-out' }}>
+      <div onClick={(e) => e.stopPropagation()}
+        style={{ width: 440, maxWidth: '92vw', height: '100%', background: '#fff', boxShadow: '-24px 0 64px -32px rgba(16,24,40,.4)', display: 'flex', flexDirection: 'column', overflow: 'hidden', transform: shown ? 'translateX(0)' : 'translateX(100%)', transition: 'transform .3s cubic-bezier(0.32,0.72,0,1)' }}>
+        {/* header */}
+        <div style={{ padding: '20px 24px', borderBottom: '1px solid #eef0f2', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#16181d' }}>Add a site</h2>
+            <div style={{ fontSize: 13, color: '#8a9099', marginTop: 2 }}>Find your business on the FSA register</div>
+          </div>
+          <button onClick={onClose} style={{ width: 34, height: 34, borderRadius: 9, border: 'none', background: '#f1f2f4', color: '#5c626b', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="6" y1="6" x2="18" y2="18" /><line x1="18" y1="6" x2="6" y2="18" /></svg>
+          </button>
+        </div>
+
+        {/* body */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '22px 24px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+          {!sel && (
+            <>
+              <div>
+                <label style={{ fontSize: 13, fontWeight: 600, color: '#41464d', display: 'block', marginBottom: 8 }}>Postcode <span style={{ color: '#d2453f' }}>*</span></label>
+                <input autoFocus value={pc} onChange={(e) => setPc(e.target.value)} placeholder="e.g. E8 3RL" style={inputStyle}
+                  onFocus={(e) => { e.currentTarget.style.borderColor = '#1f9d63'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(31,157,99,.12)' }}
+                  onBlur={(e) => { e.currentTarget.style.borderColor = '#e2e4e8'; e.currentTarget.style.boxShadow = 'none' }} />
+              </div>
+              {pc.trim().length >= 5 && (
+                <div style={{ border: '1px solid #e7e9ec', borderRadius: 12, padding: 6 }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#9aa0a8', padding: '7px 10px 4px' }}>
+                    {loading ? 'Searching…' : `Found at ${pc.trim().toUpperCase()} · Food Standards Agency`}
+                  </div>
+                  {!loading && results.map((e) => {
+                    const r = parseInt(e.RatingValue)
+                    const rm = Number.isNaN(r) ? null : ratingMeta(r)
+                    return (
+                      <button key={e.FHRSID} onClick={() => setSel(e)}
+                        style={{ display: 'flex', alignItems: 'center', gap: 11, width: '100%', border: 'none', background: 'none', padding: 10, borderRadius: 9, cursor: 'pointer', textAlign: 'left' }}
+                        onMouseEnter={(ev) => (ev.currentTarget.style.background = '#f2faf6')}
+                        onMouseLeave={(ev) => (ev.currentTarget.style.background = 'none')}>
+                        <span style={{ minWidth: 0, flex: 1 }}>
+                          <span style={{ display: 'block', fontSize: 14, fontWeight: 600, color: '#16181d' }}>{e.BusinessName}</span>
+                          <span style={{ display: 'block', fontSize: 12.5, color: '#8a9099', marginTop: 1 }}>{addr(e)}</span>
+                        </span>
+                        {rm ? (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: 12, fontWeight: 700, padding: '5px 9px', borderRadius: 7, background: rm.bg, color: rm.color, whiteSpace: 'nowrap', flex: 'none' }}>FSA {e.RatingValue}</span>
+                        ) : (
+                          <span style={{ fontSize: 12, fontWeight: 500, color: '#b0b5bc', whiteSpace: 'nowrap', flex: 'none' }}>FSA pending</span>
+                        )}
+                      </button>
+                    )
+                  })}
+                  {!loading && results.length === 0 && (
+                    <div style={{ fontSize: 12, color: '#9aa0a8', padding: '5px 10px 7px' }}>No businesses found at that postcode.</div>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+
+          {sel && (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, border: '1.5px solid #bfe0cd', background: '#f5faf7', borderRadius: 12, padding: '13px 15px' }}>
+                <span style={{ width: 22, height: 22, borderRadius: '50%', background: '#1f9d63', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="5 12.5 10 17 19 7.5" /></svg>
+                </span>
+                <span style={{ minWidth: 0, flex: 1 }}>
+                  <span style={{ display: 'block', fontSize: 14.5, fontWeight: 600, color: '#16181d' }}>{sel.BusinessName}</span>
+                  <span style={{ display: 'block', fontSize: 12.5, color: '#5c7568', marginTop: 1 }}>{addr(sel)}</span>
+                </span>
+                {(() => { const r = parseInt(sel.RatingValue); const rm = Number.isNaN(r) ? null : ratingMeta(r); return rm ? (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: 12, fontWeight: 700, padding: '5px 9px', borderRadius: 7, background: rm.bg, color: rm.color, whiteSpace: 'nowrap', flex: 'none' }}>FSA {sel.RatingValue}</span>
+                ) : <span style={{ fontSize: 12, fontWeight: 500, color: '#b0b5bc', flex: 'none' }}>FSA pending</span> })()}
+                <button onClick={() => setSel(null)} style={{ border: 'none', background: 'none', color: '#8a9099', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', padding: 2, flex: 'none' }}>Change</button>
+              </div>
+
+              <div>
+                <label style={{ fontSize: 13, fontWeight: 600, color: '#41464d', display: 'block', marginBottom: 8 }}>Site manager <span style={{ color: '#9aa0a8', fontWeight: 500 }}>(optional)</span></label>
+                <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="manager@email.com" style={inputStyle}
+                  onFocus={(e) => { e.currentTarget.style.borderColor = '#1f9d63'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(31,157,99,.12)' }}
+                  onBlur={(e) => { e.currentTarget.style.borderColor = '#e2e4e8'; e.currentTarget.style.boxShadow = 'none' }} />
+                <div style={{ fontSize: 12, color: '#9aa0a8', marginTop: 8 }}>They&apos;ll get an invite and see only this site. You can invite more people later from Team.</div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, background: '#f5f6f7', border: '1px solid #eceef0', borderRadius: 12, padding: '12px 14px' }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9aa0a8" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none', marginTop: 1 }}><rect x="4" y="4" width="16" height="16" rx="4" /><polyline points="8.5 12 11 14.5 15.5 9.5" /></svg>
+                <span style={{ fontSize: 12.5, color: '#6b7280', lineHeight: 1.5 }}>We&apos;ll create the site with your group&apos;s standard checklists and shared HACCP pack. Status stays &quot;Onboarding&quot; until the first week of checks is complete.</span>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* footer */}
+        <div style={{ display: 'flex', gap: 10, padding: '16px 24px', borderTop: '1px solid #eef0f2' }}>
+          <button onClick={onClose} style={{ flex: 1, background: '#fff', border: '1px solid #e2e4e8', color: '#5c626b', fontSize: 14, fontWeight: 600, padding: 11, borderRadius: 11, cursor: 'pointer' }}>Cancel</button>
+          <button onClick={confirm} disabled={!sel || busy}
+            style={{ flex: 1.4, background: sel ? '#1f9d63' : '#cfe6da', border: 'none', color: sel ? '#fff' : '#8fb9a4', fontSize: 14, fontWeight: 600, padding: 11, borderRadius: 11, cursor: sel ? 'pointer' : 'not-allowed' }}>
+            {busy ? 'Adding…' : 'Add site'}
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }

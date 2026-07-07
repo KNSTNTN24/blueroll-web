@@ -27,7 +27,8 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
   const displayName = profile?.full_name || user?.email?.split('@')[0] || 'User'
   const displayEmail = profile?.email || user?.email || ''
   const businessName = business?.name || 'My Business'
-  const multiSite = sites.length > 1
+  // Settings is org-level — no site switcher there (design spec)
+  const multiSite = sites.length > 1 && !pathname?.startsWith('/settings')
   const currentSite = sites.find((s) => s.id === currentSiteId) ?? null
   const [commandOpen, setCommandOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -77,7 +78,7 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
             <Menu className="h-5 w-5" strokeWidth={1.8} />
           </button>
           <h1 className="truncate text-[15px] font-bold text-foreground">{businessName}</h1>
-          {!multiSite && business?.fsa_rating && (
+          {sites.length <= 1 && business?.fsa_rating && (
             <span className="hidden shrink-0 items-center gap-1 rounded-full bg-brand-tint px-2 py-0.5 text-[11px] font-semibold text-brand-deep sm:inline-flex">
               <Check className="h-3 w-3" strokeWidth={2.4} />
               {business.fsa_rating}/5
