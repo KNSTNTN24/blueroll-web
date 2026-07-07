@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
-import { useAuthStore } from '@/stores/auth-store'
+import { useAuthStore, readPersistedSite } from '@/stores/auth-store'
 
 // Module-level flag so the Stripe sync runs at most once per browser session.
 // Webhook is the primary source of truth for subscription state; this is just
@@ -74,6 +74,24 @@ async function loadProfileAndBusiness(userId: string, retry = 0): Promise<void> 
 
     if (business) {
       store.setBusiness(business)
+
+      // Load the group's sites and pick the active one.
+      const { data: sites } = await supabase
+        .from('sites')
+        .select('*')
+        .eq('business_id', business.id)
+        .order('name')
+      const siteList = sites ?? []
+      store.setSites(siteList)
+
+      const persisted = readPersistedSite()
+      let active: string | null = useAuthStore.getState().currentSiteId
+      if (!active || !siteList.some((s) => s.id === active)) {
+        if (persisted && siteList.some((s) => s.id === persisted)) active = persisted
+        else if (profile.is_group_admin) active = siteList.length > 1 ? null : (siteList[0]?.id ?? null)
+        else active = profile.site_id ?? siteList[0]?.id ?? null
+      }
+      store.setCurrentSiteId(active)
     } else if (retry < MAX_RETRIES) {
       // Business row might not be committed yet
       await new Promise((r) => setTimeout(r, BACKOFF_MS * (retry + 1)))

@@ -7,7 +7,8 @@ import { useAuthStore } from '@/stores/auth-store'
 import { supabase } from '@/lib/supabase'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { CommandPalette } from '@/components/layout/command-palette'
-import { Bell, Search, ChevronDown, Settings, LogOut, Check, Menu } from 'lucide-react'
+import { Bell, Search, ChevronDown, Settings, LogOut, Check, Menu, Building2 } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 function getInitials(name: string | null | undefined): string {
   if (!name) return '?'
@@ -16,13 +17,17 @@ function getInitials(name: string | null | undefined): string {
 
 export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
   const router = useRouter()
-  const { profile, business, user } = useAuthStore()
+  const { profile, business, user, sites, currentSiteId, setCurrentSiteId } = useAuthStore()
   const displayName = profile?.full_name || user?.email?.split('@')[0] || 'User'
   const displayEmail = profile?.email || user?.email || ''
   const businessName = business?.name || 'My Business'
+  const multiSite = sites.length > 1
+  const currentSite = sites.find((s) => s.id === currentSiteId) ?? null
   const [commandOpen, setCommandOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [siteMenuOpen, setSiteMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+  const siteRef = useRef<HTMLDivElement>(null)
 
   const handleSignOut = useCallback(() => {
     try {
@@ -46,6 +51,16 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
     return () => document.removeEventListener('mousedown', handler)
   }, [menuOpen])
 
+  // Close site switcher on outside click
+  useEffect(() => {
+    if (!siteMenuOpen) return
+    const handler = (e: MouseEvent) => {
+      if (siteRef.current && !siteRef.current.contains(e.target as Node)) setSiteMenuOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [siteMenuOpen])
+
   return (
     <>
       <header className="flex h-[62px] shrink-0 items-center justify-between gap-2 border-b border-[#eceef0] bg-card px-4 sm:px-6">
@@ -56,11 +71,45 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
             <Menu className="h-5 w-5" strokeWidth={1.8} />
           </button>
           <h1 className="truncate text-[15px] font-bold text-foreground">{businessName}</h1>
-          {business?.fsa_rating && (
+          {!multiSite && business?.fsa_rating && (
             <span className="hidden shrink-0 items-center gap-1 rounded-full bg-brand-tint px-2 py-0.5 text-[11px] font-semibold text-brand-deep sm:inline-flex">
               <Check className="h-3 w-3" strokeWidth={2.4} />
               {business.fsa_rating}/5
             </span>
+          )}
+
+          {/* Site switcher — only for multi-site groups */}
+          {multiSite && (
+            <div ref={siteRef} className="relative shrink-0">
+              <button onClick={() => setSiteMenuOpen((o) => !o)}
+                className="flex items-center gap-1.5 rounded-[9px] border border-input bg-card px-2.5 py-1.5 text-[13px] font-semibold text-foreground transition-colors hover:bg-accent">
+                <Building2 className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={1.8} />
+                <span className="max-w-[120px] truncate sm:max-w-[160px]">{currentSite ? currentSite.name : 'All sites'}</span>
+                <span className="rounded-full bg-secondary px-1.5 text-[11px] font-semibold text-muted-foreground">{sites.length}</span>
+                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+              </button>
+              {siteMenuOpen && (
+                <div className="absolute left-0 top-full z-50 mt-2 w-60 overflow-hidden rounded-xl border border-border bg-card py-1 shadow-lg">
+                  {profile?.is_group_admin && (
+                    <button onClick={() => { setCurrentSiteId(null); setSiteMenuOpen(false) }}
+                      className={cn('flex w-full items-center justify-between px-3 py-2 text-left text-[13px] transition-colors hover:bg-muted', !currentSiteId ? 'font-semibold text-brand-deep' : 'text-foreground')}>
+                      <span className="flex items-center gap-2"><Building2 className="h-4 w-4" strokeWidth={1.8} /> All sites</span>
+                      {!currentSiteId && <Check className="h-4 w-4 shrink-0" strokeWidth={2.2} />}
+                    </button>
+                  )}
+                  {profile?.is_group_admin && <div className="my-1 h-px bg-border" />}
+                  <div className="max-h-[300px] overflow-y-auto">
+                    {sites.map((s) => (
+                      <button key={s.id} onClick={() => { setCurrentSiteId(s.id); setSiteMenuOpen(false) }}
+                        className={cn('flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-[13px] transition-colors hover:bg-muted', currentSiteId === s.id ? 'font-semibold text-brand-deep' : 'text-foreground')}>
+                        <span className="truncate">{s.name}</span>
+                        {currentSiteId === s.id && <Check className="h-4 w-4 shrink-0" strokeWidth={2.2} />}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           )}
         </div>
 

@@ -7,6 +7,8 @@ export interface Profile {
   full_name: string | null
   role: string
   business_id: string
+  site_id: string | null
+  is_group_admin: boolean
   avatar_url: string | null
   created_at: string
 }
@@ -27,14 +29,39 @@ export interface Business {
   created_at: string
 }
 
+export interface Site {
+  id: string
+  business_id: string
+  name: string
+  address: string | null
+  postcode: string | null
+  fsa_rating: string | null
+  manager_id: string | null
+  status: string
+  created_at: string
+}
+
+const SITE_KEY = 'br_current_site'
+function persistSite(id: string | null) {
+  try { if (id) localStorage.setItem(SITE_KEY, id); else localStorage.removeItem(SITE_KEY) } catch {}
+}
+export function readPersistedSite(): string | null {
+  try { return localStorage.getItem(SITE_KEY) } catch { return null }
+}
+
 interface AuthState {
   user: User | null
   profile: Profile | null
   business: Business | null
+  sites: Site[]
+  /** null = "All sites" (group-admin estate view); otherwise the selected site. */
+  currentSiteId: string | null
   isLoading: boolean
   setUser: (user: User | null) => void
   setProfile: (profile: Profile | null) => void
   setBusiness: (business: Business | null) => void
+  setSites: (sites: Site[]) => void
+  setCurrentSiteId: (id: string | null) => void
   setLoading: (loading: boolean) => void
   reset: () => void
 }
@@ -43,10 +70,14 @@ export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   profile: null,
   business: null,
+  sites: [],
+  currentSiteId: null,
   isLoading: true,
   setUser: (user) => set({ user }),
   setProfile: (profile) => set({ profile }),
   setBusiness: (business) => set({ business }),
+  setSites: (sites) => set({ sites }),
+  setCurrentSiteId: (id) => { persistSite(id); set({ currentSiteId: id }) },
   setLoading: (isLoading) => set({ isLoading }),
-  reset: () => set({ user: null, profile: null, business: null, isLoading: false }),
+  reset: () => set({ user: null, profile: null, business: null, sites: [], currentSiteId: null, isLoading: false }),
 }))
