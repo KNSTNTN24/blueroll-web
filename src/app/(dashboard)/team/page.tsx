@@ -31,8 +31,10 @@ export default function TeamPage() {
   const siteName = (id: string | null) => (id ? (sites.find((s) => s.id === id)?.name ?? 'Site') : 'All sites')
 
   const [showInvite, setShowInvite] = useState(false)
+  const [inviteShown, setInviteShown] = useState(false)
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteRole, setInviteRole] = useState<string>('kitchen_staff')
+  const [inviteSite, setInviteSite] = useState<string>('')
   const [generatedToken, setGeneratedToken] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const [tab, setTab] = useState<string>('all') // 'all' or a site id (only used in the all-sites view)
@@ -81,12 +83,24 @@ export default function TeamPage() {
       if (error) throw error
       const row = Array.isArray(data) ? data[0] : data
       if (!row?.token) throw new Error('Invite created but no token returned')
+      // Scope the invite to the chosen site (owner/manager may leave it group-wide)
+      if (inviteSite) await supabase.from('invites').update({ site_id: inviteSite }).eq('token', row.token)
       return row.token as string
     },
     onSuccess: (token) => { setGeneratedToken(token); queryClient.invalidateQueries({ queryKey: ['team'] }); toast.success('Invite created') },
     onError: (err: Error) => toast.error(err.message || 'Failed to create invite'),
   })
-  function resetInvite() { setShowInvite(false); setInviteEmail(''); setInviteRole('kitchen_staff'); setGeneratedToken(null); setCopied(false) }
+  function openInvite() {
+    setInviteEmail(''); setInviteRole('kitchen_staff'); setInviteSite(sites[0]?.id ?? ''); setGeneratedToken(null); setCopied(false)
+    setShowInvite(true); requestAnimationFrame(() => setInviteShown(true))
+  }
+  function resetInvite() { setInviteShown(false); setTimeout(() => setShowInvite(false), 300) }
+
+  const ROLE_OPTS = [
+    { label: 'Site manager', value: 'manager' },
+    { label: 'Kitchen staff', value: 'kitchen_staff' },
+    { label: 'Front of house', value: 'front_of_house' },
+  ]
 
   return (
     <div className="flex flex-col gap-[18px]">
@@ -99,8 +113,10 @@ export default function TeamPage() {
           </p>
         </div>
         {isManager && (
-          <button onClick={() => { resetInvite(); setShowInvite(true) }}
-            className="inline-flex items-center gap-1.5 rounded-[10px] bg-brand px-3.5 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90">
+          <button onClick={openInvite}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: '#1f9d63', border: 'none', color: '#fff', fontSize: 14, fontWeight: 600, padding: '11px 17px', borderRadius: 11, cursor: 'pointer', boxShadow: '0 1px 2px rgba(16,24,40,.1)' }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = '#1c8e5a')}
+            onMouseLeave={(e) => (e.currentTarget.style.background = '#1f9d63')}>
             <Plus className="h-4 w-4" strokeWidth={2} /> Invite member
           </button>
         )}
@@ -124,51 +140,94 @@ export default function TeamPage() {
         </div>
       )}
 
-      {/* Invite sheet */}
+      {/* Invite slide-over */}
       {showInvite && (
-        <div className="rounded-[14px] border border-border bg-card p-4 shadow-[0_1px_2px_rgba(16,24,40,.04)]">
-          {generatedToken ? (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-[15px] font-bold text-foreground">Invite created</h3>
-                <button onClick={resetInvite} className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted"><X className="h-4 w-4" /></button>
+        <div onClick={resetInvite} style={{ position: 'fixed', inset: 0, background: 'rgba(20,22,27,.36)', zIndex: 60, display: 'flex', justifyContent: 'flex-end', opacity: inviteShown ? 1 : 0, transition: 'opacity .3s ease-out' }}>
+          <div onClick={(e) => e.stopPropagation()}
+            style={{ width: 440, maxWidth: '92vw', height: '100%', background: '#fff', boxShadow: '-24px 0 64px -32px rgba(16,24,40,.4)', display: 'flex', flexDirection: 'column', overflow: 'hidden', transform: inviteShown ? 'translateX(0)' : 'translateX(100%)', transition: 'transform .3s cubic-bezier(0.32,0.72,0,1)' }}>
+            {/* header */}
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid #eef0f2', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#16181d' }}>Invite a team member</h2>
+                <div style={{ fontSize: 13, color: '#8a9099', marginTop: 2 }}>{generatedToken ? 'Share this code so they can join' : "They'll get an email with a sign-in link"}</div>
               </div>
-              <div className="rounded-[10px] border border-border bg-[#fafbfb] p-4">
-                <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">Invite token</p>
-                <div className="flex items-center gap-2">
-                  <code className="flex-1 rounded-md border border-input bg-card px-3 py-2 font-mono text-[15px] font-semibold tracking-wide text-foreground">{generatedToken}</code>
-                  <button onClick={() => { navigator.clipboard.writeText(generatedToken); setCopied(true); toast.success('Copied'); setTimeout(() => setCopied(false), 2000) }}
-                    className="inline-flex items-center gap-1.5 rounded-[10px] border border-input bg-card px-3 py-2 text-[13px] font-semibold text-foreground hover:bg-accent">
-                    {copied ? <CheckCircle2 className="h-3.5 w-3.5 text-brand" /> : <Copy className="h-3.5 w-3.5" />} {copied ? 'Copied' : 'Copy'}
-                  </button>
-                </div>
-              </div>
+              <button onClick={resetInvite} style={{ width: 34, height: 34, borderRadius: 9, border: 'none', background: '#f1f2f4', color: '#5c626b', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <X className="h-[17px] w-[17px]" strokeWidth={2} />
+              </button>
             </div>
-          ) : (
-            <form onSubmit={(e) => { e.preventDefault(); inviteMutation.mutate() }} className="space-y-4">
-              <h3 className="text-[15px] font-bold text-foreground">Invite a team member</h3>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <label className="text-[13px] font-semibold text-[#41464d]">Email</label>
-                  <input type="email" required value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="colleague@example.com"
-                    className="w-full rounded-[10px] border border-input bg-card px-3 py-2 text-[14px] text-foreground outline-none transition-shadow placeholder:text-muted-foreground focus:border-brand focus:ring-[3px] focus:ring-[rgba(31,157,99,.12)]" />
+
+            {/* body */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '22px 24px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+              {generatedToken ? (
+                <div style={{ border: '1px solid #e7e9ec', borderRadius: 12, padding: 16 }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#9aa0a8', marginBottom: 8 }}>Invite code</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <code style={{ flex: 1, border: '1px solid #e2e4e8', borderRadius: 8, padding: '10px 12px', fontFamily: 'monospace', fontSize: 15, fontWeight: 600, letterSpacing: '.05em', color: '#1c1f24' }}>{generatedToken}</code>
+                    <button onClick={() => { navigator.clipboard.writeText(generatedToken); setCopied(true); toast.success('Copied'); setTimeout(() => setCopied(false), 2000) }}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid #e2e4e8', background: '#fff', color: '#41464d', fontSize: 13, fontWeight: 600, padding: '10px 12px', borderRadius: 9, cursor: 'pointer' }}>
+                      {copied ? <CheckCircle2 className="h-3.5 w-3.5 text-brand" /> : <Copy className="h-3.5 w-3.5" />} {copied ? 'Copied' : 'Copy'}
+                    </button>
+                  </div>
                 </div>
-                <div className="space-y-1.5">
-                  <label className="text-[13px] font-semibold text-[#41464d]">Role</label>
-                  <select value={inviteRole} onChange={(e) => setInviteRole(e.target.value)}
-                    className="w-full rounded-[10px] border border-input bg-card px-3 py-2 text-[14px] text-foreground outline-none focus:border-brand">
-                    {USER_ROLES.filter((r) => r !== 'owner').map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
-                  </select>
-                </div>
-              </div>
-              <div className="flex justify-end gap-2">
-                <button type="button" onClick={resetInvite} className="rounded-[10px] border border-input bg-card px-3.5 py-2 text-[13px] font-semibold text-[#5c626b] hover:bg-accent">Cancel</button>
-                <button type="submit" disabled={inviteMutation.isPending} className="rounded-[10px] bg-brand px-3.5 py-2 text-[13px] font-semibold text-white hover:opacity-90 disabled:opacity-50">
-                  {inviteMutation.isPending ? 'Creating…' : 'Create invite'}
-                </button>
-              </div>
-            </form>
-          )}
+              ) : (
+                <>
+                  <div>
+                    <label style={{ fontSize: 13, fontWeight: 600, color: '#41464d', display: 'block', marginBottom: 8 }}>Email <span style={{ color: '#d2453f' }}>*</span></label>
+                    <input autoFocus type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="colleague@example.com"
+                      style={{ width: '100%', background: '#fff', border: '1px solid #e2e4e8', borderRadius: 10, padding: '11px 13px', fontSize: 14, color: '#1c1f24', outline: 'none' }}
+                      onFocus={(e) => { e.currentTarget.style.borderColor = '#1f9d63'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(31,157,99,.12)' }}
+                      onBlur={(e) => { e.currentTarget.style.borderColor = '#e2e4e8'; e.currentTarget.style.boxShadow = 'none' }} />
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: 13, fontWeight: 600, color: '#41464d', display: 'block', marginBottom: 8 }}>Role</label>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      {ROLE_OPTS.map((o) => {
+                        const on = inviteRole === o.value
+                        return (
+                          <button key={o.value} onClick={() => setInviteRole(o.value)}
+                            style={{ flex: 1, border: on ? '1.5px solid #1f9d63' : '1px solid #e2e4e8', background: on ? '#f5faf7' : '#fff', color: on ? '#1a6e49' : '#5c626b', fontSize: 13, fontWeight: 600, padding: 10, borderRadius: 10, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                            {o.label}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: 13, fontWeight: 600, color: '#41464d', display: 'block', marginBottom: 8 }}>Site</label>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      {sites.map((s) => {
+                        const on = inviteSite === s.id
+                        return (
+                          <button key={s.id} onClick={() => setInviteSite(s.id)}
+                            style={{ border: on ? '1.5px solid #1f9d63' : '1px solid #e2e4e8', background: on ? '#f5faf7' : '#fff', color: on ? '#1a6e49' : '#5c626b', fontSize: 13, fontWeight: 600, padding: '9px 14px', borderRadius: 10, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                            {s.name}
+                          </button>
+                        )
+                      })}
+                    </div>
+                    <div style={{ fontSize: 12, color: '#9aa0a8', marginTop: 8 }}>Site managers and staff see only their site. Owners see the whole estate.</div>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* footer */}
+            <div style={{ display: 'flex', gap: 10, padding: '16px 24px', borderTop: '1px solid #eef0f2' }}>
+              {generatedToken ? (
+                <button onClick={resetInvite} style={{ flex: 1, background: '#1f9d63', border: 'none', color: '#fff', fontSize: 14, fontWeight: 600, padding: 11, borderRadius: 11, cursor: 'pointer' }}>Done</button>
+              ) : (
+                <>
+                  <button onClick={resetInvite} style={{ flex: 1, background: '#fff', border: '1px solid #e2e4e8', color: '#5c626b', fontSize: 14, fontWeight: 600, padding: 11, borderRadius: 11, cursor: 'pointer' }}>Cancel</button>
+                  <button onClick={() => inviteMutation.mutate()} disabled={!inviteEmail.includes('@') || inviteMutation.isPending}
+                    style={{ flex: 1.4, background: inviteEmail.includes('@') ? '#1f9d63' : '#cfe6da', border: 'none', color: inviteEmail.includes('@') ? '#fff' : '#8fb9a4', fontSize: 14, fontWeight: 600, padding: 11, borderRadius: 11, cursor: inviteEmail.includes('@') ? 'pointer' : 'not-allowed' }}>
+                    {inviteMutation.isPending ? 'Sending…' : 'Send invite'}
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
