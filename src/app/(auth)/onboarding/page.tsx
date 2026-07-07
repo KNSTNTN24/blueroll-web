@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useEffect, useMemo } from 'react'
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
@@ -14,6 +14,8 @@ import {
   Loader2,
   Home,
   UserPlus,
+  Trash2,
+  Plus,
 } from 'lucide-react'
 import { useBrand } from '../layout'
 import { useAuthStore } from '@/stores/auth-store'
@@ -41,6 +43,8 @@ type Step =
   | 'name'
   | 'choice'
   | 'setup'
+  | 'sites'
+  | 'invites'
   | 'postcode'
   | 'select'
   | 'rating'
@@ -48,6 +52,7 @@ type Step =
   | 'pain-points'
   | 'signup'
   | 'card'
+  | 'done'
 
 // --- Shared UI atoms ---
 
@@ -156,6 +161,18 @@ const BRAND_COPY: Record<Step, { headline: string; subtitle: string }> = {
     headline: 'One kitchen or a whole estate?',
     subtitle: 'Run a single site, or manage several under one group dashboard — you can add sites any time.',
   },
+  sites: {
+    headline: 'One plan. Everything included.',
+    subtitle: 'Unlimited team members, no per-seat charges, no feature gates. Less than a pack of blue rolls.',
+  },
+  invites: {
+    headline: 'Bring your managers in.',
+    subtitle: 'Each site manager sees only their kitchen. You keep the whole estate in one view.',
+  },
+  done: {
+    headline: 'Your estate is ready.',
+    subtitle: 'Every site, one dashboard — checks, incidents and compliance across the group.',
+  },
   postcode: {
     headline: "We'll find your business on the FSA register.",
     subtitle: 'Your hygiene rating, address, and details — pulled in automatically.',
@@ -204,7 +221,7 @@ const CARD_ELEMENT_OPTIONS = {
   },
 }
 
-function CardForm() {
+function CardForm({ onComplete }: { onComplete?: () => void }) {
   const router = useRouter()
   const stripe = useStripe()
   const elements = useElements()
@@ -293,7 +310,8 @@ function CardForm() {
     }
 
     try { await supabase.auth.refreshSession() } catch {}
-    window.location.assign('/dashboard')
+    if (onComplete) onComplete()
+    else window.location.assign('/dashboard')
   }
 
   return (
@@ -343,7 +361,7 @@ function CardForm() {
   )
 }
 
-function CardStep({ currentStepIndex, totalSteps }: { currentStepIndex: number; totalSteps: number }) {
+function CardStep({ currentStepIndex, totalSteps, onComplete }: { currentStepIndex: number; totalSteps: number; onComplete?: () => void }) {
   const options = useMemo(() => ({ fonts: [{ cssSrc: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap' }] }), [])
 
   return (
@@ -354,7 +372,7 @@ function CardStep({ currentStepIndex, totalSteps }: { currentStepIndex: number; 
 
       <div className="mt-8">
         <Elements stripe={stripePromise} options={options}>
-          <CardForm />
+          <CardForm onComplete={onComplete} />
         </Elements>
       </div>
     </div>
@@ -472,6 +490,104 @@ function SetupStep({
   )
 }
 
+function fsaRatingMeta(r: number) {
+  return r >= 4 ? { bg: '#eaf4ee', color: '#1f7a52' }
+    : r === 3 ? { bg: '#fbf1e1', color: '#b07d1e' }
+      : { bg: '#fbecec', color: '#c0403a' }
+}
+
+// One postcode row on the "Add your sites" step: postcode → FSA lookup → pick.
+function MultiSiteRow({ sel, removable, onSelect, onClear, onRemove }: {
+  sel: FsaEstablishment | null
+  removable: boolean
+  onSelect: (e: FsaEstablishment) => void
+  onClear: () => void
+  onRemove: () => void
+}) {
+  const [pc, setPc] = useState('')
+  const [results, setResults] = useState<FsaEstablishment[]>([])
+  const [loading, setLoading] = useState(false)
+  const debRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    if (sel) return
+    if (pc.trim().length < 5) { setResults([]); return }
+    if (debRef.current) clearTimeout(debRef.current)
+    debRef.current = setTimeout(async () => {
+      setLoading(true)
+      try {
+        const res = await fetch(
+          `https://api.ratings.food.gov.uk/Establishments?address=${encodeURIComponent(pc.trim())}&pageSize=8&sortOptionKey=distance`,
+          { headers: { 'x-api-version': '2', Accept: 'application/json' } },
+        )
+        const json = await res.json()
+        setResults((json.establishments ?? []).slice(0, 5))
+      } catch { setResults([]) } finally { setLoading(false) }
+    }, 350)
+    return () => { if (debRef.current) clearTimeout(debRef.current) }
+  }, [pc, sel])
+
+  const addr = (e: FsaEstablishment) => [e.AddressLine1, e.AddressLine2, e.PostCode].filter(Boolean).join(', ')
+
+  if (sel) {
+    const r = parseInt(sel.RatingValue); const rm = Number.isNaN(r) ? null : fsaRatingMeta(r)
+    return (
+      <div className="flex items-center gap-3 rounded-xl border-[1.5px] border-[#bfe0cd] bg-[#f5faf7] px-4 py-3">
+        <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full bg-brand">
+          <Check className="h-3 w-3 text-white" strokeWidth={3} />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[14.5px] font-semibold text-gray-900">{sel.BusinessName}</span>
+          <span className="block truncate text-[12.5px] text-[#5c7568]">{addr(sel)}</span>
+        </span>
+        {rm && <span className="shrink-0 rounded-[7px] px-2 py-1 text-[12px] font-bold" style={{ background: rm.bg, color: rm.color }}>FSA {sel.RatingValue}</span>}
+        <button type="button" onClick={onClear} className="shrink-0 text-[12.5px] font-semibold text-gray-400 hover:text-gray-700">Change</button>
+        {removable && (
+          <button type="button" onClick={onRemove} title="Remove" className="shrink-0 text-[#c2c6cc] hover:text-[#d2453f]">
+            <Trash2 className="h-[15px] w-[15px]" strokeWidth={1.7} />
+          </button>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="grid grid-cols-[1fr_46px] items-center gap-2.5">
+        <input value={pc} onChange={(e) => setPc(e.target.value)} placeholder="Postcode — e.g. SW4 7AB"
+          className="min-w-0 rounded-xl border-[1.5px] border-gray-200 bg-white px-4 py-3 text-[15px] text-gray-900 outline-none transition-all placeholder:text-gray-300 focus:border-emerald-600 focus:ring-4 focus:ring-emerald-600/[0.08]" />
+        {removable ? (
+          <button type="button" onClick={onRemove} title="Remove"
+            className="flex h-[46px] w-[46px] items-center justify-center rounded-xl border-[1.5px] border-[#eceef0] bg-white text-[#9aa0a8] transition-colors hover:border-[#f2d8d6] hover:bg-[#fbecec] hover:text-[#d2453f]">
+            <Trash2 className="h-4 w-4" strokeWidth={1.7} />
+          </button>
+        ) : <span />}
+      </div>
+      {pc.trim().length >= 5 && (
+        <div className="rounded-xl border-[1.5px] border-gray-200 bg-white p-1.5 shadow-[0_10px_28px_-20px_rgba(16,24,40,.18)]">
+          <div className="px-2.5 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-[0.05em] text-[#9aa0a8]">
+            {loading ? 'Searching…' : `Found at ${pc.trim().toUpperCase()} · Food Standards Agency`}
+          </div>
+          {!loading && results.map((e) => {
+            const r = parseInt(e.RatingValue); const rm = Number.isNaN(r) ? null : fsaRatingMeta(r)
+            return (
+              <button key={e.FHRSID} type="button" onClick={() => onSelect(e)}
+                className="flex w-full items-center gap-3 rounded-[9px] p-2.5 text-left hover:bg-[#f2faf6]">
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[14px] font-semibold text-gray-900">{e.BusinessName}</span>
+                  <span className="block truncate text-[12.5px] text-[#8a9099]">{addr(e)}</span>
+                </span>
+                {rm && <span className="shrink-0 rounded-[7px] px-2 py-1 text-[12px] font-bold" style={{ background: rm.bg, color: rm.color }}>FSA {e.RatingValue}</span>}
+              </button>
+            )
+          })}
+          {!loading && results.length === 0 && <div className="px-2.5 pb-1.5 text-[12px] text-[#9aa0a8]">No businesses found at that postcode.</div>}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function OnboardingPage() {
   const router = useRouter()
   const { setContent } = useBrand()
@@ -521,9 +637,19 @@ export default function OnboardingPage() {
   const [signupError, setSignupError] = useState('')
   const [signupLoading, setSignupLoading] = useState(false)
 
+  // Multi-site estate onboarding
+  const [groupName, setGroupName] = useState('')
+  const [siteRows, setSiteRows] = useState<{ id: string; sel: FsaEstablishment | null }[]>([
+    { id: 'r1', sel: null }, { id: 'r2', sel: null },
+  ])
+  const [inviteEmails, setInviteEmails] = useState<Record<string, string>>({})
+  const selectedSites = siteRows.filter((r) => r.sel)
+
   const stepsForFlow = isJoinFlow
     ? ['name', 'choice', 'invite', 'signup']
-    : ['name', 'choice', 'setup', 'postcode', 'select', 'rating', 'signup', 'card']
+    : isMultiSite
+      ? ['name', 'choice', 'setup', 'sites', 'invites', 'signup', 'card', 'done']
+      : ['name', 'choice', 'setup', 'postcode', 'select', 'rating', 'signup', 'card']
 
   const currentStepIndex = stepsForFlow.indexOf(step)
   const totalSteps = stepsForFlow.length
@@ -583,16 +709,19 @@ export default function OnboardingPage() {
           return
         }
       } else {
+        // For the estate flow the "business" is the GROUP; its first site seeds
+        // the address/FSA fields. Single-site uses the one selected establishment.
+        const primary = isMultiSite ? (selectedSites[0]?.sel ?? null) : selected
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { error: setupError } = await (supabase.rpc as any)('setup_business', {
-          business_name: selected?.BusinessName ?? 'My Restaurant',
+          business_name: isMultiSite ? (groupName.trim() || 'My Group') : (selected?.BusinessName ?? 'My Restaurant'),
           owner_name: name.trim(),
-          business_address: selected
-            ? [selected.AddressLine1, selected.AddressLine2, selected.PostCode].filter(Boolean).join(', ')
+          business_address: primary
+            ? [primary.AddressLine1, primary.AddressLine2, primary.PostCode].filter(Boolean).join(', ')
             : undefined,
-          p_fhrs_id: selected?.FHRSID,
-          p_fsa_rating: selected?.RatingValue,
-          p_post_code: selected?.PostCode,
+          p_fhrs_id: primary?.FHRSID,
+          p_fsa_rating: primary?.RatingValue,
+          p_post_code: primary?.PostCode,
         })
         if (setupError) throw setupError
       }
@@ -618,10 +747,29 @@ export default function OnboardingPage() {
                 .single()
               if (biz) store.setBusiness(biz)
             }
-            // Multi-site owner → group admin (sees the estate view + can add sites)
-            if (!isJoinFlow && isMultiSite) {
-              await supabase.from('profiles').update({ is_group_admin: true }).eq('id', profile.id)
+            // Multi-site owner → group admin + create every site they entered.
+            if (!isJoinFlow && isMultiSite && profile.business_id) {
+              await supabase.from('profiles').update({ is_group_admin: true, site_id: null }).eq('id', profile.id)
               store.setProfile({ ...profile, is_group_admin: true })
+              // The business trigger auto-made one default site; replace it with the real list.
+              await supabase.from('sites').delete().eq('business_id', profile.business_id)
+              const rowsToInsert = selectedSites.map((r) => ({
+                business_id: profile.business_id,
+                name: r.sel!.BusinessName,
+                postcode: r.sel!.PostCode,
+                fsa_rating: r.sel!.RatingValue,
+                status: 'onboarding',
+              }))
+              const { data: created } = await supabase.from('sites').insert(rowsToInsert).select('id, postcode')
+              // Fire off manager invites, tagged to the matching new site.
+              for (const r of selectedSites) {
+                const email = inviteEmails[r.id]?.trim()
+                if (!email) continue
+                const site = (created ?? []).find((s) => s.postcode === r.sel!.PostCode)
+                const { data: inv } = await (supabase.rpc as any)('create_invite', { p_email: email, p_role: 'manager' })
+                const token = (Array.isArray(inv) ? inv[0]?.token : inv?.token)
+                if (token && site) await supabase.from('invites').update({ site_id: site.id }).eq('token', token)
+              }
             }
             // Fire-and-forget: seed checklists in background for new business
             if (!isJoinFlow && profile.business_id) {
@@ -727,8 +875,91 @@ export default function OnboardingPage() {
           currentStepIndex={currentStepIndex}
           totalSteps={totalSteps}
           goBack={goBack}
-          onSelect={(multi) => { setIsMultiSite(multi); setStep('postcode') }}
+          onSelect={(multi) => { setIsMultiSite(multi); setStep(multi ? 'sites' : 'postcode') }}
         />
+      )}
+
+      {/* Step: Add your sites (multi-site estate) */}
+      {step === 'sites' && (
+        <div>
+          <BackButton onClick={goBack} />
+          <StepLabel current={currentStepIndex} total={totalSteps} />
+          <Title>Add your sites</Title>
+          <Subtitle>Start with the ones you know — you can add more later from Settings.</Subtitle>
+
+          <div className="mt-8">
+            <label className="mb-2 block text-[13px] font-medium text-gray-700">Group name</label>
+            <input value={groupName} onChange={(e) => setGroupName(e.target.value)} placeholder="e.g. The Green Kitchen Group"
+              className="w-full rounded-xl border-[1.5px] border-gray-200 bg-white px-4 py-3.5 text-[16px] text-gray-900 outline-none transition-all placeholder:text-gray-300 focus:border-emerald-600 focus:ring-4 focus:ring-emerald-600/[0.08]" />
+          </div>
+
+          <div className="mt-6 flex flex-col gap-2.5">
+            <label className="text-[13px] font-medium text-gray-700">Sites</label>
+            {siteRows.map((row) => (
+              <MultiSiteRow key={row.id} sel={row.sel} removable={siteRows.length > 1}
+                onSelect={(e) => setSiteRows((rows) => rows.map((r) => (r.id === row.id ? { ...r, sel: e } : r)))}
+                onClear={() => setSiteRows((rows) => rows.map((r) => (r.id === row.id ? { ...r, sel: null } : r)))}
+                onRemove={() => setSiteRows((rows) => rows.filter((r) => r.id !== row.id))} />
+            ))}
+            <button type="button" onClick={() => setSiteRows((rows) => [...rows, { id: `r${Date.now()}`, sel: null }])}
+              className="flex items-center justify-center gap-2 rounded-xl border-[1.5px] border-dashed border-[#d0d5d9] py-3.5 text-[14px] font-semibold text-[#5c626b] transition-colors hover:border-emerald-600 hover:bg-[#f2faf6] hover:text-emerald-700">
+              <Plus className="h-4 w-4" strokeWidth={2} /> Add another site
+            </button>
+          </div>
+
+          <div className="mt-6 flex items-start gap-2.5 rounded-xl border border-[#d8ecdf] bg-[#eef7f2] px-4 py-3.5">
+            <Building2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700" strokeWidth={1.8} />
+            <span className="text-[13.5px] leading-relaxed text-[#20654a]">Each site gets its own checklists and FSA link. Your HACCP pack and recipe library are shared across the group.</span>
+          </div>
+
+          <PrimaryButton disabled={!groupName.trim() || selectedSites.length === 0} onClick={() => setStep('invites')}>
+            {selectedSites.length > 0 ? `Continue — ${selectedSites.length} site${selectedSites.length === 1 ? '' : 's'}` : 'Continue'}
+          </PrimaryButton>
+        </div>
+      )}
+
+      {/* Step: Invite site managers (multi-site estate) */}
+      {step === 'invites' && (
+        <div>
+          <BackButton onClick={goBack} />
+          <StepLabel current={currentStepIndex} total={totalSteps} />
+          <Title>Invite site managers</Title>
+          <Subtitle>Managers see only their site — you see the whole estate. You can skip this and invite later.</Subtitle>
+
+          <div className="mt-8 flex flex-col gap-3">
+            {selectedSites.map((row) => (
+              <div key={row.id} className="grid grid-cols-[150px_1fr] items-center gap-3">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-brand" />
+                  <span className="truncate text-[14.5px] font-semibold text-gray-900">{row.sel?.BusinessName}</span>
+                </div>
+                <input type="email" value={inviteEmails[row.id] ?? ''} onChange={(e) => setInviteEmails((m) => ({ ...m, [row.id]: e.target.value }))}
+                  placeholder="manager@email.com (optional)"
+                  className="min-w-0 rounded-xl border-[1.5px] border-gray-200 bg-white px-4 py-3 text-[15px] text-gray-900 outline-none transition-all placeholder:text-gray-300 focus:border-emerald-600 focus:ring-4 focus:ring-emerald-600/[0.08]" />
+              </div>
+            ))}
+          </div>
+
+          <PrimaryButton onClick={() => setStep('signup')}>Continue</PrimaryButton>
+          <button type="button" onClick={() => setStep('signup')} className="mt-2.5 w-full py-2 text-[14px] font-semibold text-gray-400 transition-colors hover:text-gray-700">Skip for now</button>
+        </div>
+      )}
+
+      {/* Step: Estate ready (multi-site done) */}
+      {step === 'done' && (
+        <div className="pt-6 text-center">
+          <div className="mx-auto flex h-[68px] w-[68px] items-center justify-center rounded-full bg-[#e5f4ec] text-emerald-700">
+            <Check className="h-8 w-8" strokeWidth={2.4} />
+          </div>
+          <h1 className="mt-6 text-[30px] font-bold leading-tight tracking-tight text-gray-900">Your estate is ready</h1>
+          <p className="mx-auto mt-3 max-w-[430px] text-[15px] leading-relaxed text-gray-400">
+            {selectedSites.length} site{selectedSites.length === 1 ? '' : 's'} set up under {groupName || 'your group'} — checks, incidents and compliance across the whole estate in one dashboard.
+          </p>
+          <button onClick={() => { window.location.assign('/dashboard') }}
+            className="mt-8 inline-flex items-center gap-2 rounded-xl bg-brand px-6 py-3.5 text-[15px] font-semibold text-white transition-opacity hover:opacity-90">
+            Open estate dashboard <ArrowRight className="h-[18px] w-[18px]" strokeWidth={2.5} />
+          </button>
+        </div>
       )}
 
       {/* Step: Postcode */}
@@ -1041,7 +1272,7 @@ export default function OnboardingPage() {
 
       {/* Step: Card for trial */}
       {step === 'card' && (
-        <CardStep currentStepIndex={currentStepIndex} totalSteps={totalSteps} />
+        <CardStep currentStepIndex={currentStepIndex} totalSteps={totalSteps} onComplete={isMultiSite ? () => setStep('done') : undefined} />
       )}
     </div>
   )
