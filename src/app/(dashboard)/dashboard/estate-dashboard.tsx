@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { cn } from '@/lib/utils'
 import { AlertTriangle, TrendingUp, ChevronRight, Sparkles } from 'lucide-react'
-import { format, startOfDay } from 'date-fns'
+import { format, startOfDay, subDays } from 'date-fns'
 
 type SiteStatus = 'on track' | 'attention' | 'at risk' | 'onboarding'
 
@@ -41,23 +41,34 @@ export function EstateDashboard() {
   const { data: done = [] } = useQuery({ queryKey: ['estate-done', bid, ds], enabled: !!bid, queryFn: async () => (await supabase.from('checklist_completions').select('site_id').eq('business_id', bid!).gte('completed_at', ds)).data ?? [] })
   const { data: incidents = [] } = useQuery({ queryKey: ['estate-incidents', bid], enabled: !!bid, queryFn: async () => (await supabase.from('incidents').select('site_id, status, type').eq('business_id', bid!)).data ?? [] })
   const { data: onShift = [] } = useQuery({ queryKey: ['estate-shift', bid, ds], enabled: !!bid, queryFn: async () => (await supabase.from('staff_checkins').select('site_id').eq('business_id', bid!).is('checked_out_at', null).gte('checked_in_at', ds)).data ?? [] })
+  const from14 = subDays(startOfDay(new Date()), 13).toISOString()
+  const { data: hist = [] } = useQuery({ queryKey: ['estate-hist', bid, from14], enabled: !!bid, queryFn: async () => (await supabase.from('checklist_completions').select('site_id, completed_at').eq('business_id', bid!).gte('completed_at', from14)).data ?? [] })
 
   const perSite = useMemo(() => {
     const count = (rows: any[], sid: string) => rows.filter((r) => r.site_id === sid).length
+    const todayStart = startOfDay(new Date()).getTime()
     return sites.map((site, i) => {
       const total = count(templates, site.id)
       const d = count(done, site.id)
       const pct = total > 0 ? Math.round((d / total) * 100) : 0
       const open = incidents.filter((x) => x.site_id === site.id && x.status === 'open').length
       const shift = count(onShift, site.id)
+      // Last-14-days completion ratio per day (index 0 = 13 days ago, 13 = today).
+      const buckets = Array(14).fill(0)
+      hist.forEach((h) => {
+        if (h.site_id !== site.id) return
+        const off = Math.floor((todayStart - startOfDay(new Date(h.completed_at)).getTime()) / 86400000)
+        if (off >= 0 && off <= 13) buckets[13 - off] += 1
+      })
+      const spark = buckets.map((c) => (total > 0 ? Math.min(1, c / total) : 0))
       let status: SiteStatus
       if (site.status === 'onboarding') status = 'onboarding'
       else if (open >= 3 || pct < 25) status = 'at risk'
       else if (open === 0 && pct >= 45) status = 'on track'
       else status = 'attention'
-      return { site, total, done: d, pct, open, shift, status, color: AVATAR[i % AVATAR.length] }
+      return { site, total, done: d, pct, open, shift, status, spark, color: AVATAR[i % AVATAR.length] }
     })
-  }, [sites, templates, done, incidents, onShift])
+  }, [sites, templates, done, incidents, onShift, hist])
 
   const est = useMemo(() => {
     const totalT = perSite.reduce((s, x) => s + x.total, 0)
@@ -157,7 +168,7 @@ export function EstateDashboard() {
               <tr className="border-b border-border text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 <th className="px-4 py-2.5">Site</th>
                 <th className="px-3 py-2.5">Checks today</th>
-                <th className="px-3 py-2.5 w-[140px]">Progress</th>
+                <th className="px-3 py-2.5 w-[160px]">Last 14 days</th>
                 <th className="px-3 py-2.5">Incidents</th>
                 <th className="px-4 py-2.5">Status</th>
               </tr>
@@ -177,8 +188,10 @@ export function EstateDashboard() {
                     </td>
                     <td className="px-3 py-3 font-mono tabular-nums text-[#41464d]">{x.done}/{x.total}</td>
                     <td className="px-3 py-3">
-                      <span className="flex h-1.5 w-[120px] overflow-hidden rounded-full bg-[#eef0f2]">
-                        <span className="h-full rounded-full" style={{ width: `${x.pct}%`, background: st.dot }} />
+                      <span className="flex items-end gap-[3px]" title="Checks completed each of the last 14 days">
+                        {x.spark.map((r, idx) => (
+                          <span key={idx} className="w-[5px] rounded-[2px]" style={{ height: 18, background: r >= 0.6 ? '#8fc3a4' : r > 0.15 ? '#e2b87e' : '#e2e4e8' }} />
+                        ))}
                       </span>
                     </td>
                     <td className="px-3 py-3 tabular-nums text-[#41464d]">{x.open || '—'}</td>
