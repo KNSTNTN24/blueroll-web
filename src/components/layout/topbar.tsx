@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth-store'
 import { supabase } from '@/lib/supabase'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -17,7 +17,13 @@ function getInitials(name: string | null | undefined): string {
 
 export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
   const router = useRouter()
+  const pathname = usePathname()
   const { profile, business, user, sites, currentSiteId, setCurrentSiteId } = useAuthStore()
+  // Group-shared pages carry a chip clarifying the switcher is context-only here
+  const sharedChip = pathname?.startsWith('/haccp-pack') ? 'Pack shared across all sites'
+    : pathname?.startsWith('/suppliers') ? 'Approved list shared across all sites'
+    : pathname?.startsWith('/recipes') || pathname?.startsWith('/menu') || pathname?.startsWith('/allergens') ? 'Shared across all sites'
+    : null
   const displayName = profile?.full_name || user?.email?.split('@')[0] || 'User'
   const displayEmail = profile?.email || user?.email || ''
   const businessName = business?.name || 'My Business'
@@ -110,6 +116,13 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
                 </div>
               )}
             </div>
+          )}
+
+          {/* Group-shared context chip */}
+          {multiSite && sharedChip && (
+            <span className="hidden shrink-0 items-center rounded-md bg-secondary px-2 py-1 text-[11.5px] font-semibold text-muted-foreground md:inline-flex">
+              {sharedChip}
+            </span>
           )}
         </div>
 

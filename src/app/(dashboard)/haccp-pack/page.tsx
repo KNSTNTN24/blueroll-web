@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { Download, ChevronDown, FileText, X, Eye, Link2 } from 'lucide-react'
 import { DocumentPickerModal, type PickedDocument } from '@/components/shared/document-picker-modal'
+import { SiteSignoff } from './site-signoff'
 
 // ═══════════════════════════════════════════════════════════════
 // Types
@@ -974,6 +975,9 @@ export default function HaccpPackPage() {
           />
         </span>
       </div>
+
+      {/* Per-site sign-off (multi-site groups only) */}
+      <SiteSignoff />
 
       {/* Sticky tabs + sentinel for stuck detection */}
       <div className="-mt-[9px]">
