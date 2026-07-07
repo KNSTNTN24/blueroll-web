@@ -40,6 +40,7 @@ interface FsaEstablishment {
 type Step =
   | 'name'
   | 'choice'
+  | 'setup'
   | 'postcode'
   | 'select'
   | 'rating'
@@ -150,6 +151,10 @@ const BRAND_COPY: Record<Step, { headline: string; subtitle: string }> = {
   choice: {
     headline: 'One plan. Everything included.',
     subtitle: 'Unlimited team members, no per-seat charges, no feature gates. Less than a pack of blue rolls.',
+  },
+  setup: {
+    headline: 'One kitchen or a whole estate?',
+    subtitle: 'Run a single site, or manage several under one group dashboard — you can add sites any time.',
   },
   postcode: {
     headline: "We'll find your business on the FSA register.",
@@ -412,11 +417,67 @@ function ChoiceStep({
   )
 }
 
+function SetupStep({
+  currentStepIndex, totalSteps, goBack, onSelect,
+}: {
+  currentStepIndex: number; totalSteps: number; goBack: () => void; onSelect: (multi: boolean) => void
+}) {
+  const [selected, setSelected] = useState<'one' | 'multi' | null>(null)
+
+  return (
+    <div>
+      <BackButton onClick={goBack} />
+      <StepLabel current={currentStepIndex} total={totalSteps} />
+      <Title>One kitchen or a whole estate?</Title>
+      <Subtitle>You can add more sites any time from Settings.</Subtitle>
+
+      <div className="mt-10 grid grid-cols-2 gap-4">
+        {([
+          { key: 'one' as const, icon: Home, title: 'One site', desc: 'A single kitchen or venue' },
+          { key: 'multi' as const, icon: Building2, title: 'Multiple sites', desc: 'A group with several kitchens' },
+        ]).map((opt) => (
+          <button
+            key={opt.key}
+            onClick={() => setSelected(opt.key)}
+            className={cn(
+              'group relative flex aspect-square cursor-pointer flex-col items-center justify-center rounded-2xl border-2 bg-white p-5 text-center transition-all',
+              selected === opt.key
+                ? 'border-emerald-600'
+                : 'border-gray-200 hover:border-emerald-400',
+            )}
+          >
+            <div className={cn(
+              'absolute right-3.5 top-3.5 flex h-[22px] w-[22px] items-center justify-center rounded-full border-2 transition-all',
+              selected === opt.key ? 'border-emerald-700 bg-emerald-700' : 'border-gray-300',
+            )}>
+              {selected === opt.key && <Check className="h-3 w-3 text-white" strokeWidth={3} />}
+            </div>
+
+            <div className={cn(
+              'mb-4 flex h-14 w-14 items-center justify-center rounded-[14px] transition-colors',
+              selected === opt.key ? 'bg-emerald-100' : 'bg-emerald-50',
+            )}>
+              <opt.icon className="h-6 w-6 text-emerald-600" strokeWidth={1.6} />
+            </div>
+            <span className="text-[15px] font-semibold text-gray-900">{opt.title}</span>
+            <span className="mt-1.5 text-[12px] text-gray-400">{opt.desc}</span>
+          </button>
+        ))}
+      </div>
+
+      <PrimaryButton disabled={!selected} onClick={() => selected && onSelect(selected === 'multi')}>
+        Continue
+      </PrimaryButton>
+    </div>
+  )
+}
+
 export default function OnboardingPage() {
   const router = useRouter()
   const { setContent } = useBrand()
   const [step, setStep] = useState<Step>('name')
   const [isJoinFlow, setIsJoinFlow] = useState(false)
+  const [isMultiSite, setIsMultiSite] = useState(false)
   const [checking, setChecking] = useState(false)
 
   // Update brand panel when step changes
@@ -462,7 +523,7 @@ export default function OnboardingPage() {
 
   const stepsForFlow = isJoinFlow
     ? ['name', 'choice', 'invite', 'signup']
-    : ['name', 'choice', 'postcode', 'select', 'rating', 'signup', 'card']
+    : ['name', 'choice', 'setup', 'postcode', 'select', 'rating', 'signup', 'card']
 
   const currentStepIndex = stepsForFlow.indexOf(step)
   const totalSteps = stepsForFlow.length
@@ -557,6 +618,11 @@ export default function OnboardingPage() {
                 .single()
               if (biz) store.setBusiness(biz)
             }
+            // Multi-site owner → group admin (sees the estate view + can add sites)
+            if (!isJoinFlow && isMultiSite) {
+              await supabase.from('profiles').update({ is_group_admin: true }).eq('id', profile.id)
+              store.setProfile({ ...profile, is_group_admin: true })
+            }
             // Fire-and-forget: seed checklists in background for new business
             if (!isJoinFlow && profile.business_id) {
               void seedDefaultChecklists(profile.business_id).catch(() => {})
@@ -649,9 +715,19 @@ export default function OnboardingPage() {
           totalSteps={totalSteps}
           goBack={goBack}
           onSelect={(type) => {
-            if (type === 'new') { setIsJoinFlow(false); setStep('postcode') }
+            if (type === 'new') { setIsJoinFlow(false); setStep('setup') }
             else { setIsJoinFlow(true); setStep('invite') }
           }}
+        />
+      )}
+
+      {/* Step: Setup (one site / multiple sites) */}
+      {step === 'setup' && (
+        <SetupStep
+          currentStepIndex={currentStepIndex}
+          totalSteps={totalSteps}
+          goBack={goBack}
+          onSelect={(multi) => { setIsMultiSite(multi); setStep('postcode') }}
         />
       )}
 
