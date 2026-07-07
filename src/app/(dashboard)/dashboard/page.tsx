@@ -10,6 +10,7 @@ import { Check, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { notifyCheckIn, notifyCheckOut } from '@/lib/notifications'
 import { format, formatDistanceToNow, startOfDay, startOfWeek, startOfMonth } from 'date-fns'
+import { EstateDashboard } from './estate-dashboard'
 
 const MOODS = ['Smooth', 'Busy', 'Rough'] as const
 const AVATAR_COLORS = ['#1f7a52', '#5b6472', '#8a6d52']
@@ -49,10 +50,19 @@ function Ring({ done, total, size = 62, stroke = 5 }: { done: number; total: num
 }
 
 export default function DashboardPage() {
+  const profile = useAuthStore((s) => s.profile)
+  const currentSiteId = useAuthStore((s) => s.currentSiteId)
+  // Group admins on "All sites" get the estate overview; everyone else sees one site.
+  if (profile?.is_group_admin && currentSiteId === null) return <EstateDashboard />
+  return <SiteDashboard />
+}
+
+function SiteDashboard() {
   const router = useRouter()
   const qc = useQueryClient()
   const profile = useAuthStore((s) => s.profile)
   const business = useAuthStore((s) => s.business)
+  const currentSiteId = useAuthStore((s) => s.currentSiteId)
   const [mood, setMood] = useState<string|null>(null)
   const [taskFilter, setTaskFilter] = useState<'all'|'mine'|'overdue'>('all')
   const [feed, setFeed] = useState<'incidents'|'overdue'>('incidents')
@@ -63,10 +73,10 @@ export default function DashboardPage() {
   const greet = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
 
   const { data: checkin } = useQuery({ queryKey: ['my-checkin', profile?.id], enabled: !!profile?.id && !!business?.id, queryFn: async () => { if (!profile?.id||!business?.id) return null; const { data } = await supabase.from('staff_checkins').select('*').eq('user_id',profile.id).eq('business_id',business.id).gte('checked_in_at',ds).is('checked_out_at',null).order('checked_in_at',{ascending:false}).limit(1).maybeSingle(); return data } })
-  const { data: templates = [] } = useQuery({ queryKey: ['dash-templates', business?.id], enabled: !!business?.id, queryFn: async () => { if (!business?.id) return []; const { data, error } = await supabase.from('checklist_templates').select('*, checklist_template_items(id)').eq('business_id',business.id).eq('active',true).order('name'); if (error) throw error; return data ?? [] } })
-  const { data: completions = [] } = useQuery({ queryKey: ['my-completions', business?.id], enabled: !!business?.id, queryFn: async () => { if (!business?.id) return []; const { data, error } = await supabase.from('checklist_completions').select('template_id, completed_at, signed_off_by').eq('business_id',business.id).gte('completed_at',ds); if (error) throw error; return data ?? [] } })
-  const { data: incidents = [] } = useQuery({ queryKey: ['open-incidents', business?.id], enabled: !!business?.id, queryFn: async () => { if (!business?.id) return []; const { data, error } = await supabase.from('incidents').select('*').eq('business_id',business.id).eq('status','open').order('created_at',{ascending:false}).limit(6); if (error) throw error; return data ?? [] } })
-  const { data: staff = [] } = useQuery({ queryKey: ['on-site-staff', business?.id], enabled: !!business?.id, queryFn: async () => { if (!business?.id) return []; const { data, error } = await supabase.from('staff_checkins').select('*, profile:profiles(full_name, email, role)').eq('business_id',business.id).gte('checked_in_at',ds).is('checked_out_at',null); if (error) throw error; return data ?? [] } })
+  const { data: templates = [] } = useQuery({ queryKey: ['dash-templates', business?.id, currentSiteId], enabled: !!business?.id, queryFn: async () => { if (!business?.id) return []; let q = supabase.from('checklist_templates').select('*, checklist_template_items(id)').eq('business_id',business.id).eq('active',true); if (currentSiteId) q = q.eq('site_id',currentSiteId); const { data, error } = await q.order('name'); if (error) throw error; return data ?? [] } })
+  const { data: completions = [] } = useQuery({ queryKey: ['my-completions', business?.id, currentSiteId], enabled: !!business?.id, queryFn: async () => { if (!business?.id) return []; let q = supabase.from('checklist_completions').select('template_id, completed_at, signed_off_by').eq('business_id',business.id).gte('completed_at',ds); if (currentSiteId) q = q.eq('site_id',currentSiteId); const { data, error } = await q; if (error) throw error; return data ?? [] } })
+  const { data: incidents = [] } = useQuery({ queryKey: ['open-incidents', business?.id, currentSiteId], enabled: !!business?.id, queryFn: async () => { if (!business?.id) return []; let q = supabase.from('incidents').select('*').eq('business_id',business.id).eq('status','open'); if (currentSiteId) q = q.eq('site_id',currentSiteId); const { data, error } = await q.order('created_at',{ascending:false}).limit(6); if (error) throw error; return data ?? [] } })
+  const { data: staff = [] } = useQuery({ queryKey: ['on-site-staff', business?.id, currentSiteId], enabled: !!business?.id, queryFn: async () => { if (!business?.id) return []; let q = supabase.from('staff_checkins').select('*, profile:profiles(full_name, email, role)').eq('business_id',business.id).gte('checked_in_at',ds).is('checked_out_at',null); if (currentSiteId) q = q.eq('site_id',currentSiteId); const { data, error } = await q; if (error) throw error; return data ?? [] } })
 
   function status(t: any): string { const ps=getPeriodStart(t.frequency); const c=completions.find((c:any)=>c.template_id===t.id&&new Date(c.completed_at)>=ps); if(!c)return'Pending';if(c.signed_off_by)return'Done';if(t.supervisor_role)return'Review';return'Done' }
   const total = templates.length
