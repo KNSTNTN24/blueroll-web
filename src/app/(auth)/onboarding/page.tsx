@@ -631,6 +631,12 @@ export default function OnboardingPage() {
   const [selected, setSelected] = useState<FsaEstablishment | null>(null)
   const [inviteCode, setInviteCode] = useState('')
   const [painPoints, setPainPoints] = useState<Set<string>>(new Set())
+
+  // Deep-link from an invite email (?invite=CODE): prefill the join flow.
+  useEffect(() => {
+    const code = new URLSearchParams(window.location.search).get('invite')
+    if (code) { setIsJoinFlow(true); setInviteCode(code) }
+  }, [])
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -769,6 +775,13 @@ export default function OnboardingPage() {
                 const { data: inv } = await (supabase.rpc as any)('create_invite', { p_email: email, p_role: 'manager' })
                 const token = (Array.isArray(inv) ? inv[0]?.token : inv?.token)
                 if (token && site) await supabase.from('invites').update({ site_id: site.id }).eq('token', token)
+                if (token) {
+                  try {
+                    await supabase.functions.invoke('send-invite', {
+                      body: { to: email, code: token, groupName: groupName.trim(), siteName: r.sel!.BusinessName, inviterName: name.trim(), appUrl: window.location.origin },
+                    })
+                  } catch { /* best-effort */ }
+                }
               }
             }
             // Fire-and-forget: seed checklists in background for new business

@@ -85,6 +85,19 @@ export default function TeamPage() {
       if (!row?.token) throw new Error('Invite created but no token returned')
       // Scope the invite to the chosen site (owner/manager may leave it group-wide)
       if (inviteSite) await supabase.from('invites').update({ site_id: inviteSite }).eq('token', row.token)
+      // Email the invite (best-effort — the code still works if delivery fails)
+      try {
+        await supabase.functions.invoke('send-invite', {
+          body: {
+            to: inviteEmail.trim(),
+            code: row.token,
+            groupName: business?.name,
+            siteName: sites.find((s) => s.id === inviteSite)?.name,
+            inviterName: profile?.full_name,
+            appUrl: window.location.origin,
+          },
+        })
+      } catch { /* email is best-effort; code is shown regardless */ }
       return row.token as string
     },
     onSuccess: (token) => { setGeneratedToken(token); queryClient.invalidateQueries({ queryKey: ['team'] }); toast.success('Invite created') },
