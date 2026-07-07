@@ -46,20 +46,22 @@ function expiryStatus(expiresAt: string | null): { label: string; color: string 
 
 export default function DocumentsPage() {
   const business = useAuthStore((s) => s.business)
+  const currentSiteId = useAuthStore((s) => s.currentSiteId)
   const router = useRouter()
 
   const [search, setSearch] = useState('')
   const [category, setCategory] = useState<string>('all')
 
   const { data: documents = [], isLoading } = useQuery({
-    queryKey: ['documents', business?.id],
+    queryKey: ['documents', business?.id, currentSiteId],
     queryFn: async () => {
       if (!business?.id) return []
-      const { data, error } = await supabase
+      let q = supabase
         .from('documents')
         .select('*, uploader:profiles!documents_uploaded_by_fkey(full_name, email)')
         .eq('business_id', business.id)
-        .order('created_at', { ascending: false })
+      if (currentSiteId) q = q.eq('site_id', currentSiteId)
+      const { data, error } = await q.order('created_at', { ascending: false })
       if (error) throw error
       return (data ?? []) as Document[]
     },

@@ -55,15 +55,17 @@ export default function IncidentsPage() {
   const [fFollow, setFFollow] = useState('')
   const [fDate, setFDate] = useState(format(new Date(), 'yyyy-MM-dd'))
 
+  const currentSiteId = useAuthStore((s) => s.currentSiteId)
   const { data: incidents = [], isLoading } = useQuery({
-    queryKey: ['incidents', business?.id],
+    queryKey: ['incidents', business?.id, currentSiteId],
     queryFn: async () => {
       if (!business?.id) return []
-      const { data, error } = await supabase
+      let q = supabase
         .from('incidents')
         .select('*, reporter:profiles!incidents_reported_by_fkey(full_name, email)')
         .eq('business_id', business.id)
-        .order('created_at', { ascending: false })
+      if (currentSiteId) q = q.eq('site_id', currentSiteId)
+      const { data, error } = await q.order('created_at', { ascending: false })
       if (error) throw error
       return (data ?? []) as Incident[]
     },
@@ -99,7 +101,7 @@ export default function IncidentsPage() {
         if (error) throw error
       } else {
         const { error } = await supabase.from('incidents').insert({
-          business_id: business.id, type: fType, description: fDesc,
+          business_id: business.id, site_id: currentSiteId, type: fType, description: fDesc,
           action_taken: fAction || null, follow_up: fFollow || null, status: 'open', reported_by: profile.id, date: fDate,
         })
         if (error) throw error

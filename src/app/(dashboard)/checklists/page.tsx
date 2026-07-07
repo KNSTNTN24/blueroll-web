@@ -41,18 +41,21 @@ function ChecklistsPageInner() {
   const isManager = profile?.role === 'owner' || profile?.role === 'manager'
   const tab = searchParams.get('tab') === 'library' && isManager ? 'library' : 'today'
 
+  const currentSiteId = useAuthStore((s) => s.currentSiteId)
+
   // ── Today's templates for user's role ──
   const { data: myTemplates = [], isLoading: loadingMy } = useQuery({
-    queryKey: ['my-checklists', business?.id, profile?.role],
+    queryKey: ['my-checklists', business?.id, profile?.role, currentSiteId],
     queryFn: async () => {
       if (!business?.id || !profile?.role) return []
-      const { data, error } = await supabase
+      let q = supabase
         .from('checklist_templates')
         .select('*, checklist_template_items(id)')
         .eq('business_id', business.id)
         .eq('active', true)
         .contains('assigned_roles', [profile.role])
-        .order('name')
+      if (currentSiteId) q = q.eq('site_id', currentSiteId)
+      const { data, error } = await q.order('name')
       if (error) throw error
       return data ?? []
     },
@@ -61,14 +64,15 @@ function ChecklistsPageInner() {
 
   // ── All templates for library ──
   const { data: allTemplates = [], isLoading: loadingAll } = useQuery({
-    queryKey: ['all-checklists', business?.id],
+    queryKey: ['all-checklists', business?.id, currentSiteId],
     queryFn: async () => {
       if (!business?.id) return []
-      const { data, error } = await supabase
+      let q = supabase
         .from('checklist_templates')
         .select('*, checklist_template_items(id)')
         .eq('business_id', business.id)
-        .order('name')
+      if (currentSiteId) q = q.eq('site_id', currentSiteId)
+      const { data, error } = await q.order('name')
       if (error) throw error
       return data ?? []
     },
@@ -77,17 +81,19 @@ function ChecklistsPageInner() {
 
   // ── Completions for status check ──
   const { data: completions = [] } = useQuery({
-    queryKey: ['checklist-completions', business?.id],
+    queryKey: ['checklist-completions', business?.id, currentSiteId],
     queryFn: async () => {
       if (!business?.id) return []
       // Fetch completions from the last month to cover all period types
       const monthAgo = new Date()
       monthAgo.setDate(monthAgo.getDate() - 35)
-      const { data, error } = await supabase
+      let q = supabase
         .from('checklist_completions')
         .select('template_id, completed_at, signed_off_by')
         .eq('business_id', business.id)
         .gte('completed_at', monthAgo.toISOString())
+      if (currentSiteId) q = q.eq('site_id', currentSiteId)
+      const { data, error } = await q
       if (error) throw error
       return data ?? []
     },

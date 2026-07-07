@@ -39,22 +39,24 @@ type TimelineEntry = {
 
 export default function DiaryPage() {
   const business = useAuthStore((s) => s.business)
+  const currentSiteId = useAuthStore((s) => s.currentSiteId)
   const [date, setDate] = useState(new Date())
 
   const dayStart = startOfDay(date).toISOString()
   const dayEnd = endOfDay(date).toISOString()
 
   const { data: completions = [] } = useQuery({
-    queryKey: ['diary-completions', business?.id, dayStart],
+    queryKey: ['diary-completions', business?.id, dayStart, currentSiteId],
     queryFn: async () => {
       if (!business?.id) return []
-      const { data, error } = await supabase
+      let q = supabase
         .from('checklist_completions')
         .select('*, template:checklist_templates(name), completer:profiles!checklist_completions_completed_by_fkey(full_name, email)')
         .eq('business_id', business.id)
         .gte('completed_at', dayStart)
         .lte('completed_at', dayEnd)
-        .order('completed_at', { ascending: true })
+      if (currentSiteId) q = q.eq('site_id', currentSiteId)
+      const { data, error } = await q.order('completed_at', { ascending: true })
       if (error) throw error
       return (data ?? []) as Completion[]
     },
@@ -62,16 +64,17 @@ export default function DiaryPage() {
   })
 
   const { data: incidents = [] } = useQuery({
-    queryKey: ['diary-incidents', business?.id, dayStart],
+    queryKey: ['diary-incidents', business?.id, dayStart, currentSiteId],
     queryFn: async () => {
       if (!business?.id) return []
-      const { data, error } = await supabase
+      let q = supabase
         .from('incidents')
         .select('*, reporter:profiles!incidents_reported_by_fkey(full_name, email)')
         .eq('business_id', business.id)
         .gte('created_at', dayStart)
         .lte('created_at', dayEnd)
-        .order('created_at', { ascending: true })
+      if (currentSiteId) q = q.eq('site_id', currentSiteId)
+      const { data, error } = await q.order('created_at', { ascending: true })
       if (error) throw error
       return (data ?? []) as Incident[]
     },

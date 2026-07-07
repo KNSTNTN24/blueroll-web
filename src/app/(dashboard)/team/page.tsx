@@ -5,11 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { toast } from 'sonner'
-import { Users, Plus, Copy, CheckCircle2 } from 'lucide-react'
-import { PageHeader } from '@/components/layout/page-header'
-import { EmptyState } from '@/components/shared/empty-state'
-import { Button } from '@/components/ui/button'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Plus, Copy, CheckCircle2, X, ShieldCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ROLE_LABELS, ROLE_COLORS, USER_ROLES, type UserRole } from '@/lib/constants'
 import { format } from 'date-fns'
@@ -17,34 +13,35 @@ import { format } from 'date-fns'
 function getInitials(name: string | null, email: string): string {
   if (name) {
     const parts = name.split(' ').filter(Boolean)
-    return parts.length >= 2
-      ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
-      : (parts[0]?.[0] ?? '').toUpperCase()
+    return parts.length >= 2 ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase() : (parts[0]?.[0] ?? '').toUpperCase()
   }
   return email[0]?.toUpperCase() ?? '?'
 }
+const AVATAR = ['#1f7a52', '#5b6472', '#8a6d52', '#3f6d8a', '#7a5b6f']
+const hasCore = (certs: string[]) => certs.some((c) => /food hygiene/i.test(c)) && certs.some((c) => /allergen/i.test(c))
 
 export default function TeamPage() {
   const profile = useAuthStore((s) => s.profile)
   const business = useAuthStore((s) => s.business)
+  const sites = useAuthStore((s) => s.sites)
+  const currentSiteId = useAuthStore((s) => s.currentSiteId)
   const queryClient = useQueryClient()
   const isManager = profile?.role === 'owner' || profile?.role === 'manager'
+  const multiSite = sites.length > 1
+  const siteName = (id: string | null) => (id ? (sites.find((s) => s.id === id)?.name ?? 'Site') : 'All sites')
 
   const [showInvite, setShowInvite] = useState(false)
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteRole, setInviteRole] = useState<string>('kitchen_staff')
   const [generatedToken, setGeneratedToken] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const [tab, setTab] = useState<string>('all') // 'all' or a site id (only used in the all-sites view)
 
   const { data: members = [], isLoading } = useQuery({
     queryKey: ['team', business?.id],
     queryFn: async () => {
       if (!business?.id) return []
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('business_id', business.id)
-        .order('created_at', { ascending: true })
+      const { data, error } = await supabase.from('profiles').select('*').eq('business_id', business.id).order('created_at', { ascending: true })
       if (error) throw error
       return data ?? []
     },
@@ -55,223 +52,211 @@ export default function TeamPage() {
     queryKey: ['staff-checkins', business?.id],
     queryFn: async () => {
       if (!business?.id) return []
-      const today = new Date()
-      today.setHours(0, 0, 0, 0)
-      const { data, error } = await supabase
-        .from('staff_checkins')
-        .select('*')
-        .eq('business_id', business.id)
-        .gte('checked_in_at', today.toISOString())
-        .is('checked_out_at', null)
+      const today = new Date(); today.setHours(0, 0, 0, 0)
+      const { data, error } = await supabase.from('staff_checkins').select('*').eq('business_id', business.id).gte('checked_in_at', today.toISOString()).is('checked_out_at', null)
       if (error) throw error
       return data ?? []
     },
     enabled: !!business?.id,
   })
+  const checkinMap = new Map(checkins.map((c: any) => [c.user_id, c]))
 
-  const checkinMap = new Map(checkins.map((c: { user_id: string }) => [c.user_id, c]))
+  // Scope: a specific site (topbar switcher) shows just that site; "All sites" shows everyone with in-page tabs.
+  const visible = (members as any[]).filter((m) => {
+    if (currentSiteId) return m.site_id === currentSiteId || m.is_group_admin
+    if (tab === 'all') return true
+    return m.site_id === tab
+  })
+
+  const onShiftCount = visible.filter((m) => checkinMap.has(m.id)).length
+  const trained = visible.filter((m) => hasCore(m.certifications ?? [])).length
+  const gaps = visible.length - trained
+
+  // sites that actually have members (for the tab bar)
+  const siteCounts = sites.map((s) => ({ site: s, n: (members as any[]).filter((m) => m.site_id === s.id).length })).filter((x) => x.n > 0)
 
   const inviteMutation = useMutation({
     mutationFn: async () => {
-      // Single source of truth — Postgres RPC. Generates a unique 6-digit
-      // numeric token, enforces owner/manager permission, sets 7-day expiry.
-      const { data, error } = await supabase.rpc('create_invite', {
-        p_email: inviteEmail,
-        p_role: inviteRole,
-      })
+      const { data, error } = await supabase.rpc('create_invite', { p_email: inviteEmail, p_role: inviteRole })
       if (error) throw error
       const row = Array.isArray(data) ? data[0] : data
       if (!row?.token) throw new Error('Invite created but no token returned')
       return row.token as string
     },
-    onSuccess: (token) => {
-      setGeneratedToken(token)
-      queryClient.invalidateQueries({ queryKey: ['team'] })
-      toast.success('Invite created')
-    },
-    onError: (err: Error) => {
-      toast.error(err.message || 'Failed to create invite')
-    },
+    onSuccess: (token) => { setGeneratedToken(token); queryClient.invalidateQueries({ queryKey: ['team'] }); toast.success('Invite created') },
+    onError: (err: Error) => toast.error(err.message || 'Failed to create invite'),
   })
-
-  function handleInviteSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    inviteMutation.mutate()
-  }
-
-  function handleCopyToken() {
-    if (!generatedToken) return
-    navigator.clipboard.writeText(generatedToken)
-    setCopied(true)
-    toast.success('Token copied to clipboard')
-    setTimeout(() => setCopied(false), 2000)
-  }
-
-  function resetInvite() {
-    setShowInvite(false)
-    setInviteEmail('')
-    setInviteRole('kitchen_staff')
-    setGeneratedToken(null)
-    setCopied(false)
-  }
-
-  if (isLoading) {
-    return (
-      <div className="space-y-6">
-        <PageHeader title="Team" description="Manage your team members" />
-        <div className="flex items-center justify-center py-16">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-emerald-600 border-t-transparent" />
-        </div>
-      </div>
-    )
-  }
+  function resetInvite() { setShowInvite(false); setInviteEmail(''); setInviteRole('kitchen_staff'); setGeneratedToken(null); setCopied(false) }
 
   return (
-    <div className="space-y-6">
-      <PageHeader title="Team" description="Manage your team members">
+    <div className="flex flex-col gap-[18px]">
+      {/* Header */}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-[25px] font-bold leading-tight tracking-[-0.02em] text-foreground">Team</h1>
+          <p className="mt-1 text-[14px] text-muted-foreground">
+            {multiSite ? `People across ${business?.name ?? 'the group'} · ${sites.length} sites` : 'Manage your team members'}
+          </p>
+        </div>
         {isManager && (
-          <Button size="sm" onClick={() => { resetInvite(); setShowInvite(true) }}>
-            <Plus className="h-3.5 w-3.5" />
-            Invite member
-          </Button>
+          <button onClick={() => { resetInvite(); setShowInvite(true) }}
+            className="inline-flex items-center gap-1.5 rounded-[10px] bg-brand px-3.5 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90">
+            <Plus className="h-4 w-4" strokeWidth={2} /> Invite member
+          </button>
         )}
-      </PageHeader>
+      </div>
 
-      {/* Invite Sheet */}
+      {/* Metric strip */}
+      <div className="grid grid-cols-2 divide-y divide-[#eef0f2] overflow-hidden rounded-[14px] border border-border bg-card shadow-[0_1px_2px_rgba(16,24,40,.04)] sm:grid-cols-4 sm:divide-x sm:divide-y-0">
+        <Metric label="Members" value={String(visible.length)} />
+        <Metric label="On shift now" value={String(onShiftCount)} />
+        <Metric label="Training up to date" value={`${trained}/${visible.length}`} />
+        <Metric label="Training gaps" value={String(gaps)} amber={gaps > 0} />
+      </div>
+
+      {/* Site filter tabs — only in the all-sites view */}
+      {multiSite && !currentSiteId && siteCounts.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          <TabPill active={tab === 'all'} onClick={() => setTab('all')}>All {members.length}</TabPill>
+          {siteCounts.map(({ site, n }) => (
+            <TabPill key={site.id} active={tab === site.id} onClick={() => setTab(site.id)}>{site.name} {n}</TabPill>
+          ))}
+        </div>
+      )}
+
+      {/* Invite sheet */}
       {showInvite && (
-        <div className="rounded-lg border border-border bg-white p-4">
+        <div className="rounded-[14px] border border-border bg-card p-4 shadow-[0_1px_2px_rgba(16,24,40,.04)]">
           {generatedToken ? (
             <div className="space-y-4">
-              <h3 className="text-[14px] font-medium text-foreground">Invite created</h3>
-              <div className="rounded-lg border border-border bg-gray-50 p-4">
-                <p className="mb-2 text-[12px] font-medium text-muted-foreground">Invite Token</p>
+              <div className="flex items-center justify-between">
+                <h3 className="text-[15px] font-bold text-foreground">Invite created</h3>
+                <button onClick={resetInvite} className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted"><X className="h-4 w-4" /></button>
+              </div>
+              <div className="rounded-[10px] border border-border bg-[#fafbfb] p-4">
+                <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">Invite token</p>
                 <div className="flex items-center gap-2">
-                  <code className="flex-1 rounded-md border border-border bg-white px-3 py-2 font-mono text-[15px] font-semibold text-foreground tracking-wide">
-                    {generatedToken}
-                  </code>
-                  <Button variant="outline" size="sm" onClick={handleCopyToken}>
-                    {copied ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
-                    {copied ? 'Copied' : 'Copy'}
-                  </Button>
+                  <code className="flex-1 rounded-md border border-input bg-card px-3 py-2 font-mono text-[15px] font-semibold tracking-wide text-foreground">{generatedToken}</code>
+                  <button onClick={() => { navigator.clipboard.writeText(generatedToken); setCopied(true); toast.success('Copied'); setTimeout(() => setCopied(false), 2000) }}
+                    className="inline-flex items-center gap-1.5 rounded-[10px] border border-input bg-card px-3 py-2 text-[13px] font-semibold text-foreground hover:bg-accent">
+                    {copied ? <CheckCircle2 className="h-3.5 w-3.5 text-brand" /> : <Copy className="h-3.5 w-3.5" />} {copied ? 'Copied' : 'Copy'}
+                  </button>
                 </div>
-              </div>
-              <div className="rounded-lg border border-border bg-emerald-50 p-4">
-                <p className="mb-2 text-[13px] font-medium text-emerald-800">Send these instructions to the new member:</p>
-                <ol className="space-y-1 text-[13px] text-emerald-700">
-                  <li>1. Open the app or website</li>
-                  <li>2. Tap &quot;Create Account&quot;</li>
-                  <li>3. Select &quot;Joining a team&quot;</li>
-                  <li>4. Paste the invite code</li>
-                </ol>
-              </div>
-              <div className="flex justify-end">
-                <Button variant="outline" size="sm" onClick={resetInvite}>
-                  Done
-                </Button>
               </div>
             </div>
           ) : (
-            <form onSubmit={handleInviteSubmit} className="space-y-4">
-              <h3 className="text-[14px] font-medium text-foreground">Invite a team member</h3>
+            <form onSubmit={(e) => { e.preventDefault(); inviteMutation.mutate() }} className="space-y-4">
+              <h3 className="text-[15px] font-bold text-foreground">Invite a team member</h3>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
-                  <label className="text-[13px] font-medium text-foreground">Email</label>
-                  <input
-                    type="email"
-                    required
-                    value={inviteEmail}
-                    onChange={(e) => setInviteEmail(e.target.value)}
-                    className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] text-foreground placeholder:text-muted-foreground focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-                    placeholder="colleague@example.com"
-                  />
+                  <label className="text-[13px] font-semibold text-[#41464d]">Email</label>
+                  <input type="email" required value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="colleague@example.com"
+                    className="w-full rounded-[10px] border border-input bg-card px-3 py-2 text-[14px] text-foreground outline-none transition-shadow placeholder:text-muted-foreground focus:border-brand focus:ring-[3px] focus:ring-[rgba(31,157,99,.12)]" />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-[13px] font-medium text-foreground">Role</label>
-                  <select
-                    value={inviteRole}
-                    onChange={(e) => setInviteRole(e.target.value ?? '')}
-                    className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] text-foreground focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-                  >
-                    {USER_ROLES.filter((r) => r !== 'owner').map((r) => (
-                      <option key={r} value={r}>{ROLE_LABELS[r]}</option>
-                    ))}
+                  <label className="text-[13px] font-semibold text-[#41464d]">Role</label>
+                  <select value={inviteRole} onChange={(e) => setInviteRole(e.target.value)}
+                    className="w-full rounded-[10px] border border-input bg-card px-3 py-2 text-[14px] text-foreground outline-none focus:border-brand">
+                    {USER_ROLES.filter((r) => r !== 'owner').map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
                   </select>
                 </div>
               </div>
               <div className="flex justify-end gap-2">
-                <Button variant="outline" size="sm" type="button" onClick={resetInvite}>
-                  Cancel
-                </Button>
-                <Button size="sm" type="submit" disabled={inviteMutation.isPending}>
-                  {inviteMutation.isPending ? 'Creating...' : 'Create invite'}
-                </Button>
+                <button type="button" onClick={resetInvite} className="rounded-[10px] border border-input bg-card px-3.5 py-2 text-[13px] font-semibold text-[#5c626b] hover:bg-accent">Cancel</button>
+                <button type="submit" disabled={inviteMutation.isPending} className="rounded-[10px] bg-brand px-3.5 py-2 text-[13px] font-semibold text-white hover:opacity-90 disabled:opacity-50">
+                  {inviteMutation.isPending ? 'Creating…' : 'Create invite'}
+                </button>
               </div>
             </form>
           )}
         </div>
       )}
 
-      {members.length === 0 ? (
-        <EmptyState
-          icon={Users}
-          title="No team members"
-          description="Invite your first team member to get started."
-          action={isManager ? { label: 'Invite member', onClick: () => setShowInvite(true) } : undefined}
-        />
-      ) : (
-        <div className="rounded-lg border border-border bg-white">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-border">
-                <th className="px-4 py-2.5 text-left text-[12px] font-medium text-muted-foreground">Member</th>
-                <th className="px-4 py-2.5 text-left text-[12px] font-medium text-muted-foreground">Email</th>
-                <th className="px-4 py-2.5 text-left text-[12px] font-medium text-muted-foreground">Role</th>
-                <th className="px-4 py-2.5 text-left text-[12px] font-medium text-muted-foreground">Joined</th>
-                <th className="px-4 py-2.5 text-left text-[12px] font-medium text-muted-foreground">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {members.map((m: { id: string; full_name: string | null; email: string; role: string; created_at: string }) => {
-                const isOnSite = checkinMap.has(m.id)
-                return (
-                  <tr key={m.id} className="hover:bg-accent/50">
-                    <td className="px-4 py-2.5">
-                      <div className="flex items-center gap-2.5">
-                        <Avatar className="h-7 w-7">
-                          <AvatarFallback className="text-[10px]">{getInitials(m.full_name, m.email)}</AvatarFallback>
-                        </Avatar>
-                        <span className="text-[13px] font-medium text-foreground">{m.full_name || 'Unnamed'}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-2.5 text-[13px] text-muted-foreground">{m.email}</td>
-                    <td className="px-4 py-2.5">
-                      <span className={cn('inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium', ROLE_COLORS[m.role as UserRole] ?? ROLE_COLORS.kitchen_staff)}>
-                        {ROLE_LABELS[m.role as UserRole] ?? m.role}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2.5 text-[13px] tabular-nums text-muted-foreground">
-                      {format(new Date(m.created_at), 'dd MMM yyyy')}
-                    </td>
-                    <td className="px-4 py-2.5">
-                      {isOnSite ? (
-                        <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-emerald-700">
-                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                          On-site
+      {/* Members table */}
+      <div className="overflow-hidden rounded-[14px] border border-border bg-card shadow-[0_1px_2px_rgba(16,24,40,.04)]">
+        {isLoading ? (
+          <div className="p-12 text-center text-[14px] text-muted-foreground">Loading team…</div>
+        ) : visible.length === 0 ? (
+          <div className="p-[50px] text-center text-[14px] text-[#9aa0a8]">No team members in this view.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] border-collapse text-[13px]">
+              <thead>
+                <tr className="border-b border-border text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                  <th className="px-4 py-2.5">Member</th>
+                  {multiSite && <th className="px-3 py-2.5">Site</th>}
+                  <th className="px-3 py-2.5">Food-safety training</th>
+                  <th className="px-3 py-2.5">Status</th>
+                  <th className="px-4 py-2.5">Last active</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visible.map((m: any, i: number) => {
+                  const ci = checkinMap.get(m.id) as any
+                  const onShift = !!ci
+                  const you = m.id === profile?.id
+                  return (
+                    <tr key={m.id} className="border-b border-[#f2f3f5] transition-colors last:border-0 hover:bg-[#fafbfb]">
+                      <td className="px-4 py-3">
+                        <span className="flex items-center gap-2.5">
+                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white" style={{ background: AVATAR[i % AVATAR.length] }}>{getInitials(m.full_name, m.email)}</span>
+                          <span className="min-w-0">
+                            <span className="flex items-center gap-1.5">
+                              <span className="truncate font-semibold text-foreground">{m.full_name || 'Unnamed'}</span>
+                              {you && <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">YOU</span>}
+                            </span>
+                            <span className="block text-[11.5px] text-muted-foreground">{ROLE_LABELS[m.role as UserRole] ?? m.role}</span>
+                          </span>
                         </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1.5 text-[12px] text-muted-foreground">
-                          <span className="h-1.5 w-1.5 rounded-full bg-gray-300" />
-                          Off-site
-                        </span>
+                      </td>
+                      {multiSite && (
+                        <td className="px-3 py-3">
+                          <span className={cn('text-[13px]', m.site_id ? 'text-[#41464d]' : 'font-medium text-brand-deep')}>{siteName(m.site_id)}</span>
+                        </td>
                       )}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+                      <td className="px-3 py-3">
+                        <span className="flex flex-wrap gap-1">
+                          {(m.certifications ?? []).length === 0 ? <span className="text-[12px] text-[#b0b5bc]">—</span> : (m.certifications as string[]).map((c) => (
+                            <span key={c} className="inline-flex items-center gap-1 rounded-md bg-brand-tint px-1.5 py-0.5 text-[11px] font-medium text-brand-deep">
+                              <ShieldCheck className="h-3 w-3" strokeWidth={2} />{c}
+                            </span>
+                          ))}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3">
+                        {onShift ? (
+                          <span className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-brand-deep"><span className="h-1.5 w-1.5 rounded-full bg-brand" /> On shift</span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 text-[12.5px] text-muted-foreground"><span className="h-1.5 w-1.5 rounded-full bg-[#c2c6cc]" /> Off</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-[12.5px] text-muted-foreground">
+                        {onShift ? `Since ${format(new Date(ci.checked_in_at), 'HH:mm')}` : '—'}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
+  )
+}
+
+function Metric({ label, value, amber }: { label: string; value: string; amber?: boolean }) {
+  return (
+    <div className="px-5 py-4">
+      <p className="text-[11px] font-medium uppercase tracking-[0.04em] text-muted-foreground">{label}</p>
+      <p className={cn('mt-1 text-[22px] font-bold tabular-nums leading-none', amber ? 'text-amber' : 'text-foreground')}>{value}</p>
+    </div>
+  )
+}
+
+function TabPill({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button onClick={onClick} className={cn('rounded-[8px] px-3 py-1.5 text-[12.5px] font-medium transition-colors',
+      active ? 'bg-foreground text-white' : 'border border-input bg-card text-[#5c626b] hover:bg-accent')}>{children}</button>
   )
 }

@@ -40,17 +40,19 @@ function tempBg(temp: number | null): string {
 
 export default function DeliveriesPage() {
   const business = useAuthStore((s) => s.business)
+  const currentSiteId = useAuthStore((s) => s.currentSiteId)
   const router = useRouter()
 
   const { data: deliveries = [], isLoading } = useQuery({
-    queryKey: ['deliveries', business?.id],
+    queryKey: ['deliveries', business?.id, currentSiteId],
     queryFn: async () => {
       if (!business?.id) return []
-      const { data, error } = await supabase
+      let q = supabase
         .from('deliveries')
         .select('*, supplier:suppliers(name), receiver:profiles!deliveries_received_by_fkey(full_name, email)')
         .eq('business_id', business.id)
-        .order('received_at', { ascending: false })
+      if (currentSiteId) q = q.eq('site_id', currentSiteId)
+      const { data, error } = await q.order('received_at', { ascending: false })
       if (error) throw error
       return (data ?? []) as Delivery[]
     },
