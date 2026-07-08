@@ -171,7 +171,7 @@ export default function ReportsPage() {
     const head = ['Date', 'Checklist', 'Site', 'Completed by', 'Items', 'Status']
     const body = rows.map((r) => [
       format(parseISO(r.at), 'dd MMM yyyy HH:mm'), r.name, r.site, r.by, `${r.ok}/${r.total}`,
-      r.flagged ? `${r.flagged} flagged` : 'Clean',
+      r.flagged ? `${r.flagged} flagged` : r.total === 0 ? 'No items' : 'Clean',
     ])
     const csv = [head, ...body].map((line) => line.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n')
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }))
@@ -369,9 +369,16 @@ export default function ReportsPage() {
                 <span style={{ font: "500 13px 'Geist'", color: '#5c626b', whiteSpace: 'nowrap' }}>{r.site}</span>
                 <span style={{ font: "500 13px 'Geist'", color: '#5c626b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.by}</span>
                 <span style={{ font: "500 13px 'Geist'", color: '#5c626b', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{r.ok}/{r.total}</span>
-                <span style={{ justifySelf: 'end', display: 'inline-flex', alignItems: 'center', gap: 6, font: "600 12px 'Geist'", padding: '4px 10px', borderRadius: 20, background: r.flagged ? '#fbf1e1' : '#eaf4ee', color: r.flagged ? '#b07d1e' : '#1f7a52' }}>
-                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: r.flagged ? '#d98a1a' : '#1f9d63' }} />{r.flagged ? `${r.flagged} flagged` : 'Clean'}
-                </span>
+                {(() => {
+                  const st = r.flagged ? { bg: '#fbf1e1', fg: '#b07d1e', dot: '#d98a1a', label: `${r.flagged} flagged` }
+                    : r.total === 0 ? { bg: '#f1f2f4', fg: '#8a9099', dot: '#c2c6cc', label: 'No items' }
+                      : { bg: '#eaf4ee', fg: '#1f7a52', dot: '#1f9d63', label: 'Clean' }
+                  return (
+                    <span style={{ justifySelf: 'end', display: 'inline-flex', alignItems: 'center', gap: 6, font: "600 12px 'Geist'", padding: '4px 10px', borderRadius: 20, background: st.bg, color: st.fg }}>
+                      <span style={{ width: 6, height: 6, borderRadius: '50%', background: st.dot }} />{st.label}
+                    </span>
+                  )
+                })()}
               </div>
             ))}
           </div>
