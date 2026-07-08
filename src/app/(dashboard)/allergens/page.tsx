@@ -176,20 +176,23 @@ export default function AllergensPage() {
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-[25px] font-bold leading-tight tracking-[-0.02em] text-foreground">Allergen Matrix</h1>
+          <h1 className="text-[26px] font-bold leading-tight tracking-[-0.02em] text-foreground">Allergen Matrix</h1>
           <p className="mt-1 text-[13px] text-muted-foreground">EU 14 allergens across {enriched.length} active recipes</p>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={exportCSV} className="inline-flex items-center gap-1.5 rounded-[10px] border border-input bg-card px-3.5 py-2 text-[13px] font-semibold text-foreground transition-colors hover:bg-accent">
+        {recipes.length > 0 && (
+        <div className="flex items-center gap-2.5">
+          <button onClick={exportCSV} className="inline-flex items-center gap-2 rounded-[11px] border border-input bg-card px-4 py-[11px] text-[14px] font-semibold text-foreground transition-colors hover:bg-accent">
             <Download className="h-4 w-4 text-brand" strokeWidth={1.8} /> CSV
           </button>
-          <button onClick={handlePrint} className="inline-flex items-center gap-1.5 rounded-[10px] border border-input bg-card px-3.5 py-2 text-[13px] font-semibold text-foreground transition-colors hover:bg-accent">
+          <button onClick={handlePrint} className="inline-flex items-center gap-2 rounded-[11px] border border-input bg-card px-4 py-[11px] text-[14px] font-semibold text-foreground transition-colors hover:bg-accent">
             <Printer className="h-4 w-4" strokeWidth={1.8} /> PDF
           </button>
         </div>
+        )}
       </div>
 
-      {/* Toolbar: search + inline legend */}
+      {/* Toolbar: search + inline legend — hidden in the empty state */}
+      {recipes.length > 0 && (
       <div className="flex flex-wrap items-center gap-4">
         <div className="relative max-w-[380px] flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -210,6 +213,7 @@ export default function AllergensPage() {
           </span>
         </div>
       </div>
+      )}
 
       {isLoading ? (
         <div className="flex items-center justify-center py-16 text-[13px] text-muted-foreground">Loading allergen data…</div>

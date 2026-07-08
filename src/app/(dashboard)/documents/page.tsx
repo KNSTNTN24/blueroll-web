@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { useRouter } from 'next/navigation'
 import { FileText, Plus, Search, Eye, Upload } from 'lucide-react'
 import { InspectionEmpty, EmptyPrimary, DocumentsArt } from '@/components/shared/inspection-empty'
+import { HeaderButton } from '@/components/shared/header-button'
 import { PageHeader } from '@/components/layout/page-header'
 import { EmptyState } from '@/components/shared/empty-state'
 import { Button } from '@/components/ui/button'
@@ -89,13 +90,14 @@ export default function DocumentsPage() {
   return (
     <div className="space-y-6">
       <PageHeader title="Documents" description="Manage certificates, policies and more">
-        <Button size="sm" onClick={() => router.push('/documents/upload')}>
-          <Plus className="h-3.5 w-3.5" />
+        <HeaderButton onClick={() => router.push('/documents/upload')}>
+          <Plus className="h-4 w-4" strokeWidth={2} />
           Upload
-        </Button>
+        </HeaderButton>
       </PageHeader>
 
-      {/* Filters */}
+      {/* Filters — hidden in the empty state */}
+      {documents.length > 0 && (
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap gap-1">
           <button
@@ -134,6 +136,7 @@ export default function DocumentsPage() {
           />
         </div>
       </div>
+      )}
 
       {documents.length === 0 ? (
         <InspectionEmpty illustration={DocumentsArt} badge="Inspectors ask for these on the spot"

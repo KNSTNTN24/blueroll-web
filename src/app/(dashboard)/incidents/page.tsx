@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { toast } from 'sonner'
 import { Plus, Search, Check, Pencil, Trash2, X, RotateCcw, CircleCheck, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { HeaderButton } from '@/components/shared/header-button'
 import { cn } from '@/lib/utils'
 import { notifyNewIncident, notifyIncidentResolved } from '@/lib/notifications'
 import { format, startOfMonth, differenceInHours } from 'date-fns'
@@ -181,9 +182,9 @@ export default function IncidentsPage() {
           <h1 className="text-[26px] font-bold leading-tight tracking-[-0.02em] text-foreground">Incidents</h1>
           <p className="mt-1 text-[14px] text-muted-foreground">Track complaints and incidents across the kitchen</p>
         </div>
-        <Button size="sm" onClick={openNew}>
-          <Plus strokeWidth={2} /> Report incident
-        </Button>
+        <HeaderButton onClick={openNew}>
+          <Plus className="h-4 w-4" strokeWidth={2} /> Report incident
+        </HeaderButton>
       </div>
 
       {/* Summary strip */}

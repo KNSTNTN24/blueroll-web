@@ -8,6 +8,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { toast } from 'sonner'
 import { Search, Plus, Sparkles, Eye, Pencil, Trash2, Image as ImageIcon } from 'lucide-react'
 import { InspectionEmpty, EmptyPrimary, EmptySecondary, RecipesArt } from '@/components/shared/inspection-empty'
+import { HeaderButton } from '@/components/shared/header-button'
 import { cn } from '@/lib/utils'
 import { ALLERGEN_LABELS, type EUAllergen } from '@/lib/constants'
 import { effectiveDietary } from '@/lib/dietary'
@@ -87,26 +88,26 @@ export default function RecipesPage() {
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-[25px] font-bold leading-tight tracking-[-0.02em] text-foreground">Recipes</h1>
+          <h1 className="text-[26px] font-bold leading-tight tracking-[-0.02em] text-foreground">Recipes</h1>
           <p className="mt-1 text-[14px] text-muted-foreground">Manage your recipe collection · {recipes.length} dishes</p>
         </div>
         {isManager && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5">
             <button onClick={() => router.push('/recipes/import')}
-              className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-[10px] border border-input bg-card px-3.5 py-2 text-[13px] font-semibold text-foreground transition-colors hover:bg-accent">
+              className="inline-flex items-center gap-2 whitespace-nowrap rounded-[11px] border border-input bg-card px-4 py-[11px] text-[14px] font-semibold text-foreground transition-colors hover:bg-accent">
               <Sparkles className="h-4 w-4 text-brand" strokeWidth={1.8} />
               AI Import
             </button>
-            <button onClick={() => router.push('/recipes/new')}
-              className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-[10px] bg-brand px-3.5 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90">
+            <HeaderButton onClick={() => router.push('/recipes/new')}>
               <Plus className="h-4 w-4" strokeWidth={2} />
               New Recipe
-            </button>
+            </HeaderButton>
           </div>
         )}
       </div>
 
-      {/* Toolbar: search + tag pills */}
+      {/* Toolbar: search + tag pills — hidden in the empty state */}
+      {recipes.length > 0 && (
       <div className="space-y-3">
         <div className="relative max-w-[380px]">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -126,6 +127,7 @@ export default function RecipesPage() {
           </div>
         )}
       </div>
+      )}
 
       {/* Cards */}
       {isLoading ? (

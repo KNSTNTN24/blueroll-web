@@ -9,6 +9,7 @@ import { Store, Plus, Pencil, Trash2 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { EmptyState } from '@/components/shared/empty-state'
 import { InspectionEmpty, EmptyPrimary, SuppliersArt } from '@/components/shared/inspection-empty'
+import { HeaderButton } from '@/components/shared/header-button'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
@@ -160,10 +161,10 @@ export default function SuppliersPage() {
     <div className="space-y-6">
       <PageHeader title="Suppliers" description="Manage your suppliers">
         {isManager && (
-          <Button size="sm" onClick={openCreate}>
-            <Plus className="h-3.5 w-3.5" />
+          <HeaderButton onClick={openCreate}>
+            <Plus className="h-4 w-4" strokeWidth={2} />
             Add supplier
-          </Button>
+          </HeaderButton>
         )}
       </PageHeader>
 

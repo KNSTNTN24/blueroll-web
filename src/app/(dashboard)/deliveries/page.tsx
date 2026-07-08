@@ -8,6 +8,7 @@ import { Truck, Plus, Image as ImageIcon } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { EmptyState } from '@/components/shared/empty-state'
 import { InspectionEmpty, EmptyPrimary, DeliveriesArt } from '@/components/shared/inspection-empty'
+import { HeaderButton } from '@/components/shared/header-button'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { format } from 'date-fns'
@@ -77,10 +78,10 @@ export default function DeliveriesPage() {
   return (
     <div className="space-y-6">
       <PageHeader title="Deliveries" description="Track incoming deliveries">
-        <Button size="sm" onClick={() => router.push('/deliveries/new')}>
-          <Plus className="h-3.5 w-3.5" />
+        <HeaderButton onClick={() => router.push('/deliveries/new')}>
+          <Plus className="h-4 w-4" strokeWidth={2} />
           New delivery
-        </Button>
+        </HeaderButton>
       </PageHeader>
 
       {deliveries.length === 0 ? (
