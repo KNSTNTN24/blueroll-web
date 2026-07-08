@@ -109,6 +109,19 @@ export default function ReportsPage() {
   const activeNames = isAll ? new Set(allNames) : selected
   const filtered = completions.filter((c) => c.template?.name && activeNames.has(c.template.name))
 
+  // Real scheduled "due" per site, from checklist_instances (not an estimate).
+  const selectedTemplateIds = isAll ? null : templates.filter((t) => activeNames.has(t.name)).map((t) => t.id)
+  const { data: dueRows = [] } = useQuery({
+    queryKey: ['report-due', bid, currentSiteId, dateFrom, dateTo, selectedTemplateIds],
+    enabled: !!bid,
+    queryFn: async () => {
+      const { data } = await supabase.rpc('report_due', { p_from: dateFrom, p_to: dateTo, p_site: currentSiteId, p_templates: selectedTemplateIds })
+      return (data ?? []) as { site_id: string | null; due: number }[]
+    },
+  })
+  const dueBySite = new Map<string | null, number>()
+  dueRows.forEach((r) => dueBySite.set(r.site_id, Number(r.due)))
+
   function toggle(name: string) {
     setSelected((prev) => {
       const base = prev ?? new Set(allNames)
@@ -120,19 +133,12 @@ export default function ReportsPage() {
 
   const siteName = (id: string | null) => (id ? (sites.find((s) => s.id === id)?.name ?? 'Site') : '—')
 
-  // Honest stats: completion rate = completed / due (due = scheduled instances in range)
+  // Honest stats: completion rate = completed / due. "Due" is the real count of
+  // scheduled checklist_instances in the range (via report_due RPC), completed =
+  // the completion records shown in the table.
   const stats = useMemo(() => {
     const completed = filtered.length
-    const scopeSites = currentSiteId ? 1 : Math.max(1, sites.length)
-    // "Due" only counts ACTIVE templates — inactive/archived ones aren't scheduled,
-    // so they must not inflate the missed count or drag the completion rate down.
-    const selTemplates = uniqTemplates.filter((t) => activeNames.has(t.name) && t.active)
-    let due = 0
-    selTemplates.forEach((t) => {
-      const p = periodsInRange(t.frequency, range.from, range.to)
-      const coverage = currentSiteId ? 1 : (t.siteIds.has(null) ? scopeSites : Math.max(1, t.siteIds.size))
-      due += p * coverage
-    })
+    const due = dueRows.reduce((n, r) => n + Number(r.due), 0)
     const missed = Math.max(0, due - completed)
     const rate = due > 0 ? Math.min(100, Math.round((completed / due) * 100)) : 100
 
@@ -144,15 +150,15 @@ export default function ReportsPage() {
     let worst: { name: string; missed: number; flagged: number } | null = null
     scope.forEach((site) => {
       const doneS = filtered.filter((c) => c.site_id === site.id).length
-      let dueS = 0
-      selTemplates.forEach((t) => { if (t.siteIds.has(null) || t.siteIds.has(site.id)) dueS += periodsInRange(t.frequency, range.from, range.to) })
+      const dueS = dueBySite.get(site.id) ?? 0
       const missedS = Math.max(0, dueS - doneS)
       const flaggedS = filtered.filter((c) => c.site_id === site.id).reduce((n, c) => n + (c.responses ?? []).filter((r) => r.flagged).length, 0)
       if (!worst || missedS > worst.missed || (missedS === worst.missed && flaggedS > worst.flagged)) worst = { name: site.name, missed: missedS, flagged: flaggedS }
     })
 
     return { completed, due, missed, rate, flaggedItems, flaggedChecklists, worst: worst as { name: string; missed: number; flagged: number } | null }
-  }, [filtered, uniqTemplates, activeNames, range, currentSiteId, sites])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtered, dueRows, currentSiteId, sites])
 
   const rows = filtered.map((c) => {
     const resp = c.responses ?? []
