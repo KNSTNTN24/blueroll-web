@@ -178,30 +178,65 @@ export default function ReportsPage() {
   function exportPDF() {
     if (rows.length === 0) { toast.error('Nothing in this range to export'); return }
     const scopeLabel = currentSiteId ? siteName(currentSiteId) : `All sites (${sites.length})`
-    const flaggedList: { name: string; note: string; when: string; site: string }[] = []
-    filtered.forEach((c) => (c.responses ?? []).forEach((r) => { if (r.flagged) flaggedList.push({ name: r.item?.name ?? 'Item', note: r.notes || 'Corrective action recorded at time of check.', when: format(parseISO(c.completed_at), 'dd MMM yyyy HH:mm'), site: siteName(c.site_id) }) }))
     const esc = (s: string) => String(s).replace(/[&<>"]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]!))
+    const reading = (v: unknown) => { if (v === 'yes' || v === true) return 'Yes'; if (v === 'no' || v === false) return 'No'; if (v == null || v === '') return '—'; return String(v) }
+
+    // Flagged items — corrective action cards
+    const flaggedList: { title: string; meta: string; detail: string }[] = []
+    filtered.forEach((c) => (c.responses ?? []).forEach((r) => {
+      if (!r.flagged) return
+      const rd = reading(r.value)
+      flaggedList.push({
+        title: `${r.item?.name ?? 'Check item'}${rd !== '—' ? ` (${rd})` : ''}`,
+        meta: `${format(parseISO(c.completed_at), 'd MMM, HH:mm')} · ${siteName(c.site_id)}`,
+        detail: `${c.template?.name ?? 'Checklist'} · flagged by ${c.completed_by_profile?.full_name ?? 'staff'}. Corrective action: ${r.notes || 'recorded at time of check.'}`,
+      })
+    }))
+
+    // Per-completion detail sections (those with recorded answers)
+    const detailed = filtered.filter((c) => (c.responses ?? []).length > 0)
+    const detailSections = detailed.map((c) => {
+      const resp = c.responses ?? []
+      const flagged = resp.filter((r) => r.flagged).length
+      const itemRows = resp.map((r) => `<tr><td>${esc(r.item?.name ?? 'Item')}</td><td class="num">${esc(reading(r.value))}</td><td class="res ${r.flagged ? 'amber' : 'green'}">${r.flagged ? 'Flagged' : 'Pass'}</td></tr>`).join('')
+      return `<div class="sec"><div class="eyebrow">${esc(c.template?.name ?? 'Checklist')} · ${esc(siteName(c.site_id))} · ${format(parseISO(c.completed_at), 'd MMM yyyy, HH:mm')}</div>
+        <table class="items"><thead><tr><th>Check item</th><th class="num">Reading</th><th class="res">Result</th></tr></thead><tbody>${itemRows}</tbody></table>
+        <div class="signed"><span>Signed: ${esc(c.completed_by_profile?.full_name ?? '—')} · ${esc(siteName(c.site_id))}</span><span>Completed ${format(parseISO(c.completed_at), 'HH:mm')} · ${resp.length - flagged}/${resp.length} items</span></div></div>`
+    }).join('')
+
+    const compact = filtered.filter((c) => (c.responses ?? []).length === 0)
 
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>Compliance report — ${esc(business?.name ?? 'BlueRoll')}</title>
 <style>
-  @page{margin:18mm 16mm}*{margin:0;padding:0;box-sizing:border-box}
-  body{font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#16181d;font-size:12px}
-  .hd{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #16181d;padding-bottom:16px;margin-bottom:22px}
+  @page{margin:16mm 15mm}*{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#16181d;font-size:12px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .hd{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #16181d;padding-bottom:18px;margin-bottom:24px}
   .b{width:24px;height:24px;border-radius:6px;background:#1f9d63;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;vertical-align:middle}
-  h1{font-size:21px;margin:12px 0 3px;letter-spacing:-.01em}.sub{color:#5c626b;font-size:13px}
+  h1{font-size:22px;margin:13px 0 3px;letter-spacing:-.01em}.sub{color:#5c626b;font-size:13px}
   .meta{text-align:right;color:#5c626b;font-size:12px;line-height:1.7}.meta span{color:#9aa0a8}
-  .sum{display:flex;border:1px solid #e9eaed;border-radius:10px;overflow:hidden;margin-bottom:24px}
-  .sum>div{flex:1;padding:12px 16px;border-right:1px solid #eef0f2}.sum>div:last-child{border:none}
-  .lbl{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#9aa0a8;font-weight:600}
-  .val{font-size:19px;font-weight:700;margin-top:5px}
-  h2{font-size:14px;margin:0 0 10px}
-  .flag{border:1px solid #f0d9ad;background:#fdf7ec;border-radius:10px;padding:12px 14px;margin-bottom:8px}
-  .flag .t{font-weight:600;color:#8a6a1f}.flag .m{color:#5c626b;margin-top:3px}.flag .w{color:#9aa0a8;font-size:11px;margin-top:4px}
-  table{width:100%;border-collapse:collapse;margin-top:6px}
-  th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#9aa0a8;padding:7px 8px;border-bottom:1px solid #e7e9ec}
-  td{padding:7px 8px;border-bottom:1px solid #f2f3f5;font-size:11.5px}
-  .foot{margin-top:28px;padding-top:12px;border-top:1px solid #e7e9ec;color:#9aa0a8;font-size:10.5px;display:flex;justify-content:space-between}
-  .pill{font-size:11px;font-weight:600}.clean{color:#1f7a52}.amber{color:#b07d1e}
+  .sum{display:flex;border:1px solid #e9eaed;border-radius:12px;overflow:hidden;margin-bottom:26px}
+  .sum>div{flex:1;padding:14px 18px;border-right:1px solid #eef0f2}.sum>div:last-child{border:none}
+  .lbl{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:#9aa0a8;font-weight:600}
+  .val{font-size:21px;font-weight:700;margin-top:6px}
+  h2{font-size:14px;margin:0 0 12px}.block{margin-bottom:26px}
+  .eyebrow{font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:#9aa0a8;margin-bottom:8px}
+  .flag{border:1px solid #f1e2c4;background:#fbf1e1;border-radius:11px;padding:13px 16px;margin-bottom:8px}
+  .flag .t{font-weight:600;font-size:13.5px;color:#16181d;display:flex;justify-content:space-between;gap:14px}
+  .flag .t span:last-child{color:#8a6a1f;font-weight:500;font-size:12px;white-space:nowrap}
+  .flag .m{font-size:12.5px;color:#6b5313;line-height:1.55;margin-top:4px}
+  .sec{margin-bottom:18px;page-break-inside:avoid}
+  table.items{width:100%;border-collapse:collapse;border:1px solid #e9eaed;border-radius:11px;overflow:hidden}
+  table.items th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:#9aa0a8;font-weight:600;padding:9px 16px;background:#fbfbfc;border-bottom:1px solid #eef0f2}
+  table.items td{padding:10px 16px;border-bottom:1px solid #f2f3f5;font-size:13px;font-weight:500}
+  table.items tr:last-child td{border-bottom:none}
+  .num{text-align:right;font-variant-numeric:tabular-nums}.res{text-align:right;font-weight:600;font-size:12.5px}
+  .green{color:#1f7a52}.amber{color:#b07d1e}
+  .signed{display:flex;justify-content:space-between;font-size:12px;color:#8a9099;padding:6px 2px 0}
+  table.list{width:100%;border-collapse:collapse;margin-top:4px}
+  table.list th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#9aa0a8;padding:7px 8px;border-bottom:1px solid #e7e9ec}
+  table.list td{padding:7px 8px;border-bottom:1px solid #f2f3f5;font-size:11.5px}
+  .pill{font-size:11px;font-weight:600}
+  .foot{margin-top:26px;padding-top:14px;border-top:1px solid #eef0f2;color:#9aa0a8;font-size:11.5px;display:flex;justify-content:space-between}
 </style></head><body>
   <div class="hd">
     <div><div><span class="b">b</span> <b style="letter-spacing:.02em">BLUEROLL</b></div>
@@ -210,19 +245,20 @@ export default function ReportsPage() {
   </div>
   <div class="sum">
     <div><div class="lbl">Completions</div><div class="val">${stats.completed}</div></div>
-    <div><div class="lbl">Completion rate</div><div class="val" style="color:#1f7a52">${stats.rate}%</div><div style="font-size:11px;color:#8a9099;margin-top:3px">${stats.missed} missed of ${stats.due} due</div></div>
+    <div><div class="lbl">Completion rate</div><div class="val" style="color:#1f7a52">${stats.rate}%</div></div>
+    <div><div class="lbl">Missed checks</div><div class="val">${stats.missed}</div></div>
     <div><div class="lbl">Flagged items</div><div class="val">${stats.flaggedItems}</div></div>
-    <div><div class="lbl">Worst site</div><div class="val" style="font-size:16px">${esc(stats.worst?.name ?? '—')}</div></div>
   </div>
-  ${flaggedList.length ? `<h2>Flagged items — corrective action</h2>${flaggedList.map((f) => `<div class="flag"><div class="t">${esc(f.name)}</div><div class="m">${esc(f.note)}</div><div class="w">${esc(f.when)} · ${esc(f.site)}</div></div>`).join('')}<div style="height:18px"></div>` : ''}
-  <h2>Completions in period</h2>
-  <table><thead><tr><th>Date</th><th>Checklist</th><th>Site</th><th>Completed by</th><th>Items</th><th>Status</th></tr></thead><tbody>
-  ${rows.map((r) => `<tr><td>${format(parseISO(r.at), 'dd MMM, HH:mm')}</td><td>${esc(r.name)}</td><td>${esc(r.site)}</td><td>${esc(r.by)}</td><td>${r.ok}/${r.total}</td><td class="pill ${r.flagged ? 'amber' : 'clean'}">${r.flagged ? `${r.flagged} flagged` : 'Clean'}</td></tr>`).join('')}
-  </tbody></table>
-  <div class="foot"><span>Records are timestamped and tamper-evident.</span><span>blueroll.app</span></div>
+  ${flaggedList.length ? `<div class="block"><h2>Flagged items — corrective action</h2>${flaggedList.map((f) => `<div class="flag"><div class="t"><span>${esc(f.title)}</span><span>${esc(f.meta)}</span></div><div class="m">${esc(f.detail)}</div></div>`).join('')}</div>` : ''}
+  ${detailSections ? `<div class="block"><h2>Signed records</h2>${detailSections}</div>` : ''}
+  ${compact.length ? `<div class="block"><h2>${detailSections ? 'Other completions in period' : 'Completions in period'}</h2>
+    <table class="list"><thead><tr><th>Date</th><th>Checklist</th><th>Site</th><th>Completed by</th><th>Status</th></tr></thead><tbody>
+    ${compact.map((c) => `<tr><td>${format(parseISO(c.completed_at), 'dd MMM, HH:mm')}</td><td>${esc(c.template?.name ?? 'Checklist')}</td><td>${esc(siteName(c.site_id))}</td><td>${esc(c.completed_by_profile?.full_name ?? '—')}</td><td class="pill green">Completed</td></tr>`).join('')}
+    </tbody></table></div>` : ''}
+  <div class="foot"><span>Generated by BlueRoll · records are timestamped and tamper-evident</span><span>blueroll.app</span></div>
 </body></html>`
     const w = window.open('', '_blank')
-    if (w) { w.document.write(html); w.document.close(); setTimeout(() => w.print(), 250) }
+    if (w) { w.document.write(html); w.document.close(); setTimeout(() => w.print(), 300) }
   }
 
   const CARD: React.CSSProperties = { background: '#fff', border: '1px solid #e7e9ec', borderRadius: 16, boxShadow: '0 1px 2px rgba(16,24,40,.03),0 10px 28px -24px rgba(16,24,40,.14)' }

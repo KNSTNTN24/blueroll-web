@@ -5,13 +5,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { toast } from 'sonner'
-import { Store, Plus, Pencil, Trash2 } from 'lucide-react'
-import { PageHeader } from '@/components/layout/page-header'
-import { EmptyState } from '@/components/shared/empty-state'
+import { Plus, Pencil, Trash2, X } from 'lucide-react'
 import { InspectionEmpty, EmptyPrimary, SuppliersArt } from '@/components/shared/inspection-empty'
 import { HeaderButton } from '@/components/shared/header-button'
-import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
 
 interface Supplier {
   id: string
@@ -20,289 +16,199 @@ interface Supplier {
   phone: string | null
   address: string | null
   goods_supplied: string | null
+  notes: string | null
   delivery_days: string[] | null
   business_id: string
-  created_at: string
 }
 
-const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const
+const DAY_SHORT: Record<string, string> = { Mon: 'M', Tue: 'T', Wed: 'W', Thu: 'T', Fri: 'F', Sat: 'S', Sun: 'S' }
+const TILE = ['#1f7a52', '#5b6472', '#8a6d52', '#4e6e81']
+const initials = (n: string) => { const p = n.split(' ').filter(Boolean); return (p.length >= 2 ? p[0][0] + p[1][0] : n.slice(0, 2)).toUpperCase() }
+const GRID = 'minmax(140px,1.5fr) minmax(90px,1fr) 158px 112px'
 
-function DayToggles({ selected, onChange }: { selected: string[]; onChange: (days: string[]) => void }) {
-  return (
-    <div className="flex gap-1">
-      {DAYS.map((d) => {
-        const active = selected.includes(d)
-        return (
-          <button
-            key={d}
-            type="button"
-            onClick={() => onChange(active ? selected.filter((x) => x !== d) : [...selected, d])}
-            className={cn(
-              'rounded-md px-2 py-1 text-[11px] font-medium border transition-colors',
-              active
-                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                : 'bg-white text-muted-foreground border-border hover:border-emerald-200'
-            )}
-          >
-            {d}
-          </button>
-        )
-      })}
-    </div>
-  )
-}
+interface Form { name: string; goods: string; contact: string; phone: string; address: string; notes: string; days: string[] }
+const BLANK: Form = { name: '', goods: '', contact: '', phone: '', address: '', notes: '', days: [] }
 
 export default function SuppliersPage() {
   const profile = useAuthStore((s) => s.profile)
   const business = useAuthStore((s) => s.business)
-  const queryClient = useQueryClient()
+  const qc = useQueryClient()
   const isManager = profile?.role === 'owner' || profile?.role === 'manager'
+  const bid = business?.id
 
-  const [showDialog, setShowDialog] = useState(false)
-  const [editing, setEditing] = useState<Supplier | null>(null)
-
-  // Form state
-  const [fName, setFName] = useState('')
-  const [fContact, setFContact] = useState('')
-  const [fPhone, setFPhone] = useState('')
-  const [fAddress, setFAddress] = useState('')
-  const [fGoods, setFGoods] = useState('')
-  const [fDays, setFDays] = useState<string[]>([])
+  const [panelOpen, setPanelOpen] = useState(false)
+  const [shown, setShown] = useState(false)
+  const [editId, setEditId] = useState<string | null>(null)
+  const [form, setForm] = useState<Form>(BLANK)
 
   const { data: suppliers = [], isLoading } = useQuery({
-    queryKey: ['suppliers', business?.id],
-    queryFn: async () => {
-      if (!business?.id) return []
-      const { data, error } = await supabase
-        .from('suppliers')
-        .select('*')
-        .eq('business_id', business.id)
-        .order('name')
-      if (error) throw error
-      return (data ?? []) as Supplier[]
-    },
-    enabled: !!business?.id,
+    queryKey: ['suppliers', bid],
+    enabled: !!bid,
+    queryFn: async () => (await supabase.from('suppliers').select('*').eq('business_id', bid!).order('name')).data as Supplier[] ?? [],
   })
 
-  function openCreate() {
-    setEditing(null)
-    setFName('')
-    setFContact('')
-    setFPhone('')
-    setFAddress('')
-    setFGoods('')
-    setFDays([])
-    setShowDialog(true)
-  }
-
+  function openAdd() { setEditId(null); setForm(BLANK); setPanelOpen(true); requestAnimationFrame(() => setShown(true)) }
   function openEdit(s: Supplier) {
-    setEditing(s)
-    setFName(s.name)
-    setFContact(s.contact_name ?? '')
-    setFPhone(s.phone ?? '')
-    setFAddress(s.address ?? '')
-    setFGoods(s.goods_supplied ?? '')
-    setFDays(s.delivery_days ?? [])
-    setShowDialog(true)
+    setEditId(s.id)
+    setForm({ name: s.name, goods: s.goods_supplied ?? '', contact: s.contact_name ?? '', phone: s.phone ?? '', address: s.address ?? '', notes: s.notes ?? '', days: s.delivery_days ?? [] })
+    setPanelOpen(true); requestAnimationFrame(() => setShown(true))
   }
+  function closePanel() { setShown(false); setTimeout(() => setPanelOpen(false), 300) }
 
-  const saveMutation = useMutation({
+  const save = useMutation({
     mutationFn: async () => {
-      if (!business?.id) throw new Error('No business')
+      if (!bid) throw new Error('No business')
       const payload = {
-        name: fName,
-        contact_name: fContact || null,
-        phone: fPhone || null,
-        address: fAddress || null,
-        goods_supplied: fGoods || null,
-        delivery_days: fDays.length > 0 ? fDays : null,
-        business_id: business.id,
+        name: form.name.trim(), contact_name: form.contact.trim() || null, phone: form.phone.trim() || null,
+        address: form.address.trim() || null, goods_supplied: form.goods.trim() || null, notes: form.notes.trim() || null,
+        delivery_days: form.days.length ? DAYS.filter((d) => form.days.includes(d)) : null, business_id: bid,
       }
-      if (editing) {
-        const { error } = await supabase.from('suppliers').update(payload).eq('id', editing.id)
-        if (error) throw error
-      } else {
-        const { error } = await supabase.from('suppliers').insert(payload)
-        if (error) throw error
-      }
+      if (editId) { const { error } = await supabase.from('suppliers').update(payload).eq('id', editId); if (error) throw error }
+      else { const { error } = await supabase.from('suppliers').insert(payload); if (error) throw error }
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['suppliers'] })
-      toast.success(editing ? 'Supplier updated' : 'Supplier added')
-      setShowDialog(false)
-    },
-    onError: (err: Error) => toast.error(err.message),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['suppliers'] }); toast.success(editId ? 'Supplier updated' : 'Supplier added'); closePanel() },
+    onError: (e: Error) => toast.error(e.message),
   })
 
-  const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from('suppliers').delete().eq('id', id)
-      if (error) throw error
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['suppliers'] })
-      toast.success('Supplier deleted')
-    },
-    onError: (err: Error) => toast.error(err.message),
+  const del = useMutation({
+    mutationFn: async (id: string) => { const { error } = await supabase.from('suppliers').delete().eq('id', id); if (error) throw error },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['suppliers'] }); toast.success('Supplier removed') },
+    onError: (e: Error) => toast.error(e.message),
   })
 
-  if (isLoading) {
-    return (
-      <div className="space-y-6">
-        <PageHeader title="Suppliers" description="Manage your suppliers" />
-        <div className="flex items-center justify-center py-16">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-emerald-600 border-t-transparent" />
-        </div>
-      </div>
-    )
-  }
+  const canSave = form.name.trim().length > 0
 
   return (
-    <div className="space-y-6">
-      <PageHeader title="Suppliers" description="Manage your suppliers">
-        {isManager && (
-          <HeaderButton onClick={openCreate}>
-            <Plus className="h-4 w-4" strokeWidth={2} />
-            Add supplier
-          </HeaderButton>
-        )}
-      </PageHeader>
-
-      {/* Create / Edit Dialog */}
-      {showDialog && (
-        <div className="rounded-lg border border-border bg-white p-4">
-          <form onSubmit={(e) => { e.preventDefault(); saveMutation.mutate() }} className="space-y-4">
-            <h3 className="text-[14px] font-medium text-foreground">
-              {editing ? 'Edit supplier' : 'Add supplier'}
-            </h3>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <label className="text-[13px] font-medium text-foreground">Name</label>
-                <input
-                  required
-                  value={fName}
-                  onChange={(e) => setFName(e.target.value)}
-                  className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-                  placeholder="Supplier name"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-[13px] font-medium text-foreground">Contact name</label>
-                <input
-                  value={fContact}
-                  onChange={(e) => setFContact(e.target.value)}
-                  className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-                  placeholder="Contact person"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-[13px] font-medium text-foreground">Phone</label>
-                <input
-                  value={fPhone}
-                  onChange={(e) => setFPhone(e.target.value)}
-                  className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-                  placeholder="Phone number"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-[13px] font-medium text-foreground">Goods supplied</label>
-                <input
-                  value={fGoods}
-                  onChange={(e) => setFGoods(e.target.value)}
-                  className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-                  placeholder="e.g. Fresh produce, dairy"
-                />
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[13px] font-medium text-foreground">Address</label>
-              <input
-                value={fAddress}
-                onChange={(e) => setFAddress(e.target.value)}
-                className="w-full rounded-md border border-border bg-white px-3 py-2 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-                placeholder="Full address"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[13px] font-medium text-foreground">Delivery days</label>
-              <DayToggles selected={fDays} onChange={setFDays} />
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" size="sm" type="button" onClick={() => setShowDialog(false)}>Cancel</Button>
-              <Button size="sm" type="submit" disabled={saveMutation.isPending}>
-                {saveMutation.isPending ? 'Saving...' : editing ? 'Update' : 'Add'}
-              </Button>
-            </div>
-          </form>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, fontFamily: "'Geist',system-ui,sans-serif", color: '#16181d' }}>
+      {/* header */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 20, flexWrap: 'wrap' }}>
+        <div>
+          <h1 style={{ margin: 0, fontSize: 26, fontWeight: 700, letterSpacing: '-.02em' }}>Suppliers</h1>
+          <div style={{ color: '#6b7280', fontSize: 14, marginTop: 4 }}>{suppliers.length} supplier{suppliers.length === 1 ? '' : 's'} · your approved list, shared across all sites</div>
         </div>
-      )}
+        {isManager && <HeaderButton onClick={openAdd}><Plus className="h-4 w-4" strokeWidth={2} /> Add supplier</HeaderButton>}
+      </div>
 
-      {suppliers.length === 0 ? (
+      {isLoading ? (
+        <div style={{ padding: 48, textAlign: 'center', color: '#9aa0a8', fontSize: 13 }}>Loading…</div>
+      ) : suppliers.length === 0 ? (
         <InspectionEmpty illustration={SuppliersArt} badge="Inspectors ask where your food comes from"
           title="Build your approved supplier list"
           sentence="Add suppliers once — late deliveries, rejections and expiring documents track themselves across every site.">
-          {isManager && <EmptyPrimary onClick={openCreate}><Plus className="h-4 w-4" strokeWidth={2} /> Add your first supplier</EmptyPrimary>}
+          {isManager && <EmptyPrimary onClick={openAdd}><Plus className="h-4 w-4" strokeWidth={2} /> Add your first supplier</EmptyPrimary>}
         </InspectionEmpty>
       ) : (
-        <div className="rounded-lg border border-border bg-white">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-border">
-                <th className="px-4 py-2.5 text-left text-[12px] font-medium text-muted-foreground">Name</th>
-                <th className="px-4 py-2.5 text-left text-[12px] font-medium text-muted-foreground">Contact</th>
-                <th className="px-4 py-2.5 text-left text-[12px] font-medium text-muted-foreground">Phone</th>
-                <th className="px-4 py-2.5 text-left text-[12px] font-medium text-muted-foreground">Address</th>
-                <th className="px-4 py-2.5 text-left text-[12px] font-medium text-muted-foreground">Goods</th>
-                <th className="px-4 py-2.5 text-left text-[12px] font-medium text-muted-foreground">Delivery days</th>
-                {isManager && (
-                  <th className="px-4 py-2.5 text-right text-[12px] font-medium text-muted-foreground">Actions</th>
-                )}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {suppliers.map((s) => (
-                <tr key={s.id} className="hover:bg-accent/50">
-                  <td className="px-4 py-2.5 text-[13px] font-medium text-foreground">{s.name}</td>
-                  <td className="px-4 py-2.5 text-[13px] text-muted-foreground">{s.contact_name || '-'}</td>
-                  <td className="px-4 py-2.5 text-[13px] text-muted-foreground">{s.phone || '-'}</td>
-                  <td className="max-w-[200px] truncate px-4 py-2.5 text-[13px] text-muted-foreground">{s.address || '-'}</td>
-                  <td className="max-w-[150px] truncate px-4 py-2.5 text-[13px] text-muted-foreground">{s.goods_supplied || '-'}</td>
-                  <td className="px-4 py-2.5">
-                    {s.delivery_days && s.delivery_days.length > 0 ? (
-                      <div className="flex flex-wrap gap-1">
-                        {s.delivery_days.map((d) => (
-                          <span key={d} className="rounded border border-border bg-gray-50 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                            {d}
-                          </span>
-                        ))}
-                      </div>
-                    ) : (
-                      <span className="text-[13px] text-muted-foreground">-</span>
-                    )}
-                  </td>
-                  {isManager && (
-                    <td className="px-4 py-2.5">
-                      <div className="flex items-center justify-end gap-1">
-                        <Button variant="ghost" size="icon" onClick={() => openEdit(s)} title="Edit">
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => { if (confirm('Delete this supplier?')) deleteMutation.mutate(s.id) }}
-                          title="Delete"
-                        >
-                          <Trash2 className="h-3.5 w-3.5 text-red-500" />
-                        </Button>
-                      </div>
-                    </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div style={{ background: '#fff', border: '1px solid #e9eaed', borderRadius: 16, boxShadow: '0 1px 2px rgba(16,24,40,.03),0 14px 36px -28px rgba(16,24,40,.16)', overflow: 'hidden' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: GRID, gap: 10, padding: '11px 20px', borderBottom: '1px solid #eef0f2', background: '#fbfbfc' }}>
+            {['Supplier', 'Contact', 'Delivery days', ''].map((h, i) => (
+              <span key={i} style={{ font: "600 11px 'Geist'", letterSpacing: '.06em', textTransform: 'uppercase', color: '#9aa0a8' }}>{h}</span>
+            ))}
+          </div>
+          {suppliers.map((s, i) => {
+            const goods = s.goods_supplied?.trim() || 'Goods not set'
+            const subline = [goods, s.notes?.trim()].filter(Boolean).join(' · ')
+            return (
+              <div key={s.id} className="sup-row" style={{ display: 'grid', gridTemplateColumns: GRID, gap: 10, padding: '13px 20px', borderBottom: i === suppliers.length - 1 ? 'none' : '1px solid #f2f3f5', alignItems: 'center', transition: 'background .14s' }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = '#fafbfb')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 10, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', font: "700 12px 'Geist'", flex: 'none', background: TILE[i % TILE.length] }}>{initials(s.name)}</div>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ font: "600 14px 'Geist'", whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.name}</div>
+                    <div style={{ fontSize: 12.5, color: '#8a9099', marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{subline}</div>
+                  </div>
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ font: "500 13.5px 'Geist'", color: '#41464d', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.contact_name?.trim() || '—'}</div>
+                  <div style={{ fontSize: 12.5, color: '#8a9099', marginTop: 1, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{s.phone?.trim() || '—'}</div>
+                </div>
+                <div style={{ display: 'flex', gap: 3 }}>
+                  {DAYS.map((d) => {
+                    const on = (s.delivery_days ?? []).includes(d)
+                    return <span key={d} style={{ width: 20, height: 20, borderRadius: 5, background: on ? '#e7f0ea' : '#f5f6f7', color: on ? '#1a6e49' : '#c2c6cc', font: `${on ? 600 : 500} 10px 'Geist'`, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>{DAY_SHORT[d]}</span>
+                  })}
+                </div>
+                {isManager ? (
+                  <div className="sup-actions" style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', opacity: 0, transition: 'opacity .14s' }}>
+                    <button onClick={() => openEdit(s)} style={{ display: 'flex', alignItems: 'center', gap: 6, border: '1px solid #e2e4e8', background: '#fff', color: '#41464d', font: "600 12.5px 'Geist'", padding: '6px 12px', borderRadius: 8, cursor: 'pointer' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#cdd1d6'; e.currentTarget.style.color = '#1c1f24' }} onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#e2e4e8'; e.currentTarget.style.color = '#41464d' }}>
+                      <Pencil className="h-[13px] w-[13px]" strokeWidth={1.8} /> Edit
+                    </button>
+                    <button onClick={() => { if (confirm(`Remove ${s.name}?`)) del.mutate(s.id) }} title="Delete" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, border: '1px solid #e2e4e8', background: '#fff', color: '#9aa0a8', borderRadius: 8, cursor: 'pointer' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#eec7c5'; e.currentTarget.style.color = '#c0403a'; e.currentTarget.style.background = '#fdf6f6' }} onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#e2e4e8'; e.currentTarget.style.color = '#9aa0a8'; e.currentTarget.style.background = '#fff' }}>
+                      <Trash2 className="h-3.5 w-3.5" strokeWidth={1.7} />
+                    </button>
+                  </div>
+                ) : <span />}
+              </div>
+            )
+          })}
         </div>
       )}
+
+      {/* slide-over */}
+      {panelOpen && (
+        <>
+          <div onClick={closePanel} style={{ position: 'fixed', inset: 0, background: 'rgba(20,22,27,.36)', zIndex: 60, opacity: shown ? 1 : 0, transition: 'opacity .3s ease-out' }} />
+          <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 460, maxWidth: '94vw', background: '#fff', zIndex: 61, boxShadow: '-24px 0 60px -30px rgba(16,24,40,.4)', display: 'flex', flexDirection: 'column', transform: shown ? 'translateX(0)' : 'translateX(100%)', transition: 'transform .3s cubic-bezier(0.32,0.72,0,1)' }}>
+            <div style={{ flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 24px', borderBottom: '1px solid #eef0f2' }}>
+              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, letterSpacing: '-.01em' }}>{editId ? 'Edit supplier' : 'Add supplier'}</h2>
+              <button onClick={closePanel} style={{ width: 34, height: 34, borderRadius: 9, border: 'none', background: '#f1f2f4', color: '#5c626b', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <X className="h-[17px] w-[17px]" strokeWidth={2} />
+              </button>
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '22px 24px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+              <Field label="Supplier name" required><Input value={form.name} onChange={(v) => setForm((f) => ({ ...f, name: v }))} placeholder="e.g. Brindisa" autoFocus /></Field>
+              <Field label="Goods supplied"><Input value={form.goods} onChange={(v) => setForm((f) => ({ ...f, goods: v }))} placeholder="e.g. Fresh produce, dairy" /></Field>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                <Field label="Contact name"><Input value={form.contact} onChange={(v) => setForm((f) => ({ ...f, contact: v }))} placeholder="Contact person" /></Field>
+                <Field label="Phone"><Input value={form.phone} onChange={(v) => setForm((f) => ({ ...f, phone: v }))} placeholder="Phone number" /></Field>
+              </div>
+              <Field label="Address"><Input value={form.address} onChange={(v) => setForm((f) => ({ ...f, address: v }))} placeholder="Full address" /></Field>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+                <label style={{ font: "600 13px 'Geist'", color: '#41464d' }}>Delivery days</label>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {DAYS.map((d) => {
+                    const on = form.days.includes(d)
+                    return (
+                      <button key={d} onClick={() => setForm((f) => ({ ...f, days: on ? f.days.filter((x) => x !== d) : [...f.days, d] }))}
+                        style={{ flex: 1, border: on ? '1px solid #1f9d63' : '1px solid #e2e4e8', background: on ? '#e7f0ea' : '#fff', color: on ? '#1a6e49' : '#8a9099', font: `${on ? 600 : 500} 12.5px 'Geist'`, padding: '9px 0', borderRadius: 9, cursor: 'pointer' }}>{DAY_SHORT[d]}</button>
+                    )
+                  })}
+                </div>
+              </div>
+              <Field label="Notes"><Input value={form.notes} onChange={(v) => setForm((f) => ({ ...f, notes: v }))} placeholder="e.g. min order £150" /></Field>
+            </div>
+            <div style={{ flex: 'none', display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '16px 24px', borderTop: '1px solid #eef0f2' }}>
+              <button onClick={closePanel} style={{ background: '#fff', border: '1px solid #e2e4e8', color: '#41464d', font: "600 14px 'Geist'", padding: '11px 18px', borderRadius: 11, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={() => save.mutate()} disabled={!canSave || save.isPending}
+                style={{ background: canSave ? '#1f9d63' : '#a9d8c0', border: 'none', color: '#fff', font: "600 14px 'Geist'", padding: '11px 20px', borderRadius: 11, cursor: canSave ? 'pointer' : 'not-allowed', boxShadow: canSave ? '0 1px 2px rgba(16,24,40,.1)' : 'none' }}>
+                {save.isPending ? 'Saving…' : editId ? 'Save changes' : 'Add supplier'}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      <style>{`.sup-row:hover .sup-actions{opacity:1 !important}`}</style>
     </div>
+  )
+}
+
+function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+      <label style={{ font: "600 13px 'Geist'", color: '#41464d' }}>{label}{required && <span style={{ color: '#c0403a' }}> *</span>}</label>
+      {children}
+    </div>
+  )
+}
+
+function Input({ value, onChange, placeholder, autoFocus }: { value: string; onChange: (v: string) => void; placeholder?: string; autoFocus?: boolean }) {
+  return (
+    <input value={value} autoFocus={autoFocus} onChange={(e) => onChange(e.target.value)} placeholder={placeholder}
+      style={{ border: '1px solid #e2e4e8', borderRadius: 10, padding: '11px 13px', font: "500 14px 'Geist'", color: '#16181d', outline: 'none', width: '100%' }}
+      onFocus={(e) => { e.currentTarget.style.borderColor = '#1f9d63'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(31,157,99,.12)' }}
+      onBlur={(e) => { e.currentTarget.style.borderColor = '#e2e4e8'; e.currentTarget.style.boxShadow = 'none' }} />
   )
 }
