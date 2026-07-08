@@ -8,6 +8,7 @@ import { toast } from 'sonner'
 import { Store, Plus, Pencil, Trash2 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { EmptyState } from '@/components/shared/empty-state'
+import { InspectionEmpty, EmptyPrimary, SuppliersArt } from '@/components/shared/inspection-empty'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
@@ -236,12 +237,11 @@ export default function SuppliersPage() {
       )}
 
       {suppliers.length === 0 ? (
-        <EmptyState
-          icon={Store}
-          title="No suppliers"
-          description="Add your first supplier to start tracking deliveries."
-          action={isManager ? { label: 'Add supplier', onClick: openCreate } : undefined}
-        />
+        <InspectionEmpty illustration={SuppliersArt} badge="Inspectors ask where your food comes from"
+          title="Build your approved supplier list"
+          sentence="Add suppliers once — late deliveries, rejections and expiring documents track themselves across every site.">
+          {isManager && <EmptyPrimary onClick={openCreate}><Plus className="h-4 w-4" strokeWidth={2} /> Add your first supplier</EmptyPrimary>}
+        </InspectionEmpty>
       ) : (
         <div className="rounded-lg border border-border bg-white">
           <table className="w-full">

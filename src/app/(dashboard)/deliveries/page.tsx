@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation'
 import { Truck, Plus, Image as ImageIcon } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { EmptyState } from '@/components/shared/empty-state'
+import { InspectionEmpty, EmptyPrimary, DeliveriesArt } from '@/components/shared/inspection-empty'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { format } from 'date-fns'
@@ -83,12 +84,11 @@ export default function DeliveriesPage() {
       </PageHeader>
 
       {deliveries.length === 0 ? (
-        <EmptyState
-          icon={Truck}
-          title="No deliveries"
-          description="Record your first delivery to start tracking."
-          action={{ label: 'New delivery', onClick: () => router.push('/deliveries/new') }}
-        />
+        <InspectionEmpty illustration={DeliveriesArt} badge="Inspectors ask how you check goods in"
+          title="Log every delivery in seconds"
+          sentence="A temperature check at the door becomes a timestamped record — proof your food came in safe.">
+          <EmptyPrimary onClick={() => router.push('/deliveries/new')}><Plus className="h-4 w-4" strokeWidth={2} /> Log your first delivery</EmptyPrimary>
+        </InspectionEmpty>
       ) : (
         <div className="rounded-lg border border-border bg-white">
           <table className="w-full">

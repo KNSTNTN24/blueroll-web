@@ -5,7 +5,8 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useRouter } from 'next/navigation'
-import { FileText, Plus, Search, Eye } from 'lucide-react'
+import { FileText, Plus, Search, Eye, Upload } from 'lucide-react'
+import { InspectionEmpty, EmptyPrimary, DocumentsArt } from '@/components/shared/inspection-empty'
 import { PageHeader } from '@/components/layout/page-header'
 import { EmptyState } from '@/components/shared/empty-state'
 import { Button } from '@/components/ui/button'
@@ -134,13 +135,14 @@ export default function DocumentsPage() {
         </div>
       </div>
 
-      {filtered.length === 0 ? (
-        <EmptyState
-          icon={FileText}
-          title="No documents"
-          description={documents.length === 0 ? 'Upload your first document to get started.' : 'No documents match your filters.'}
-          action={documents.length === 0 ? { label: 'Upload document', onClick: () => router.push('/documents/upload') } : undefined}
-        />
+      {documents.length === 0 ? (
+        <InspectionEmpty illustration={DocumentsArt} badge="Inspectors ask for these on the spot"
+          title="Keep your paperwork inspection-ready"
+          sentence="Certificates and reports for every site in one place — with expiry reminders.">
+          <EmptyPrimary onClick={() => router.push('/documents/upload')}><Upload className="h-4 w-4" strokeWidth={1.9} /> Upload your first document</EmptyPrimary>
+        </InspectionEmpty>
+      ) : filtered.length === 0 ? (
+        <div className="rounded-lg border border-border bg-white px-4 py-10 text-center text-[13px] text-muted-foreground">No documents match your filters.</div>
       ) : (
         <div className="rounded-lg border border-border bg-white">
           <table className="w-full">

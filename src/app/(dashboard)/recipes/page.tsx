@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { toast } from 'sonner'
 import { Search, Plus, Sparkles, Eye, Pencil, Trash2, Image as ImageIcon } from 'lucide-react'
+import { InspectionEmpty, EmptyPrimary, EmptySecondary, RecipesArt } from '@/components/shared/inspection-empty'
 import { cn } from '@/lib/utils'
 import { ALLERGEN_LABELS, type EUAllergen } from '@/lib/constants'
 import { effectiveDietary } from '@/lib/dietary'
@@ -129,16 +130,18 @@ export default function RecipesPage() {
       {/* Cards */}
       {isLoading ? (
         <div className="flex items-center justify-center py-16 text-[13px] text-muted-foreground">Loading recipes…</div>
+      ) : recipes.length === 0 ? (
+        <InspectionEmpty illustration={RecipesArt} badge="Powers your allergen matrix & HACCP evidence"
+          title="Build your recipe library"
+          sentence="Every dish you add fills in allergens and HACCP control methods automatically.">
+          {isManager && <>
+            <EmptyPrimary onClick={() => router.push('/recipes/new')}><Plus className="h-4 w-4" strokeWidth={2} /> Add your first recipe</EmptyPrimary>
+            <EmptySecondary onClick={() => router.push('/recipes/import')}><Sparkles className="h-4 w-4 text-brand" strokeWidth={1.8} /> Import with AI</EmptySecondary>
+          </>}
+        </InspectionEmpty>
       ) : filtered.length === 0 ? (
-        <div className="rounded-[14px] border border-border bg-card px-6 py-12 text-center shadow-[0_1px_2px_rgba(16,24,40,.04)]">
-          <p className="text-[14px] font-semibold text-foreground">
-            {search ? <>No recipes match &ldquo;{search}&rdquo;.</> : 'No recipes yet.'}
-          </p>
-          {isManager && !search && tagFilter.length === 0 && (
-            <button onClick={() => router.push('/recipes/new')} className="mt-3 inline-flex items-center gap-1.5 rounded-[10px] bg-brand px-3.5 py-2 text-[13px] font-semibold text-white hover:opacity-90">
-              <Plus className="h-4 w-4" /> Add your first recipe
-            </button>
-          )}
+        <div className="rounded-[14px] border border-border bg-card px-6 py-12 text-center text-[14px] font-semibold text-foreground shadow-[0_1px_2px_rgba(16,24,40,.04)]">
+          {search ? <>No recipes match &ldquo;{search}&rdquo;.</> : 'No recipes match your filters.'}
         </div>
       ) : (
         <div className="grid gap-3.5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(330px, 1fr))' }}>

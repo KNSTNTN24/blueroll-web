@@ -1,11 +1,13 @@
 'use client'
 
 import { useState, useMemo } from 'react'
+import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
-import { Search, Download, Printer, Check } from 'lucide-react'
+import { Search, Download, Printer, Check, Plus, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { InspectionEmpty, EmptyPrimary, EmptySecondary, AllergenArt } from '@/components/shared/inspection-empty'
 import {
   EU_ALLERGENS,
   ALLERGEN_LABELS,
@@ -30,6 +32,7 @@ function getAllergens(recipe: any): string[] {
 
 export default function AllergensPage() {
   const business = useAuthStore((s) => s.business)
+  const router = useRouter()
   const [search, setSearch] = useState('')
 
   const { data: recipes = [], isLoading } = useQuery({
@@ -210,6 +213,13 @@ export default function AllergensPage() {
 
       {isLoading ? (
         <div className="flex items-center justify-center py-16 text-[13px] text-muted-foreground">Loading allergen data…</div>
+      ) : recipes.length === 0 ? (
+        <InspectionEmpty illustration={AllergenArt} badge="The first thing inspectors check for allergens"
+          title="Your allergen matrix builds itself"
+          sentence="Add recipes and all 14 EU allergens map themselves — printable any time.">
+          <EmptyPrimary onClick={() => router.push('/recipes/new')}><Plus className="h-4 w-4" strokeWidth={2} /> Add your first recipe</EmptyPrimary>
+          <EmptySecondary onClick={() => router.push('/recipes/import')}><Sparkles className="h-4 w-4 text-brand" strokeWidth={1.8} /> Import menu with AI</EmptySecondary>
+        </InspectionEmpty>
       ) : (
         <>
           {/* Matrix */}
