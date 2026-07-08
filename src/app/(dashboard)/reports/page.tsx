@@ -10,7 +10,7 @@ import { toast } from 'sonner'
 
 type Preset = 'today' | '7d' | '30d' | 'custom'
 
-interface TplRow { id: string; name: string; frequency: string; site_id: string | null }
+interface TplRow { id: string; name: string; frequency: string; site_id: string | null; active: boolean }
 interface Completion {
   id: string; site_id: string | null; completed_at: string; template_id: string
   template?: { name: string } | null
@@ -65,7 +65,7 @@ export default function ReportsPage() {
     queryKey: ['report-templates', bid, currentSiteId],
     enabled: !!bid,
     queryFn: async () => {
-      let q = supabase.from('checklist_templates').select('id, name, frequency, site_id').eq('business_id', bid!)
+      let q = supabase.from('checklist_templates').select('id, name, frequency, site_id, active').eq('business_id', bid!)
       if (currentSiteId) q = q.eq('site_id', currentSiteId)
       return (await q.order('name')).data as TplRow[] ?? []
     },
@@ -88,10 +88,11 @@ export default function ReportsPage() {
 
   // Unique templates (dedup by name), with frequency + site coverage
   const uniqTemplates = useMemo(() => {
-    const map = new Map<string, { name: string; frequency: string; siteIds: Set<string | null> }>()
+    const map = new Map<string, { name: string; frequency: string; siteIds: Set<string | null>; active: boolean }>()
     templates.forEach((t) => {
-      const e = map.get(t.name) ?? { name: t.name, frequency: t.frequency, siteIds: new Set<string | null>() }
+      const e = map.get(t.name) ?? { name: t.name, frequency: t.frequency, siteIds: new Set<string | null>(), active: false }
       e.siteIds.add(t.site_id)
+      if (t.active) e.active = true // active if any copy is active
       map.set(t.name, e)
     })
     return [...map.values()].sort((a, b) => a.name.localeCompare(b.name))
@@ -123,7 +124,9 @@ export default function ReportsPage() {
   const stats = useMemo(() => {
     const completed = filtered.length
     const scopeSites = currentSiteId ? 1 : Math.max(1, sites.length)
-    const selTemplates = uniqTemplates.filter((t) => activeNames.has(t.name))
+    // "Due" only counts ACTIVE templates — inactive/archived ones aren't scheduled,
+    // so they must not inflate the missed count or drag the completion rate down.
+    const selTemplates = uniqTemplates.filter((t) => activeNames.has(t.name) && t.active)
     let due = 0
     selTemplates.forEach((t) => {
       const p = periodsInRange(t.frequency, range.from, range.to)
@@ -339,7 +342,11 @@ export default function ReportsPage() {
         <Div />
         <Cell label="Flagged items" value={String(stats.flaggedItems)} dot={stats.flaggedItems ? '#d98a1a' : undefined} sub={stats.flaggedChecklists ? `in ${stats.flaggedChecklists} checklist${stats.flaggedChecklists === 1 ? '' : 's'}` : 'none flagged'} eyebrow={EYEBROW} />
         <Div />
-        <Cell label="Worst site" value={stats.worst?.name ?? '—'} valueSize={20} sub={stats.worst && stats.worst.missed > 0 ? `${stats.worst.missed} missed check${stats.worst.missed === 1 ? '' : 's'}` : 'all on track'} eyebrow={EYEBROW} />
+        {currentSiteId ? (
+          <Cell label="Missed checks" value={String(stats.missed)} dot={stats.missed ? '#d98a1a' : undefined} sub={stats.missed ? `${stats.completed} of ${stats.due} done` : 'all checks done'} eyebrow={EYEBROW} />
+        ) : (
+          <Cell label="Worst site" value={stats.worst && stats.worst.missed > 0 ? stats.worst.name : '—'} valueSize={20} sub={stats.worst && stats.worst.missed > 0 ? `${stats.worst.missed} missed check${stats.worst.missed === 1 ? '' : 's'}` : 'all sites on track'} eyebrow={EYEBROW} />
+        )}
       </div>
 
       {/* table */}
