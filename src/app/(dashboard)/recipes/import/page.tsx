@@ -4,665 +4,255 @@ import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
-import { useAuthStore } from '@/stores/auth-store'
 import { toast } from 'sonner'
-import {
-  ArrowLeft, FileText, FileImage, Upload, Sparkles, Save, Loader2,
-} from 'lucide-react'
-import { PageHeader } from '@/components/layout/page-header'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import {
-  EU_ALLERGENS,
-  ALLERGEN_LABELS,
-} from '@/lib/constants'
+import { ChevronLeft, Sparkles, Check, X, AlertTriangle, Image as ImageIcon } from 'lucide-react'
+import { EU_ALLERGENS, ALLERGEN_LABELS } from '@/lib/constants'
 import { HACCP_RECIPE_METHODS } from '@/lib/haccp-methods'
-import { TagInput } from '@/components/tag-input'
-import { fileToImageInput, MAX_RECIPE_IMAGES } from '@/lib/recipe-images'
+import { fileToImageInput } from '@/lib/recipe-images'
 
-type TabId = 'text' | 'pdf' | 'photo'
-
-interface ParsedIngredient {
-  name: string
-  quantity: string
-  unit: string
-  allergens: string[]
+interface PIng { name: string; quantity: string; unit: string; allergens: string[] }
+interface Parsed {
+  name: string; description: string; category: string; instructions: string
+  cooking_method: string; cooking_temp: string; cooking_time: string; cooking_time_unit: string
+  chilling_method: string; freezing_instructions: string; defrosting_instructions: string; reheating_instructions: string
+  hot_holding_required: boolean; extra_care_flags: string[]; haccp_methods: string[]; ingredients: PIng[]
 }
+const CONTROLS = HACCP_RECIPE_METHODS.filter((m) => m.id !== 'cooking_safely')
+const SAMPLE = `Mushroom Risotto — serves 4
 
-interface ParsedRecipe {
-  name: string
-  description: string
-  tags: string[]
-  instructions: string
-  cooking_method: string
-  cooking_temp: string
-  cooking_time: string
-  cooking_time_unit: string
-  chilling_method: string
-  freezing_instructions: string
-  defrosting_instructions: string
-  reheating_instructions: string
-  hot_holding_required: boolean
-  extra_care_flags: string[]
-  haccp_methods: string[]
-  ingredients: ParsedIngredient[]
-}
+Ingredients
+- 300g arborio rice
+- 400g chestnut mushrooms
+- 1 onion, diced
+- 100ml white wine
+- 50g parmesan
+- 30g butter
+- 1L vegetable stock
 
-const emptyParsed: ParsedRecipe = {
-  name: '',
-  description: '',
-  tags: [],
-  instructions: '',
-  cooking_method: '',
-  cooking_temp: '',
-  cooking_time: '',
-  cooking_time_unit: 'minutes',
-  chilling_method: '',
-  freezing_instructions: '',
-  defrosting_instructions: '',
-  reheating_instructions: '',
-  hot_holding_required: false,
-  extra_care_flags: [],
-  haccp_methods: [],
-  ingredients: [],
-}
+Method
+Sauté the onion and mushrooms in butter, stir in the rice, deglaze with wine, then add the stock a ladle at a time until creamy. Finish with parmesan.`
 
-export default function ImportRecipePage() {
+export default function AIImportPage() {
   const router = useRouter()
-  const queryClient = useQueryClient()
-  const profile = useAuthStore((s) => s.profile)
-  const business = useAuthStore((s) => s.business)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-
-  const [tab, setTab] = useState<TabId>('text')
-  const [textInput, setTextInput] = useState('')
-  const [file, setFile] = useState<File | null>(null)
-  const [photos, setPhotos] = useState<File[]>([])     // images (up to 5)
-  const [importing, setImporting] = useState(false)
+  const qc = useQueryClient()
+  const [phase, setPhase] = useState<'input' | 'analyzing' | 'review'>('input')
+  const [mode, setMode] = useState<'text' | 'photo' | 'url'>('text')
+  const [raw, setRaw] = useState('')
+  const [url, setUrl] = useState('')
+  const [photos, setPhotos] = useState<File[]>([])
+  const [step, setStep] = useState(0)
+  const [parsed, setParsed] = useState<Parsed | null>(null)
+  const [confirmed, setConfirmed] = useState<Set<number>>(new Set())
   const [saving, setSaving] = useState(false)
-  const [parsed, setParsed] = useState<ParsedRecipe | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
 
-  const tabs: { id: TabId; label: string; icon: any }[] = [
-    { id: 'text', label: 'Text', icon: FileText },
-    { id: 'pdf', label: 'PDF', icon: FileText },
-    { id: 'photo', label: 'Photo', icon: FileImage },
-  ]
+  const canExtract = mode === 'text' ? raw.trim().length > 20 : mode === 'photo' ? photos.length > 0 : url.trim().length > 8
 
-  async function handleImport() {
-    if (tab === 'text' && !textInput.trim()) {
-      toast.error('Please paste recipe text')
-      return
-    }
-    if (tab === 'pdf' && !file) { toast.error('Please select a file'); return }
-    if (tab === 'photo' && photos.length === 0) { toast.error('Please select at least one photo'); return }
-
-    setImporting(true)
+  async function extract() {
+    if (!canExtract) return
+    setPhase('analyzing'); setStep(0)
+    const timers = [setTimeout(() => setStep(1), 700), setTimeout(() => setStep(2), 1400)]
     try {
-      let payload: any = {}
-
-      if (tab === 'text') {
-        payload.text = textInput
-      } else if (tab === 'photo') {
-        payload.images = await Promise.all(photos.map(fileToImageInput))
-      } else if (file) {
-        const buffer = await file.arrayBuffer()
-        const base64 = btoa(
-          new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
-        )
-        payload.pdf_base64 = base64
-        payload.filename = file.name
-      }
-
-      const { data, error } = await supabase.functions.invoke('import-recipe', {
-        body: payload,
-      })
-
+      const payload: any = {}
+      if (mode === 'text') payload.text = raw
+      else if (mode === 'url') payload.text = `Recipe from ${url}`
+      else payload.images = await Promise.all(photos.map(fileToImageInput))
+      const { data, error } = await supabase.functions.invoke('import-recipe', { body: payload })
       if (error) throw error
-
-      // Map response — Edge Function returns camelCase
       const result = typeof data === 'string' ? JSON.parse(data) : data
       const r = result.recipe ?? result
-      setParsed({
-        name: r.name ?? '',
-        description: r.description ?? '',
-        // tags from the updated edge function; legacy responses map category -> one tag.
-        // Capitalise+s reproduces the backfill labels for all 8 legacy values
-        // (starter->Starters … beverage->Beverages), so legacy AI responses land on
-        // the existing backfilled tags instead of creating near-duplicates.
-        tags: Array.isArray(r.tags) && r.tags.length > 0
-          ? r.tags
-          : r.category && r.category !== 'other'
-            ? [r.category.charAt(0).toUpperCase() + r.category.slice(1) + 's']
-            : [],
-        instructions: r.instructions ?? '',
-        cooking_method: r.cookingMethod ?? r.cooking_method ?? '',
-        cooking_temp: (r.cookingTemp ?? r.cooking_temp ?? '').toString(),
-        cooking_time: (r.cookingTime ?? r.cooking_time ?? '').toString(),
-        cooking_time_unit: r.cookingTimeUnit ?? r.cooking_time_unit ?? 'minutes',
-        chilling_method: r.chillingMethod ?? r.chilling_method ?? '',
-        freezing_instructions: r.freezingInstructions ?? r.freezing_instructions ?? '',
-        defrosting_instructions: r.defrostingInstructions ?? r.defrosting_instructions ?? '',
-        reheating_instructions: r.reheatingInstructions ?? r.reheating_instructions ?? '',
-        hot_holding_required: r.hotHoldingRequired ?? r.hot_holding_required ?? false,
-        extra_care_flags: r.extraCareFlags ?? r.extra_care_flags ?? [],
-        haccp_methods: [],
-        ingredients: (r.ingredients ?? []).map((i: any) => ({
-          name: i.name ?? '',
-          quantity: i.quantity?.toString() ?? '',
-          unit: i.unit ?? '',
-          allergens: i.allergens ?? [],
-        })),
-      })
-      toast.success('Recipe parsed successfully')
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to import recipe')
-    } finally {
-      setImporting(false)
+      const p: Parsed = {
+        name: r.name ?? '', description: r.description ?? '', category: r.category ?? '',
+        instructions: r.instructions ?? '', cooking_method: r.cookingMethod ?? r.cooking_method ?? '',
+        cooking_temp: (r.cookingTemp ?? r.cooking_temp ?? '').toString(), cooking_time: (r.cookingTime ?? r.cooking_time ?? '').toString(), cooking_time_unit: r.cookingTimeUnit ?? 'minutes',
+        chilling_method: r.chillingMethod ?? '', freezing_instructions: r.freezingInstructions ?? '', defrosting_instructions: r.defrostingInstructions ?? '', reheating_instructions: r.reheatingInstructions ?? '',
+        hot_holding_required: r.hotHoldingRequired ?? false, extra_care_flags: r.extraCareFlags ?? [],
+        haccp_methods: Array.isArray(r.haccp_methods) ? r.haccp_methods : [],
+        ingredients: (r.ingredients ?? []).map((i: any) => ({ name: i.name ?? '', quantity: (i.quantity ?? '').toString(), unit: i.unit ?? '', allergens: i.allergens ?? [] })),
+      }
+      timers.forEach(clearTimeout); setStep(3)
+      setTimeout(() => { setParsed(p); setConfirmed(new Set()); setPhase('review') }, 500)
+    } catch (e: any) {
+      timers.forEach(clearTimeout); toast.error(e.message || 'Could not read the recipe'); setPhase('input')
     }
   }
 
-  function updateParsed(field: keyof ParsedRecipe, value: any) {
+  const allergenUnion = parsed ? [...new Set(parsed.ingredients.flatMap((i) => i.allergens))] : []
+  const flaggedIdx = parsed ? parsed.ingredients.map((i, idx) => (i.allergens.length && !confirmed.has(idx) ? idx : -1)).filter((x) => x >= 0) : []
+  const dietary = (() => {
+    const a = allergenUnion
+    return [a.every((x) => !['milk', 'eggs', 'fish', 'crustaceans', 'molluscs'].includes(x)) && 'Vegan', a.every((x) => !['fish', 'crustaceans', 'molluscs'].includes(x)) && 'Vegetarian', !a.includes('gluten') && 'Gluten-free', !a.includes('milk') && 'Dairy-free'].filter(Boolean) as string[]
+  })()
+
+  function removeTag(idx: number, a: string) { setParsed((p) => p ? { ...p, ingredients: p.ingredients.map((ing, i) => i === idx ? { ...ing, allergens: ing.allergens.filter((x) => x !== a) } : ing) } : p); setConfirmed((s) => new Set(s).add(idx)) }
+  function toggleHaccp(id: string) { setParsed((p) => p ? { ...p, haccp_methods: p.haccp_methods.includes(id) ? p.haccp_methods.filter((x) => x !== id) : [...p.haccp_methods, id] } : p) }
+
+  async function save() {
     if (!parsed) return
-    setParsed({ ...parsed, [field]: value })
-  }
-
-  function updateIngredient(idx: number, field: keyof ParsedIngredient, value: any) {
-    if (!parsed) return
-    const updated = parsed.ingredients.map((ing, i) =>
-      i === idx ? { ...ing, [field]: value } : ing
-    )
-    setParsed({ ...parsed, ingredients: updated })
-  }
-
-  function toggleIngredientAllergen(idx: number, allergen: string) {
-    if (!parsed) return
-    const ing = parsed.ingredients[idx]
-    const has = ing.allergens.includes(allergen)
-    updateIngredient(
-      idx,
-      'allergens',
-      has ? ing.allergens.filter((a) => a !== allergen) : [...ing.allergens, allergen]
-    )
-  }
-
-  async function handleSave() {
-    if (!parsed || !parsed.name.trim()) {
-      toast.error('Recipe name is required')
-      return
-    }
-    if (!business?.id) {
-      toast.error('No business found')
-      return
-    }
-
     setSaving(true)
     try {
-      const validIngredients = parsed.ingredients.filter((i) => i.name.trim())
-
-      const { data: rpcResult, error: rpcError } = await supabase.rpc('create_recipe_with_ingredients', {
+      const valid = parsed.ingredients.filter((i) => i.name.trim())
+      const { data: rpc, error } = await supabase.rpc('create_recipe_with_ingredients', {
         p: {
           recipe: {
-            name: parsed.name.trim(),
-            description: parsed.description.trim() || null,
-            instructions: parsed.instructions.trim() || null,
-            cooking_method: parsed.cooking_method.trim() || null,
-            cooking_temp: parsed.cooking_temp || null,
-            cooking_time: parsed.cooking_time || null,
-            cooking_time_unit: parsed.cooking_time_unit,
-            chilling_method: parsed.chilling_method.trim() || null,
-            freezing_instructions: parsed.freezing_instructions.trim() || null,
-            defrosting_instructions: parsed.defrosting_instructions.trim() || null,
-            reheating_instructions: parsed.reheating_instructions.trim() || null,
-            hot_holding_required: parsed.hot_holding_required,
-            haccp_methods: parsed.haccp_methods,
+            name: parsed.name.trim() || 'Imported recipe', description: parsed.description.trim() || null, category: parsed.category || null,
+            instructions: parsed.instructions.trim() || null, cooking_method: parsed.cooking_method.trim() || null,
+            cooking_temp: parsed.cooking_temp || null, cooking_time: parsed.cooking_time || null, cooking_time_unit: parsed.cooking_time_unit,
+            chilling_method: parsed.chilling_method.trim() || null, freezing_instructions: parsed.freezing_instructions.trim() || null,
+            defrosting_instructions: parsed.defrosting_instructions.trim() || null, reheating_instructions: parsed.reheating_instructions.trim() || null,
+            hot_holding_required: parsed.hot_holding_required, haccp_methods: parsed.haccp_methods,
           },
-          ingredients: validIngredients.map((ing) => ({
-            name: ing.name.trim(),
-            allergens: ing.allergens,
-            quantity: ing.quantity?.toString().trim() || null,
-            unit: ing.unit.trim() || null,
-          })),
-          tags: parsed.tags,
+          ingredients: valid.map((ing) => ({ name: ing.name.trim(), allergens: ing.allergens, quantity: ing.quantity?.toString().trim() || null, unit: ing.unit.trim() || null })),
+          tags: [],
         },
       })
-      if (rpcError) throw rpcError
-      const recipeId = (rpcResult as { recipe_id: string }).recipe_id
-
-      if (parsed.extra_care_flags.length > 0) {
-        const { error: flagErr } = await supabase
-          .from('recipes')
-          .update({ extra_care_flags: parsed.extra_care_flags })
-          .eq('id', recipeId)
-        if (flagErr) console.warn('Failed to set extra_care_flags (non-critical):', flagErr.message)
-      }
-
-      toast.success('Recipe saved')
-      queryClient.invalidateQueries({ queryKey: ['recipes'] })
-      queryClient.invalidateQueries({ queryKey: ['haccp-recipes'] })
-      queryClient.invalidateQueries({ queryKey: ['tags'] })
-      queryClient.invalidateQueries({ queryKey: ['menu-recipes'] })
-      queryClient.invalidateQueries({ queryKey: ['allergen-recipes'] })
+      if (error) throw error
+      const recipeId = (rpc as { recipe_id: string }).recipe_id
+      if (parsed.extra_care_flags.length) await supabase.from('recipes').update({ extra_care_flags: parsed.extra_care_flags }).eq('id', recipeId)
+      toast.success(`"${parsed.name.trim() || 'Recipe'}" added to recipes`)
+      ;['recipes', 'haccp-recipes', 'menu-recipes', 'menu-all-recipes', 'allergen-recipes'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }))
       router.push(`/recipes/${recipeId}`)
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to save recipe')
-    } finally {
-      setSaving(false)
-    }
+    } catch (e: any) { toast.error(e.message || 'Failed to save') } finally { setSaving(false) }
   }
 
+  const CARD: React.CSSProperties = { background: '#fff', border: '1px solid #e9eaed', borderRadius: 16, padding: 20 }
+  const modeChip = (on: boolean): React.CSSProperties => ({ border: on ? 'none' : '1px solid #e5e7ea', background: on ? '#16181d' : '#fff', color: on ? '#fff' : '#41464d', font: "600 13px 'Geist'", padding: '8px 15px', borderRadius: 9, cursor: 'pointer' })
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 w-7 p-0"
-          onClick={() => router.push('/recipes')}
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <PageHeader
-          title="AI Recipe Import"
-          description="Import a recipe from text, PDF, or photo using AI"
-        />
+    <div style={{ fontFamily: "'Geist',system-ui,sans-serif", color: '#16181d', margin: '-16px -24px 0' }}>
+      {/* top bar */}
+      <div style={{ position: 'sticky', top: 0, zIndex: 20, height: 62, background: '#fff', borderBottom: '1px solid #eceef0', display: 'flex', alignItems: 'center', gap: 14, padding: '0 24px' }}>
+        <button onClick={() => router.push('/recipes')} style={{ display: 'flex', alignItems: 'center', gap: 4, border: 'none', background: 'none', color: '#6b7280', font: "600 13.5px 'Geist'", cursor: 'pointer' }}><ChevronLeft className="h-4 w-4" strokeWidth={2} /> Recipes</button>
+        <span style={{ width: 1, height: 22, background: '#eceef0' }} />
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6, font: "700 15px 'Geist'" }}><Sparkles className="h-4 w-4" style={{ color: '#1f9d63' }} strokeWidth={2} /> AI Import</span>
+        <div style={{ marginLeft: 18, display: 'flex', alignItems: 'center', gap: 8 }}>
+          {[['Paste', phase === 'input'], ['Review', phase === 'review']].map(([label, active], i) => (
+            <button key={label as string} onClick={() => { if (i === 0) setPhase('input'); else if (parsed) setPhase('review') }} style={{ display: 'flex', alignItems: 'center', gap: 7, border: 'none', background: 'none', cursor: 'pointer' }}>
+              <span style={{ width: 20, height: 20, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', font: "700 11px 'Geist'", background: (active || (i === 0 && parsed)) ? '#1f9d63' : '#eef0f2', color: (active || (i === 0 && parsed)) ? '#fff' : '#8a9099' }}>{i + 1}</span>
+              <span style={{ font: `600 13px 'Geist'`, color: active ? '#16181d' : '#8a9099' }}>{label as string}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
-      {!parsed ? (
-        <div className="max-w-2xl space-y-6">
-          {/* Tabs */}
-          <div className="flex gap-1 rounded-lg border border-border p-1 bg-muted/30">
-            {tabs.map((t) => (
-              <button
-                key={t.id}
-                onClick={() => setTab(t.id)}
-                className={`flex items-center gap-1.5 rounded-md px-4 py-2 text-[13px] font-medium transition-colors ${
-                  tab === t.id
-                    ? 'bg-background text-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                <t.icon className="h-3.5 w-3.5" />
-                {t.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Input area */}
-          {tab === 'text' && (
-            <div className="space-y-3">
-              <textarea
-                value={textInput}
-                onChange={(e) => setTextInput(e.target.value)}
-                placeholder="Paste your recipe text here..."
-                rows={12}
-                className="w-full rounded-lg border border-border bg-background px-4 py-3 text-[13px] text-foreground outline-none resize-none"
-              />
+      <div style={{ maxWidth: phase === 'review' ? 1060 : 760, margin: '0 auto', padding: '28px 24px 40px' }}>
+        {phase === 'input' && (
+          <>
+            <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700, letterSpacing: '-.02em' }}>Drop in a recipe, any format</h1>
+            <p style={{ color: '#6b7280', fontSize: 14, marginTop: 8, lineHeight: 1.55 }}>Paste text, upload a photo of a recipe card, or point us at a link. The AI splits ingredients and tags the 14 UK allergens — you review before anything saves.</p>
+            <div style={{ display: 'flex', gap: 8, margin: '18px 0' }}>
+              <button onClick={() => setMode('text')} style={modeChip(mode === 'text')}>Paste text</button>
+              <button onClick={() => setMode('photo')} style={modeChip(mode === 'photo')}>Upload photo</button>
+              <button onClick={() => setMode('url')} style={modeChip(mode === 'url')}>From a link</button>
             </div>
-          )}
 
-          {(tab === 'pdf' || tab === 'photo') && (
-            <div>
-              <div
-                onClick={() => fileInputRef.current?.click()}
-                className="flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed border-border bg-muted/20 py-16 cursor-pointer hover:border-emerald-300 transition-colors"
-              >
-                <Upload className="h-8 w-8 text-muted-foreground" />
-                <div className="text-center">
-                  <p className="text-[13px] font-medium text-foreground">
-                    {tab === 'photo'
-                      ? 'Click to upload photos'
-                      : file
-                      ? file.name
-                      : 'Click to upload a PDF'}
-                  </p>
-                  <p className="text-[12px] text-muted-foreground mt-1">
-                    {tab === 'pdf' ? 'PDF files up to 10MB' : `JPG, PNG, or HEIC · up to ${MAX_RECIPE_IMAGES} photos`}
-                  </p>
+            {mode === 'text' && (
+              <div style={{ ...CARD, padding: 0, overflow: 'hidden' }}>
+                <textarea value={raw} onChange={(e) => setRaw(e.target.value)} rows={10} placeholder={"Paste a recipe here…\n\ne.g.\nMushroom Risotto — serves 4\n300g arborio rice, 400g mushrooms, 1 onion, 100ml white wine, 50g parmesan…"} style={{ width: '100%', border: 'none', outline: 'none', resize: 'vertical', padding: '18px 20px', font: "400 13.5px/1.6 'Geist'", color: '#16181d' }} />
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#fafbfb', borderTop: '1px solid #f2f3f5', padding: '10px 16px' }}>
+                  <button onClick={() => setRaw(SAMPLE)} style={{ border: 'none', background: 'none', color: '#1f7a52', font: "600 12.5px 'Geist'", cursor: 'pointer' }}>Try with a sample recipe</button>
+                  <span style={{ fontSize: 12, color: '#9aa0a8' }}>{raw.length} characters</span>
                 </div>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept={tab === 'pdf' ? '.pdf' : 'image/*'}
-                  multiple={tab === 'photo'}
-                  className="hidden"
-                  onChange={(e) => {
-                    const picked = Array.from(e.target.files ?? [])
-                    if (tab === 'photo') {
-                      setPhotos((prev) => [...prev, ...picked].slice(0, MAX_RECIPE_IMAGES))
-                    } else {
-                      setFile(picked[0] ?? null)
-                    }
-                  }}
-                />
               </div>
-              {tab === 'photo' && photos.length > 0 && (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {photos.map((p, i) => (
-                    <div key={i} className="relative">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={URL.createObjectURL(p)} alt="" className="h-20 w-20 rounded-md object-cover" />
-                      <button
-                        type="button"
-                        onClick={() => setPhotos((prev) => prev.filter((_, j) => j !== i))}
-                        className="absolute -right-2 -top-2 rounded-full bg-black/60 px-1.5 text-xs text-white"
-                      >×</button>
-                    </div>
-                  ))}
-                  <p className="w-full text-xs text-muted-foreground">{photos.length}/{MAX_RECIPE_IMAGES} · pages of one recipe</p>
-                </div>
-              )}
-            </div>
-          )}
-
-          <Button
-            onClick={handleImport}
-            disabled={importing}
-            className="gap-1.5 bg-brand hover:opacity-90"
-          >
-            {importing ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Sparkles className="h-3.5 w-3.5" />
             )}
-            {importing ? 'Importing...' : 'Import with AI'}
-          </Button>
-        </div>
-      ) : (
-        /* ── Parsed result form ── */
-        <div className="max-w-3xl space-y-6">
-          <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-3 text-[13px] text-emerald-800">
-            Recipe parsed successfully. Review and edit the fields below, then save.
-          </div>
+            {mode === 'photo' && (
+              <div onClick={() => fileRef.current?.click()} style={{ border: '1.5px dashed #cfd3d8', borderRadius: 16, padding: '40px 20px', textAlign: 'center', cursor: 'pointer', color: '#8a9099', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+                <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={(e) => setPhotos([...e.target.files ?? []].slice(0, 5))} />
+                <ImageIcon className="h-6 w-6" strokeWidth={1.6} style={{ color: '#c2c6cc' }} />
+                <span style={{ font: "600 14px 'Geist'", color: '#5c626b' }}>{photos.length ? `${photos.length} photo${photos.length === 1 ? '' : 's'} selected` : 'Drop a photo of the recipe card'}</span>
+                <span style={{ fontSize: 12.5 }}>Handwritten is fine · JPG, PNG, PDF · up to 10 MB</span>
+              </div>
+            )}
+            {mode === 'url' && (
+              <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://… link to a recipe page or shared doc" style={{ width: '100%', border: '1px solid #e2e4e8', borderRadius: 12, padding: '13px 15px', font: "500 14px 'Geist'", outline: 'none' }} />
+            )}
 
-          <Section title="Basic Information">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <Field label="Name" required>
-                <Input
-                  value={parsed.name}
-                  onChange={(e) => updateParsed('name', e.target.value)}
-                  className="text-[13px]"
-                />
-              </Field>
-              <Field label="Tags">
-                <TagInput value={parsed.tags} onChange={(t) => updateParsed('tags', t)} />
-              </Field>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 18 }}>
+              <button onClick={extract} disabled={!canExtract} style={{ display: 'flex', alignItems: 'center', gap: 8, background: canExtract ? '#1f9d63' : '#c9ccd1', border: 'none', color: '#fff', font: "600 14px 'Geist'", padding: '11px 20px', borderRadius: 11, cursor: canExtract ? 'pointer' : 'not-allowed' }}><Sparkles className="h-4 w-4" strokeWidth={2} /> Extract recipe</button>
+              <span style={{ fontSize: 12.5, color: '#9aa0a8' }}>Nothing is saved until you approve the review.</span>
             </div>
-            <Field label="Description">
-              <textarea
-                value={parsed.description}
-                onChange={(e) => updateParsed('description', e.target.value)}
-                rows={2}
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-[13px] text-foreground outline-none resize-none"
-              />
-            </Field>
-            <Field label="Instructions">
-              <textarea
-                value={parsed.instructions}
-                onChange={(e) => updateParsed('instructions', e.target.value)}
-                rows={4}
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-[13px] text-foreground outline-none resize-none"
-              />
-            </Field>
-          </Section>
+          </>
+        )}
 
-          <Section title="Cooking Information">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <Field label="Cooking Method">
-                <Input
-                  value={parsed.cooking_method}
-                  onChange={(e) => updateParsed('cooking_method', e.target.value)}
-                  className="text-[13px]"
-                />
-              </Field>
-              <Field label="Temperature">
-                <Input
-                  type="number"
-                  value={parsed.cooking_temp}
-                  onChange={(e) => updateParsed('cooking_temp', e.target.value)}
-                  className="text-[13px]"
-                />
-              </Field>
-              <Field label="Cooking Time">
-                <Input
-                  type="number"
-                  value={parsed.cooking_time}
-                  onChange={(e) => updateParsed('cooking_time', e.target.value)}
-                  className="text-[13px]"
-                />
-              </Field>
-              <Field label="Time Unit">
-                <select
-                  value={parsed.cooking_time_unit}
-                  onChange={(e) => updateParsed('cooking_time_unit', e.target.value)}
-                  className="h-9 w-full rounded-md border border-border bg-background px-3 text-[13px] text-foreground outline-none"
-                >
-                  <option value="minutes">Minutes</option>
-                  <option value="hours">Hours</option>
-                </select>
-              </Field>
-            </div>
-          </Section>
-
-          {/* Ingredients */}
-          <Section title="Ingredients">
-            <div className="space-y-3">
-              {parsed.ingredients.map((ing, idx) => (
-                <div key={idx} className="rounded-lg border border-border p-3 space-y-2">
-                  <div className="grid grid-cols-3 gap-3">
-                    <Input
-                      value={ing.name}
-                      onChange={(e) => updateIngredient(idx, 'name', e.target.value)}
-                      placeholder="Name"
-                      className="text-[13px]"
-                    />
-                    <Input
-                      value={ing.quantity}
-                      onChange={(e) => updateIngredient(idx, 'quantity', e.target.value)}
-                      placeholder="Quantity"
-                      className="text-[13px]"
-                    />
-                    <Input
-                      value={ing.unit}
-                      onChange={(e) => updateIngredient(idx, 'unit', e.target.value)}
-                      placeholder="Unit"
-                      className="text-[13px]"
-                    />
-                  </div>
-                  <div className="flex flex-wrap gap-1">
-                    {EU_ALLERGENS.map((a) => {
-                      const selected = ing.allergens.includes(a)
-                      return (
-                        <button
-                          key={a}
-                          type="button"
-                          onClick={() => toggleIngredientAllergen(idx, a)}
-                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium border transition-colors ${
-                            selected
-                              ? 'bg-red-50 text-red-700 border-red-300'
-                              : 'bg-muted/50 text-muted-foreground border-border hover:border-red-200'
-                          }`}
-                        >
-                          {ALLERGEN_LABELS[a]}
-                        </button>
-                      )
-                    })}
-                  </div>
+        {phase === 'analyzing' && (
+          <div style={{ maxWidth: 460, margin: '40px auto', textAlign: 'center' }}>
+            <div style={{ width: 64, height: 64, borderRadius: 18, margin: '0 auto', background: '#eef4f0', color: '#1f9d63', display: 'flex', alignItems: 'center', justifyContent: 'center', animation: 'pulse 1.4s ease-in-out infinite' }}><Sparkles className="h-7 w-7" strokeWidth={1.8} /></div>
+            <div style={{ font: "700 18px 'Geist'", marginTop: 18 }}>Reading the recipe…</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 20, textAlign: 'left' }}>
+              {['Reading text & splitting ingredients', 'Matching the 14 UK allergens', 'Suggesting HACCP controls'].map((s, i) => (
+                <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 11, background: '#fff', border: '1px solid #e9eaed', borderRadius: 12, padding: '12px 15px' }}>
+                  <span style={{ width: 20, height: 20, borderRadius: '50%', flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: step > i ? '#1f9d63' : 'transparent', border: step > i ? 'none' : '2px solid #e2e4e8' }}>{step > i ? <Check className="h-3 w-3 text-white" strokeWidth={3} /> : (step === i ? <span style={{ width: 12, height: 12, borderRadius: '50%', border: '2px solid #cdd1d6', borderTopColor: '#1f9d63', animation: 'spin .7s linear infinite' }} /> : null)}</span>
+                  <span style={{ font: "500 13.5px 'Geist'", color: step > i ? '#1c1f24' : '#8a9099' }}>{s}</span>
                 </div>
               ))}
             </div>
-          </Section>
+            <style>{`@keyframes spin{to{transform:rotate(360deg)}}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}`}</style>
+          </div>
+        )}
 
-          {/* HACCP Control Methods */}
-          <Section title="HACCP Control Methods">
-            <p className="mb-2 text-[12px] text-muted-foreground">
-              Select all FSA SFBB control methods that apply to this recipe. Used to auto-fill your HACCP Pack.
-            </p>
-            <div className="grid gap-4 sm:grid-cols-2">
-              {(['Chilling', 'Cooking'] as const).map((section) => (
-                <div key={section}>
-                  <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{section}</p>
-                  <div className="space-y-1.5">
-                    {HACCP_RECIPE_METHODS.filter((m) => m.section === section).map((m) => {
-                      const checked = parsed.haccp_methods.includes(m.id)
-                      return (
-                        <label key={m.id} className="flex cursor-pointer items-start gap-2 rounded-md border border-border bg-background px-2.5 py-1.5 hover:border-emerald-300">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={(e) =>
-                              updateParsed(
-                                'haccp_methods',
-                                e.target.checked
-                                  ? [...parsed.haccp_methods, m.id]
-                                  : parsed.haccp_methods.filter((x: string) => x !== m.id),
-                              )
-                            }
-                            className="mt-0.5 h-4 w-4 rounded border-border accent-emerald-600"
-                          />
-                          <div className="min-w-0">
-                            <div className="text-[13px] font-medium text-foreground">{m.label}</div>
-                            <div className="text-[11px] text-muted-foreground">{m.description}</div>
+        {phase === 'review' && parsed && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'flex-start' }}>
+            <div style={{ flex: '1 1 420px', display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#eef4f0', border: '1px solid #d7e7dd', borderRadius: 12, padding: '12px 15px', fontSize: 13, color: '#1a6e49', lineHeight: 1.5 }}>
+                <Sparkles className="h-4 w-4" style={{ flex: 'none' }} strokeWidth={1.8} />
+                <span>Extracted 1 recipe{flaggedIdx.length ? <> · <b>{flaggedIdx.length} item{flaggedIdx.length === 1 ? '' : 's'} need your eyes</b> — highlighted below.</> : ''} Everything is editable.</span>
+              </div>
+              <div style={CARD}>
+                <input value={parsed.name} onChange={(e) => setParsed({ ...parsed, name: e.target.value })} placeholder="Recipe name" style={{ width: '100%', border: 'none', outline: 'none', font: "700 20px 'Geist'" }} />
+                <div style={{ fontSize: 12.5, color: '#8a9099', marginTop: 4, textTransform: 'capitalize' }}>{[parsed.category, parsed.cooking_method, parsed.cooking_time ? `${parsed.cooking_time} min` : null, `${parsed.ingredients.length} ingredients`].filter(Boolean).join(' · ')}</div>
+              </div>
+              <div style={CARD}>
+                <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>Ingredients</div>
+                {parsed.ingredients.map((ing, idx) => {
+                  const flagged = ing.allergens.length > 0 && !confirmed.has(idx)
+                  return (
+                    <div key={idx} style={{ borderTop: '1px solid #f2f3f5', padding: '11px 0', background: flagged ? '#fdfaf1' : 'transparent', margin: '0 -6px', paddingLeft: 6, paddingRight: 6, borderRadius: flagged ? 8 : 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <span style={{ flex: 1, font: "600 13.5px 'Geist'" }}>{ing.name} {ing.quantity && <span style={{ color: '#9aa0a8', fontWeight: 400 }}>· {ing.quantity}{ing.unit}</span>}</span>
+                        {ing.allergens.length === 0 ? <span style={{ fontSize: 12, color: '#b3b8bf' }}>no allergens</span> : (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, justifyContent: 'flex-end' }}>
+                            {ing.allergens.map((a) => <button key={a} onClick={() => removeTag(idx, a)} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, font: "600 12px 'Geist'", color: '#a1493f', background: '#fbf0ee', border: '1px solid #f3ddd9', borderRadius: 7, padding: '3px 8px', cursor: 'pointer' }}>{ALLERGEN_LABELS[a as keyof typeof ALLERGEN_LABELS] ?? a} <X className="h-3 w-3" /></button>)}
                           </div>
-                        </label>
-                      )
-                    })}
-                  </div>
+                        )}
+                      </div>
+                      {flagged && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 7 }}>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 5, font: "500 12px 'Geist'", color: '#8a6a1f', flex: 1 }}><AlertTriangle className="h-3.5 w-3.5" strokeWidth={1.9} /> AI tagged these — confirm or remove.</span>
+                          <button onClick={() => setConfirmed((s) => new Set(s).add(idx))} style={{ border: '1px solid #cfe0d6', background: '#fff', color: '#1f7a52', font: "600 12px 'Geist'", padding: '5px 11px', borderRadius: 8, cursor: 'pointer' }}>Looks right</button>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+              <div style={CARD}>
+                <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 12 }}>Suggested HACCP controls</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {CONTROLS.map((c) => { const on = parsed.haccp_methods.includes(c.id); return <button key={c.id} onClick={() => toggleHaccp(c.id)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: on ? '1px solid #bfdccb' : '1px solid #e5e7ea', background: on ? '#f4faf6' : '#fff', color: on ? '#1a6e49' : '#5c626b', font: "600 12.5px 'Geist'", padding: '7px 12px', borderRadius: 9, cursor: 'pointer' }}>{on && <Check className="h-3.5 w-3.5" strokeWidth={2.6} />}{c.label}</button> })}
                 </div>
-              ))}
+              </div>
             </div>
-          </Section>
 
-          {/* Safety */}
-          <Section title="Safety & Storage">
-            <Field label="Chilling Method">
-              <textarea
-                value={parsed.chilling_method}
-                onChange={(e) => updateParsed('chilling_method', e.target.value)}
-                rows={2}
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-[13px] text-foreground outline-none resize-none"
-              />
-            </Field>
-            <Field label="Freezing Instructions">
-              <textarea
-                value={parsed.freezing_instructions}
-                onChange={(e) => updateParsed('freezing_instructions', e.target.value)}
-                rows={2}
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-[13px] text-foreground outline-none resize-none"
-              />
-            </Field>
-            <Field label="Defrosting Instructions">
-              <textarea
-                value={parsed.defrosting_instructions}
-                onChange={(e) => updateParsed('defrosting_instructions', e.target.value)}
-                rows={2}
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-[13px] text-foreground outline-none resize-none"
-              />
-            </Field>
-            <Field label="Reheating Instructions">
-              <textarea
-                value={parsed.reheating_instructions}
-                onChange={(e) => updateParsed('reheating_instructions', e.target.value)}
-                rows={2}
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-[13px] text-foreground outline-none resize-none"
-              />
-            </Field>
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="hotHolding"
-                checked={parsed.hot_holding_required}
-                onChange={(e) => updateParsed('hot_holding_required', e.target.checked)}
-                className="h-4 w-4 rounded border-border accent-emerald-600"
-              />
-              <label htmlFor="hotHolding" className="text-[13px] text-foreground">
-                Hot holding required
-              </label>
+            {/* rail */}
+            <div style={{ flex: '1 1 260px', maxWidth: 300, position: 'sticky', top: 78, display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div style={CARD}>
+                <div style={{ font: "600 11px 'Geist'", letterSpacing: '.05em', textTransform: 'uppercase', color: '#8a9099' }}>Will be saved as</div>
+                <div style={{ font: "700 17px 'Geist'", marginTop: 8, color: parsed.name ? '#16181d' : '#b3b8bf' }}>{parsed.name || 'Untitled'}</div>
+                <div style={{ fontSize: 12.5, color: '#8a9099', marginTop: 4, textTransform: 'capitalize' }}>{[parsed.category, `${parsed.ingredients.length} ingredients`].filter(Boolean).join(' · ')}</div>
+                <div style={{ height: 1, background: '#f2f3f5', margin: '13px 0' }} />
+                <div style={{ font: "600 12px 'Geist'", color: '#6f7580', marginBottom: 7 }}>Allergens</div>
+                {allergenUnion.length === 0 ? <div style={{ fontSize: 12.5, color: '#8a9099' }}>None declared</div> : <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>{allergenUnion.map((a) => <span key={a} style={{ font: "600 12px 'Geist'", color: '#a1493f', background: '#fbf0ee', border: '1px solid #f3ddd9', borderRadius: 7, padding: '3px 9px' }}>{ALLERGEN_LABELS[a as keyof typeof ALLERGEN_LABELS] ?? a}</span>)}</div>}
+                {dietary.length > 0 && <><div style={{ font: "600 12px 'Geist'", color: '#6f7580', margin: '13px 0 7px' }}>Dietary · auto</div><div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>{dietary.map((d) => <span key={d} style={{ font: "600 12px 'Geist'", color: '#1a6e49', background: '#e9f2ec', borderRadius: 7, padding: '3px 9px' }}>{d}</span>)}</div></>}
+              </div>
+              {flaggedIdx.length > 0 && (
+                <div style={{ background: '#fbf5e6', border: '1px solid #eddfba', borderRadius: 14, padding: '13px 15px', fontSize: 12.5, color: '#8a6a1f', lineHeight: 1.5 }}>{flaggedIdx.length} ingredient{flaggedIdx.length === 1 ? '' : 's'} still need a check — you can save anyway, it stays flagged on the recipe.</div>
+              )}
+              <button onClick={save} disabled={saving} style={{ background: '#1f9d63', border: 'none', color: '#fff', font: "600 14px 'Geist'", padding: '12px', borderRadius: 11, cursor: 'pointer', boxShadow: '0 1px 2px rgba(16,24,40,.1)' }}>{saving ? 'Saving…' : 'Add to recipes'}</button>
+              <button onClick={() => { setParsed(null); setPhase('input') }} style={{ background: 'none', border: 'none', color: '#8a9099', font: "600 13px 'Geist'", cursor: 'pointer', padding: 4 }}>Start over</button>
             </div>
-          </Section>
-
-          {/* Extra Care Flags */}
-          <Section title="Extra Care Flags">
-            <div className="flex flex-wrap gap-2">
-              {[
-                { value: 'eggs', label: 'Eggs' },
-                { value: 'rice', label: 'Rice' },
-                { value: 'pulses', label: 'Pulses' },
-                { value: 'shellfish', label: 'Shellfish' },
-              ].map((opt) => {
-                const selected = parsed.extra_care_flags.includes(opt.value)
-                return (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() =>
-                      updateParsed(
-                        'extra_care_flags',
-                        selected
-                          ? parsed.extra_care_flags.filter((f: string) => f !== opt.value)
-                          : [...parsed.extra_care_flags, opt.value],
-                      )
-                    }
-                    className={`inline-flex items-center rounded-full px-3 py-1 text-[12px] font-medium border transition-colors ${
-                      selected
-                        ? 'bg-amber-50 text-amber-700 border-amber-300'
-                        : 'bg-muted/50 text-muted-foreground border-border hover:border-amber-200'
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                )
-              })}
-            </div>
-          </Section>
-
-          <div className="flex items-center gap-3 pt-2">
-            <Button
-              onClick={handleSave}
-              disabled={saving}
-              className="gap-1.5 bg-brand hover:opacity-90"
-            >
-              <Save className="h-3.5 w-3.5" />
-              {saving ? 'Saving...' : 'Save Recipe'}
-            </Button>
-            <Button variant="outline" onClick={() => setParsed(null)}>
-              Re-import
-            </Button>
-            <Button variant="outline" onClick={() => router.push('/recipes')}>
-              Cancel
-            </Button>
           </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-/* ── Layout helpers ── */
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="rounded-lg border border-border p-5 space-y-4">
-      <h2 className="text-[14px] font-semibold text-foreground">{title}</h2>
-      {children}
-    </div>
-  )
-}
-
-function Field({
-  label,
-  required,
-  children,
-}: {
-  label: string
-  required?: boolean
-  children: React.ReactNode
-}) {
-  return (
-    <div className="space-y-1.5">
-      <label className="text-[12px] font-medium text-muted-foreground">
-        {label}
-        {required && <span className="text-red-500 ml-0.5">*</span>}
-      </label>
-      {children}
+        )}
+      </div>
     </div>
   )
 }
