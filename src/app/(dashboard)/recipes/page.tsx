@@ -89,7 +89,7 @@ export default function RecipesPage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-[26px] font-bold leading-tight tracking-[-0.02em] text-foreground">Recipes</h1>
-          <p className="mt-1 text-[14px] text-muted-foreground">Manage your recipe collection · {recipes.length} dishes</p>
+          <p className="mt-1 text-[14px] text-muted-foreground">Manage your recipe collection{recipes.length > 0 ? ` · ${recipes.length} dishes` : ''}</p>
         </div>
         {isManager && (
           <div className="flex items-center gap-2.5">
