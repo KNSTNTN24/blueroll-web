@@ -26,6 +26,7 @@ export default function ChecklistFillPage({ params }: { params: Promise<{ id: st
   const qc = useQueryClient()
   const profile = useAuthStore((s) => s.profile)
   const business = useAuthStore((s) => s.business)
+  const currentSiteId = useAuthStore((s) => s.currentSiteId)
   const isManager = profile?.role === 'owner' || profile?.role === 'manager'
   const [responses, setResponses] = useState<Record<string, ItemResponse>>({})
   const [submitting, setSubmitting] = useState(false)
@@ -115,7 +116,7 @@ export default function ChecklistFillPage({ params }: { params: Promise<{ id: st
     for (const item of items) { if (item.required && !answered(item, getR(item.id))) { toast.error(`"${item.name}" is required`); return } }
     setSubmitting(true)
     try {
-      const { data: completion, error: cErr } = await supabase.from('checklist_completions').insert({ template_id: id, business_id: business.id, completed_by: profile.id, completed_at: new Date().toISOString() }).select('id').single()
+      const { data: completion, error: cErr } = await supabase.from('checklist_completions').insert({ template_id: id, business_id: business.id, site_id: currentSiteId ?? (template as any).site_id ?? null, completed_by: profile.id, completed_at: new Date().toISOString() }).select('id').single()
       if (cErr) throw cErr
       const rows = items.map((item) => { const r = getR(item.id); return { completion_id: completion.id, item_id: item.id, value: r.value, notes: r.notes || null, flagged: autoFlag(item, r.value) } })
       const { error: rErr } = await supabase.from('checklist_responses').insert(rows)
@@ -125,7 +126,7 @@ export default function ChecklistFillPage({ params }: { params: Promise<{ id: st
       supabase.from('checklist_drafts').delete().eq('template_id', id).eq('created_by', profile.id).then(() => {})
       qc.invalidateQueries({ queryKey: ['checklist-draft', id, profile.id] })
       toast.success('Checklist submitted')
-      ;['existing-completion', 'checklist-completions', 'my-completions', 'dash-templates'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }))
+      ;['existing-completion', 'checklist-completions', 'my-completions', 'dash-templates', 'my-checklists', 'my-drafts', 'all-checklists'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }))
       setTimeout(() => router.push('/checklists'), 400)
     } catch (e: any) { toast.error(e?.message ?? 'Failed to submit') } finally { setSubmitting(false) }
   }
