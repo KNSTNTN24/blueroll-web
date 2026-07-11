@@ -214,10 +214,15 @@ export default function ChecklistFillPage({ params }: { params: Promise<{ id: st
                   )}
                   {item.item_type === 'temperature' && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                      <div style={{ display: 'flex', alignItems: 'stretch', border: '1px solid #e5e7ea', borderRadius: 11, overflow: 'hidden' }}>
-                        <button disabled={readOnly} onClick={() => setR(item.id, { value: ((tempNum ?? 0) - 0.5).toString() })} style={{ width: 40, height: 44, border: 'none', background: '#f7f8f9', color: '#5c626b', cursor: readOnly ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Minus className="h-4 w-4" strokeWidth={2} /></button>
-                        <div style={{ width: 88, display: 'flex', alignItems: 'center', justifyContent: 'center', font: "700 16px 'Geist'", fontVariantNumeric: 'tabular-nums', background: r.value === '' ? '#fff' : outOfRange ? '#fdf3f1' : '#f2f9f4', color: r.value === '' ? '#c2c6cc' : outOfRange ? '#a1493f' : '#1a6e49' }}>{r.value === '' ? '—' : `${r.value}°C`}</div>
-                        <button disabled={readOnly} onClick={() => setR(item.id, { value: ((tempNum ?? 0) + 0.5).toString() })} style={{ width: 40, height: 44, border: 'none', background: '#f7f8f9', color: '#5c626b', cursor: readOnly ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Plus className="h-4 w-4" strokeWidth={2} /></button>
+                      <div style={{ display: 'flex', alignItems: 'stretch', border: `1px solid ${outOfRange ? '#e7c9c3' : '#e5e7ea'}`, borderRadius: 11, overflow: 'hidden' }}>
+                        <button disabled={readOnly} onClick={() => setR(item.id, { value: ((tempNum ?? 0) - 0.5).toString() })} style={{ width: 40, height: 44, border: 'none', background: '#f7f8f9', color: '#5c626b', cursor: readOnly ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}><Minus className="h-4 w-4" strokeWidth={2} /></button>
+                        <div style={{ width: 92, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, background: r.value === '' ? '#fff' : outOfRange ? '#fdf3f1' : '#f2f9f4' }}>
+                          <input disabled={readOnly} value={r.value} inputMode="decimal" placeholder="—"
+                            onChange={(e) => setR(item.id, { value: e.target.value.replace(/[^0-9.\-]/g, '') })}
+                            style={{ width: 50, textAlign: 'center', border: 'none', outline: 'none', background: 'transparent', font: "700 16px 'Geist'", fontVariantNumeric: 'tabular-nums', color: r.value === '' ? '#c2c6cc' : outOfRange ? '#a1493f' : '#1a6e49' }} />
+                          {r.value !== '' && <span style={{ font: "700 15px 'Geist'", color: outOfRange ? '#a1493f' : '#1a6e49' }}>°C</span>}
+                        </div>
+                        <button disabled={readOnly} onClick={() => setR(item.id, { value: ((tempNum ?? 0) + 0.5).toString() })} style={{ width: 40, height: 44, border: 'none', background: '#f7f8f9', color: '#5c626b', cursor: readOnly ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}><Plus className="h-4 w-4" strokeWidth={2} /></button>
                       </div>
                       {(item.min_value != null || item.max_value != null) && <span style={{ fontSize: 12.5, color: outOfRange ? '#a1493f' : '#9aa0a8' }}>{outOfRange ? 'Out of range — flagged' : `Range ${item.min_value ?? '–'} to ${item.max_value ?? '–'}°C`}</span>}
                     </div>
@@ -244,7 +249,7 @@ export default function ChecklistFillPage({ params }: { params: Promise<{ id: st
 
                   {/* per-item notes (except text, whose control is a field) */}
                   {!readOnly && item.item_type !== 'text' && !(item.item_type === 'yes_no' && isNo) && (
-                    <input value={r.notes} onChange={(e) => setR(item.id, { notes: e.target.value })} placeholder="Add notes (optional)" style={{ width: '100%', maxWidth: 480, marginTop: 10, background: '#fafbfb', border: '1px solid #eef0f2', borderRadius: 10, padding: '8px 12px', font: "500 12.5px 'Geist'", color: '#16181d', outline: 'none' }} />
+                    <input value={r.notes} onChange={(e) => setR(item.id, { notes: e.target.value })} placeholder="Add notes (optional)" style={{ display: 'block', width: '100%', maxWidth: 480, marginTop: 10, background: '#fafbfb', border: '1px solid #eef0f2', borderRadius: 10, padding: '8px 12px', font: "500 12.5px 'Geist'", color: '#16181d', outline: 'none' }} />
                   )}
                   {readOnly && r.notes && <div style={{ fontSize: 12.5, color: '#8a9099', marginTop: 8 }}>Note: {r.notes}</div>}
                 </div>
