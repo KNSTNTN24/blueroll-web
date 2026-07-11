@@ -7,7 +7,8 @@ import { useAuthStore } from '@/stores/auth-store'
 import { supabase } from '@/lib/supabase'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { CommandPalette } from '@/components/layout/command-palette'
-import { Bell, Search, ChevronDown, Settings, LogOut, Check, Menu, Building2 } from 'lucide-react'
+import { NotifBell } from '@/components/layout/notif-bell'
+import { Search, ChevronDown, Settings, LogOut, Check, Menu, Building2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 function getInitials(name: string | null | undefined): string {
@@ -137,10 +138,7 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
 
         {/* Right */}
         <div className="flex items-center gap-1.5 shrink-0">
-          <Link href="/notifications" className="relative flex h-9 w-9 items-center justify-center rounded-lg text-[#5c626b] transition-colors hover:bg-muted hover:text-foreground">
-            <Bell className="h-[18px] w-[18px]" strokeWidth={1.7} />
-            <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-warn ring-2 ring-card" />
-          </Link>
+          <NotifBell />
           <span className="mx-1 h-6 w-px bg-[#eceef0]" />
 
           {/* Custom dropdown — no Base UI */}

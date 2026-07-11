@@ -1,173 +1,131 @@
 'use client'
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useState, useMemo } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
-import { toast } from 'sonner'
-import {
-  Bell, ClipboardCheck, AlertTriangle, Users, LogIn,
-  FileText, Shield, CheckCheck,
-} from 'lucide-react'
-import { PageHeader } from '@/components/layout/page-header'
-import { EmptyState } from '@/components/shared/empty-state'
-import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
-import { formatDistanceToNow } from 'date-fns'
-import type { LucideIcon } from 'lucide-react'
+import { CheckCheck, ChevronRight, CircleCheck } from 'lucide-react'
+import { formatDistanceToNow, isToday, isThisWeek, parseISO } from 'date-fns'
+import { notifMeta, type NotifRow } from '@/lib/notification-meta'
 
-interface Notification {
-  id: string
-  type: string
-  title: string
-  message: string
-  link: string | null
-  is_read: boolean
-  created_at: string
-}
+type Filter = 'all' | 'unread' | 'incidents' | 'team'
 
-const typeIcons: Record<string, LucideIcon> = {
-  checklist: ClipboardCheck,
-  incident: AlertTriangle,
-  team: Users,
-  checkin: LogIn,
-  document: FileText,
-  haccp: Shield,
-}
+const shortAgo = (d: string) => formatDistanceToNow(parseISO(d)).replace('about ', '').replace('less than a minute', 'just now').replace(/ minutes?/, 'm').replace(/ hours?/, 'h').replace(/ days?/, 'd').replace(/ months?/, 'mo')
 
 export default function NotificationsPage() {
+  const router = useRouter()
+  const qc = useQueryClient()
   const profile = useAuthStore((s) => s.profile)
-  const queryClient = useQueryClient()
+  const business = useAuthStore((s) => s.business)
+  const uid = profile?.id
+  const [filter, setFilter] = useState<Filter>('all')
 
-  const { data: notifications = [], isLoading } = useQuery({
-    queryKey: ['notifications', profile?.id],
-    queryFn: async () => {
-      if (!profile?.id) return []
-      const { data, error } = await supabase
-        .from('notifications')
-        .select('*')
-        .eq('user_id', profile.id)
-        .order('created_at', { ascending: false })
-        .limit(50)
-      if (error) throw error
-      return (data ?? []) as Notification[]
-    },
-    enabled: !!profile?.id,
+  const { data: items = [] } = useQuery({
+    queryKey: ['notifications', uid],
+    enabled: !!uid,
+    queryFn: async () => (await supabase.from('notifications').select('id, type, title, message, read, link, created_at').eq('user_id', uid!).order('created_at', { ascending: false }).limit(500)).data as NotifRow[] ?? [],
   })
 
-  const markReadMutation = useMutation({
-    mutationFn: async (notifId: string) => {
-      const { error } = await supabase
-        .from('notifications')
-        .update({ is_read: true })
-        .eq('id', notifId)
-      if (error) throw error
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['notifications'] })
-    },
+  const unread = items.filter((n) => !n.read).length
+
+  const filtered = items.filter((n) => {
+    if (filter === 'unread') return !n.read
+    const g = notifMeta(n.type, n.title).group
+    if (filter === 'incidents') return g === 'incident'
+    if (filter === 'team') return g === 'team'
+    return true
   })
 
-  const markAllReadMutation = useMutation({
-    mutationFn: async () => {
-      if (!profile?.id) return
-      const { error } = await supabase
-        .from('notifications')
-        .update({ is_read: true })
-        .eq('user_id', profile.id)
-        .eq('is_read', false)
-      if (error) throw error
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['notifications'] })
-      toast.success('All notifications marked as read')
-    },
-    onError: (err: Error) => toast.error(err.message),
-  })
+  const groups = useMemo(() => {
+    const g: { label: string; rows: NotifRow[] }[] = [
+      { label: 'Today', rows: [] }, { label: 'This week', rows: [] }, { label: 'Earlier', rows: [] },
+    ]
+    filtered.forEach((n) => {
+      const d = parseISO(n.created_at)
+      if (isToday(d)) g[0].rows.push(n)
+      else if (isThisWeek(d, { weekStartsOn: 1 })) g[1].rows.push(n)
+      else g[2].rows.push(n)
+    })
+    return g.filter((x) => x.rows.length)
+  }, [filtered])
 
-  function handleClick(notif: Notification) {
-    if (!notif.is_read) {
-      markReadMutation.mutate(notif.id)
+  async function markRead(n: NotifRow) {
+    if (!n.read) {
+      qc.setQueryData(['notifications', uid], (old: NotifRow[]) => (old ?? []).map((x) => (x.id === n.id ? { ...x, read: true } : x)))
+      qc.setQueryData(['notif-unread', uid], (c: number) => Math.max(0, (c ?? 1) - 1))
+      await supabase.from('notifications').update({ read: true }).eq('id', n.id)
     }
-    if (notif.link) {
-      window.location.href = notif.link
-    }
+    if (n.link) router.push(n.link)
+  }
+  async function markAll() {
+    qc.setQueryData(['notifications', uid], (old: NotifRow[]) => (old ?? []).map((x) => ({ ...x, read: true })))
+    qc.setQueryData(['notif-unread', uid], 0)
+    await supabase.from('notifications').update({ read: true }).eq('user_id', uid!).eq('read', false)
   }
 
-  const unreadCount = notifications.filter((n) => !n.is_read).length
-
-  if (isLoading) {
-    return (
-      <div className="space-y-6">
-        <PageHeader title="Notifications" description="Stay updated on your team's activity" />
-        <div className="flex items-center justify-center py-16">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-emerald-600 border-t-transparent" />
-        </div>
-      </div>
-    )
-  }
+  const seg = (on: boolean): React.CSSProperties => ({ border: 'none', cursor: 'pointer', font: `${on ? 600 : 500} 13px 'Geist'`, padding: '6px 13px', borderRadius: 8, background: on ? '#16181d' : 'transparent', color: on ? '#fff' : '#6b7280' })
 
   return (
-    <div className="space-y-6">
-      <PageHeader title="Notifications" description="Stay updated on your team's activity">
-        {unreadCount > 0 && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => markAllReadMutation.mutate()}
-            disabled={markAllReadMutation.isPending}
-          >
-            <CheckCheck className="h-3.5 w-3.5" />
-            Mark all as read
-          </Button>
-        )}
-      </PageHeader>
-
-      {notifications.length === 0 ? (
-        <EmptyState
-          icon={Bell}
-          title="No notifications"
-          description="You're all caught up. Notifications will appear here."
-        />
-      ) : (
-        <div className="rounded-lg border border-border bg-white divide-y divide-border">
-          {notifications.map((notif) => {
-            const Icon = typeIcons[notif.type] ?? Bell
-            return (
-              <button
-                key={notif.id}
-                onClick={() => handleClick(notif)}
-                className={cn(
-                  'flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/50',
-                  !notif.is_read && 'bg-emerald-50/30'
-                )}
-              >
-                <div className={cn(
-                  'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border',
-                  !notif.is_read
-                    ? 'border-emerald-200 bg-emerald-50'
-                    : 'border-border bg-gray-50'
-                )}>
-                  <Icon className={cn('h-3.5 w-3.5', !notif.is_read ? 'text-emerald-600' : 'text-muted-foreground')} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className={cn('text-[13px]', !notif.is_read ? 'font-medium text-foreground' : 'text-foreground')}>
-                      {notif.title}
-                    </span>
-                    {!notif.is_read && (
-                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                    )}
-                  </div>
-                  <p className="mt-0.5 text-[12px] text-muted-foreground line-clamp-2">{notif.message}</p>
-                </div>
-                <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
-                  {formatDistanceToNow(new Date(notif.created_at), { addSuffix: true })}
-                </span>
-              </button>
-            )
-          })}
+    <div style={{ maxWidth: 760, margin: '0 auto', fontFamily: "'Geist',system-ui,sans-serif", color: '#16181d', display: 'flex', flexDirection: 'column' }}>
+      {/* head */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 20, flexWrap: 'wrap' }}>
+        <div>
+          <h1 style={{ margin: 0, fontSize: 26, fontWeight: 700, letterSpacing: '-.025em' }}>Notifications</h1>
+          <div style={{ color: '#6b7280', fontSize: 14, marginTop: 4 }}>{unread} unread · {business?.name ?? 'your group'}, all sites</div>
         </div>
-      )}
+        {unread > 0 && (
+          <button onClick={markAll} style={{ display: 'flex', alignItems: 'center', gap: 7, background: '#fff', border: '1px solid #e2e4e8', color: '#41464d', font: "600 13.5px 'Geist'", padding: '9px 14px', borderRadius: 10, cursor: 'pointer' }}>
+            <CheckCheck className="h-4 w-4" strokeWidth={1.8} /> Mark all as read
+          </button>
+        )}
+      </div>
+
+      {/* filters */}
+      <div style={{ display: 'flex', gap: 0, background: '#fff', border: '1px solid #e5e7ea', borderRadius: 11, padding: 4, alignSelf: 'flex-start', marginTop: 14 }}>
+        {([['all', 'All'], ['unread', 'Unread'], ['incidents', 'Incidents'], ['team', 'Team']] as [Filter, string][]).map(([k, label]) => {
+          const on = filter === k
+          return (
+            <button key={k} onClick={() => setFilter(k)} style={{ ...seg(on), display: 'flex', alignItems: 'center', gap: 6 }}>
+              {label}
+              {k === 'unread' && unread > 0 && <span style={{ font: "700 10.5px 'Geist'", padding: '1px 6px', borderRadius: 20, background: on ? '#3c414a' : '#eef0f2', color: on ? '#fff' : '#6b7280' }}>{unread}</span>}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* groups */}
+      {groups.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: '60px 20px' }}>
+          <div style={{ width: 46, height: 46, borderRadius: 14, background: '#e9f2ec', color: '#1f7a52', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><CircleCheck className="h-6 w-6" strokeWidth={1.9} /></div>
+          <div style={{ font: "700 15.5px 'Geist'", color: '#3c414a', marginTop: 14 }}>All caught up</div>
+          <div style={{ fontSize: 13.5, color: '#9aa0a8', marginTop: 4 }}>{filter === 'unread' ? 'No unread notifications.' : 'Nothing here yet.'}</div>
+        </div>
+      ) : groups.map((g) => (
+        <div key={g.label}>
+          <div style={{ font: "600 11.5px 'Geist'", letterSpacing: '.07em', textTransform: 'uppercase', color: '#8a9099', margin: '22px 2px 9px' }}>{g.label}</div>
+          <div style={{ background: '#fff', border: '1px solid #e9eaed', borderRadius: 15, boxShadow: '0 1px 2px rgba(16,24,40,.03),0 14px 36px -28px rgba(16,24,40,.16)', overflow: 'hidden' }}>
+            {g.rows.map((n, i) => {
+              const m = notifMeta(n.type, n.title)
+              return (
+                <div key={n.id} onClick={() => markRead(n)} style={{ display: 'flex', gap: 13, padding: '13px 18px', borderTop: i === 0 ? 'none' : '1px solid #f5f6f7', cursor: 'pointer', background: n.read ? '#fff' : '#fbfdfc', transition: 'background .14s', alignItems: 'flex-start' }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = '#f8f9fa')} onMouseLeave={(e) => (e.currentTarget.style.background = n.read ? '#fff' : '#fbfdfc')}>
+                  <span style={{ width: 38, height: 38, borderRadius: 11, background: m.bg, color: m.fg, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}><m.Icon className="h-[18px] w-[18px]" strokeWidth={1.8} /></span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ font: "600 13.5px 'Geist'", color: '#1c1f24', lineHeight: 1.35 }}>{n.title}</div>
+                    {n.message && <div style={{ font: "400 12.5px 'Geist'", color: '#8a9099', marginTop: 2 }}>{n.message}</div>}
+                    {m.action && n.link && <div style={{ display: 'inline-flex', alignItems: 'center', gap: 2, font: "600 12px 'Geist'", color: '#1f7a52', marginTop: 6 }}>{m.action}<ChevronRight className="h-3.5 w-3.5" strokeWidth={2} /></div>}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 9, flex: 'none' }}>
+                    <span style={{ font: "500 12px 'Geist'", color: '#9aa0a8', whiteSpace: 'nowrap' }}>{shortAgo(n.created_at)}</span>
+                    {!n.read && <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#1f9d63', flex: 'none' }} />}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      ))}
     </div>
   )
 }
