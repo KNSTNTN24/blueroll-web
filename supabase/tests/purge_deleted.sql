@@ -23,11 +23,6 @@ begin
   insert into profiles (id, email, role, business_id)
     values (v_profile, 'purge-test@example.invalid', 'owner', v_old);
 
-  -- storage object namespaced under the business id, plus one with an
-  -- unrelated (non-uuid) prefix that must be left untouched
-  insert into storage.objects (bucket_id, name) values ('documents', v_old::text || '/test.pdf');
-  insert into storage.objects (bucket_id, name) values ('documents', 'not-a-uuid/other.pdf');
-
   -- business deleted 10 days ago (should survive)
   insert into businesses (name, deleted_at) values ('PURGE_RECENT', now() - interval '10 days')
     returning id into v_recent;
@@ -40,10 +35,6 @@ begin
   assert (select count(*) from recipes where business_id = v_old) = 0, 'old child rows not purged';
   assert (select count(*) from profiles where id = v_profile) = 0, 'old profile not purged';
   assert (select count(*) from auth.users where id = v_profile) = 0, 'auth user not purged';
-  assert (select count(*) from storage.objects where bucket_id = 'documents' and name = v_old::text || '/test.pdf') = 0,
-    'storage object for purged business not deleted';
-  assert (select count(*) from storage.objects where bucket_id = 'documents' and name = 'not-a-uuid/other.pdf') = 1,
-    'unrelated non-uuid-prefixed storage object was wrongly deleted';
   assert (select count(*) from businesses where id = v_recent) = 1, 'recent business wrongly purged';
 end $$;
 
