@@ -1,5 +1,39 @@
 import { describe, expect, test } from 'vitest'
-import { normalizeTag, getRecipeTags, groupByTags, UNTAGGED } from './tags'
+import { normalizeTag, getRecipeTags, groupByTags, tagSuggestions, UNTAGGED } from './tags'
+
+describe('tagSuggestions', () => {
+  const existing = [
+    { id: '1', name: 'Mains' },
+    { id: '2', name: 'Starters' },
+    { id: '3', name: 'Sides' },
+    { id: '4', name: 'Desserts' },
+  ]
+
+  test('empty draft returns the full pool minus already-chosen (drives the always-visible list)', () => {
+    expect(tagSuggestions(existing, [], '').map((t) => t.name)).toEqual([
+      'Mains',
+      'Starters',
+      'Sides',
+      'Desserts',
+    ])
+  })
+
+  test('excludes tags already chosen, case-insensitively', () => {
+    expect(tagSuggestions(existing, ['mains', 'DESSERTS'], '').map((t) => t.name)).toEqual([
+      'Starters',
+      'Sides',
+    ])
+  })
+
+  test('filters by case-insensitive prefix as the user types', () => {
+    expect(tagSuggestions(existing, [], 's').map((t) => t.name)).toEqual(['Starters', 'Sides'])
+    expect(tagSuggestions(existing, [], 'MAI').map((t) => t.name)).toEqual(['Mains'])
+  })
+
+  test('no existing tags returns empty', () => {
+    expect(tagSuggestions([], [], '')).toEqual([])
+  })
+})
 
 describe('normalizeTag', () => {
   test('lowercases and trims', () => {
