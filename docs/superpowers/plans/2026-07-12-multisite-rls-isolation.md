@@ -62,7 +62,29 @@ from (
 ) os
 where p.site_id is null and os.business_id = p.business_id;
 
--- 2. operational rows -> business's oldest site
+-- 1b. checklist_instances dedup (MUST run before the generic backfill).
+-- Every NULL-site instance is a pre-74d5817 legacy row that has a sited twin
+-- (same template_id + due_date + business). A plain backfill would collide with
+-- the unique index uq_checklist_instance (template_id, coalesce(site_id,...), due_date).
+-- 55 of the NULL rows are 'completed' while their twin is pending/missed, so we
+-- MERGE (promote the completion onto the surviving sited twin) before deleting
+-- the NULL rows — no completion record is lost. (Approved 2026-07-12.)
+update checklist_instances t
+set status = 'completed',
+    completion_id = coalesce(t.completion_id, n.completion_id)
+from checklist_instances n
+where n.site_id is null
+  and n.status = 'completed'
+  and t.site_id is not null
+  and t.business_id = n.business_id
+  and t.template_id = n.template_id
+  and t.due_date = n.due_date
+  and t.status <> 'completed';
+
+delete from checklist_instances where site_id is null;
+
+-- 2. operational rows -> business's oldest site (checklist_instances now has 0
+--    NULLs, so its entry in the loop below is a harmless no-op)
 do $$
 declare t text;
 begin
