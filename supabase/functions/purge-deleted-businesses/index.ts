@@ -30,25 +30,40 @@ type StorageAdmin = ReturnType<typeof createClient>["storage"];
 // list() only returns the immediate children of a path (subfolders come
 // back as entries with id === null), so recurse into those to also catch
 // nested objects like "<business_id>/checklist-photos/x.jpg".
+// Each flat listing is paginated: a folder can hold more than one page's
+// worth of objects, and since the business row is gone after purge, any
+// page beyond the first that we failed to walk would be orphaned forever.
+const LIST_PAGE_SIZE = 1000;
+
 async function listAllUnderPrefix(
   storage: StorageAdmin,
   bucket: string,
   prefix: string,
 ): Promise<string[]> {
-  const { data, error } = await storage.from(bucket).list(prefix, {
-    limit: 1000,
-  });
-  if (error) throw error;
-
   const names: string[] = [];
-  for (const entry of data ?? []) {
-    const path = `${prefix}/${entry.name}`;
-    if (entry.id === null) {
-      names.push(...(await listAllUnderPrefix(storage, bucket, path)));
-    } else {
-      names.push(path);
+  let offset = 0;
+
+  for (;;) {
+    const { data, error } = await storage.from(bucket).list(prefix, {
+      limit: LIST_PAGE_SIZE,
+      offset,
+    });
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+
+    for (const entry of data) {
+      const path = `${prefix}/${entry.name}`;
+      if (entry.id === null) {
+        names.push(...(await listAllUnderPrefix(storage, bucket, path)));
+      } else {
+        names.push(path);
+      }
     }
+
+    if (data.length < LIST_PAGE_SIZE) break;
+    offset += LIST_PAGE_SIZE;
   }
+
   return names;
 }
 
