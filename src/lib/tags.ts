@@ -9,6 +9,17 @@ export function normalizeTag(name: string): string {
   return name.trim().toLowerCase()
 }
 
+// Which existing tags to offer under the input. With an empty draft this is the
+// full pool minus what's already chosen — that's what makes the list visible on
+// focus (not only while typing). While typing, filter by case-insensitive prefix.
+export function tagSuggestions(existing: TagRef[], chosen: string[], draft: string): TagRef[] {
+  const norm = normalizeTag(draft)
+  const chosenSet = new Set(chosen.map(normalizeTag))
+  return existing.filter(
+    (t) => !chosenSet.has(normalizeTag(t.name)) && (!norm || normalizeTag(t.name).startsWith(norm))
+  )
+}
+
 export function getRecipeTags(recipe: any): TagRef[] {
   const tags: TagRef[] = (recipe.recipe_tags ?? [])
     .map((rt: any) => rt.tag)

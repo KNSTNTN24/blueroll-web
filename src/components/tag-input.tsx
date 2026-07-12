@@ -6,7 +6,7 @@ import { X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { Input } from '@/components/ui/input'
-import { normalizeTag } from '@/lib/tags'
+import { normalizeTag, tagSuggestions } from '@/lib/tags'
 
 // Inline tag creation/selection (spec approach A — no tag management screen).
 // Autocomplete + normalisation are the duplicate guard: "pasta" matches "Pasta".
@@ -35,15 +35,10 @@ export function TagInput({
     enabled: !!business?.id,
   })
 
-  const suggestions = useMemo(() => {
-    const norm = normalizeTag(draft)
-    const chosen = new Set(value.map(normalizeTag))
-    return existing.filter(
-      (t: any) =>
-        !chosen.has(normalizeTag(t.name)) &&
-        (!norm || normalizeTag(t.name).startsWith(norm))
-    )
-  }, [existing, value, draft])
+  const suggestions = useMemo(
+    () => tagSuggestions(existing, value, draft),
+    [existing, value, draft]
+  )
 
   function add(name: string) {
     const trimmed = name.trim()
@@ -90,18 +85,23 @@ export function TagInput({
           className="h-8 w-44 text-[13px]"
         />
       </div>
-      {suggestions.length > 0 && draft.trim() !== '' && (
-        <div className="flex flex-wrap gap-1.5">
-          {suggestions.slice(0, 8).map((t: any) => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => add(t.name)}
-              className="inline-flex items-center rounded-full bg-muted/50 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground border border-border hover:border-emerald-300 hover:text-foreground transition-colors"
-            >
-              {t.name}
-            </button>
-          ))}
+      {suggestions.length > 0 && (
+        <div className="space-y-1">
+          {draft.trim() === '' && (
+            <p className="text-[11px] text-muted-foreground">Existing tags — tap to add</p>
+          )}
+          <div className="flex flex-wrap gap-1.5">
+            {suggestions.slice(0, 24).map((t: any) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => add(t.name)}
+                className="inline-flex items-center rounded-full bg-muted/50 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground border border-border hover:border-emerald-300 hover:text-foreground transition-colors"
+              >
+                {t.name}
+              </button>
+            ))}
+          </div>
         </div>
       )}
     </div>
