@@ -9,6 +9,7 @@ import { toast } from 'sonner'
 import { ChevronLeft, Plus, Trash2, Check } from 'lucide-react'
 import { EU_ALLERGENS, ALLERGEN_LABELS } from '@/lib/constants'
 import { HACCP_RECIPE_METHODS } from '@/lib/haccp-methods'
+import { TagInput } from '@/components/tag-input'
 
 interface Ing { id: string; name: string; qty: string; unit: string; allergens: string[] }
 
@@ -39,6 +40,7 @@ export default function NewRecipePage() {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [category, setCategory] = useState('')
+  const [tags, setTags] = useState<string[]>([])
   const [ingredients, setIngredients] = useState<Ing[]>([{ id: uid(), name: '', qty: '', unit: 'g', allergens: [] }])
   const [cookingMethod, setCookingMethod] = useState('')
   const [temp, setTemp] = useState('')
@@ -100,11 +102,17 @@ export default function NewRecipePage() {
       }).select('id').single()
       if (rErr) throw rErr
 
+      // Attach tags — idempotent find-or-create on the DB side (same RPC as edit).
+      for (const t of tags) {
+        const { error: tagError } = await supabase.rpc('attach_tag', { p_recipe_id: recipe.id, p_name: t })
+        if (tagError) throw tagError
+      }
+
       const ri = validIngredients.map((ing) => ({ recipe_id: recipe.id, ingredient_id: ingredientIds[ing.name], quantity: ing.qty ? Number(ing.qty) : null, unit: ing.unit || null }))
       if (ri.length) { const { error } = await supabase.from('recipe_ingredients').insert(ri); if (error) throw error }
 
       toast.success(`"${name.trim()}" saved to recipes`)
-      ;['recipes', 'haccp-recipes', 'menu-recipes', 'menu-all-recipes', 'allergen-recipes'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }))
+      ;['recipes', 'haccp-recipes', 'menu-recipes', 'menu-all-recipes', 'allergen-recipes', 'tags'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }))
       router.push(`/recipes/${recipe.id}`)
     } catch (e: any) { toast.error(e.message || 'Failed to create recipe') } finally { setSaving(false) }
   }
@@ -145,6 +153,11 @@ export default function NewRecipePage() {
             <label style={{ font: "600 12.5px 'Geist'", color: '#6f7580' }}>Category</label>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
               {CATEGORIES.map((c) => <button key={c.v} onClick={() => setCategory(c.v)} style={catChip(category === c.v)}>{c.label}</button>)}
+            </div>
+            <div style={{ height: 1, background: '#f2f3f5', margin: '14px 0' }} />
+            <label style={{ font: "600 12.5px 'Geist'", color: '#6f7580' }}>Tags</label>
+            <div style={{ marginTop: 8 }}>
+              <TagInput value={tags} onChange={setTags} />
             </div>
           </div>
 
