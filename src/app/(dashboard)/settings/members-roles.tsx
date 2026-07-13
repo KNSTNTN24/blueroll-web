@@ -1,11 +1,11 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { toast } from 'sonner'
-import { Plus, X } from 'lucide-react'
+import { Plus, X, Copy, CheckCircle2 } from 'lucide-react'
 import { USER_ROLES, ROLE_LABELS, type UserRole } from '@/lib/constants'
 
 interface Member {
@@ -131,73 +131,125 @@ export function MembersRoles() {
   )
 }
 
-// ── Invite slide-over ───────────────────────────────────────────────
+// ── Invite slide-over (mirrors the main Team page) ──────────────────
+const ROLE_OPTS = [
+  { label: 'Site manager', value: 'manager' },
+  { label: 'Kitchen staff', value: 'kitchen_staff' },
+  { label: 'Front of house', value: 'front_of_house' },
+]
+
 function InviteSlideOver({ sites, onClose }: { sites: { id: string; name: string }[]; onClose: () => void }) {
+  const business = useAuthStore((s) => s.business)
+  const profile = useAuthStore((s) => s.profile)
+  const qc = useQueryClient()
+  const bid = business?.id
   const [shown, setShown] = useState(false)
   const [email, setEmail] = useState('')
-  const [role, setRole] = useState<UserRole>('kitchen_staff')
-  const [siteId, setSiteId] = useState<string>('__all')
-  const [busy, setBusy] = useState(false)
-  const qc = useQueryClient()
-  const bid = useAuthStore.getState().business?.id
+  const [role, setRole] = useState<string>('kitchen_staff')
+  const [siteId, setSiteId] = useState<string>(sites[0]?.id ?? '')
+  const [token, setToken] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
 
   useEffect(() => { const t = requestAnimationFrame(() => setShown(true)); return () => cancelAnimationFrame(t) }, [])
   function close() { setShown(false); setTimeout(onClose, 300) }
 
-  async function send() {
-    if (!email.trim()) return
-    setBusy(true)
-    const { data, error } = await supabase.rpc('create_invite', { p_email: email.trim(), p_role: role })
-    setBusy(false)
-    if (error) { toast.error(error.message); return }
-    toast.success(`Invite sent to ${email.trim()}${data ? ` · code ${data}` : ''}`)
-    qc.invalidateQueries({ queryKey: ['members-roles', bid] })
-    close()
-  }
+  const invite = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase.rpc('create_invite', { p_email: email, p_role: role })
+      if (error) throw error
+      const row = Array.isArray(data) ? data[0] : data
+      if (!row?.token) throw new Error('Invite created but no token returned')
+      if (siteId) await supabase.from('invites').update({ site_id: siteId }).eq('token', row.token)
+      try {
+        await supabase.functions.invoke('send-invite', {
+          body: { to: email.trim(), code: row.token, groupName: business?.name, siteName: sites.find((s) => s.id === siteId)?.name, inviterName: profile?.full_name, appUrl: window.location.origin },
+        })
+      } catch { /* email is best-effort; code is shown regardless */ }
+      return row.token as string
+    },
+    onSuccess: (tok) => { setToken(tok); qc.invalidateQueries({ queryKey: ['members-roles', bid] }); toast.success('Invite created') },
+    onError: (err: Error) => toast.error(err.message || 'Failed to create invite'),
+  })
 
-  const field: React.CSSProperties = { width: '100%', border: '1px solid #e2e4e8', borderRadius: 10, padding: '11px 13px', font: "500 14px 'Geist'", color: '#16181d', outline: 'none', background: '#fff' }
-  const label: React.CSSProperties = { font: "600 13px 'Geist'", color: '#41464d', display: 'block', marginBottom: 8 }
+  const label: React.CSSProperties = { fontSize: 13, fontWeight: 600, color: '#41464d', display: 'block', marginBottom: 8 }
 
   return (
-    <>
-      <div onClick={close} style={{ position: 'fixed', inset: 0, background: 'rgba(20,22,27,.36)', zIndex: 60, opacity: shown ? 1 : 0, transition: 'opacity .3s ease-out' }} />
-      <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 440, maxWidth: '94vw', background: '#fff', zIndex: 61, boxShadow: '-24px 0 60px -30px rgba(16,24,40,.4)', display: 'flex', flexDirection: 'column', transform: shown ? 'translateX(0)' : 'translateX(100%)', transition: 'transform .3s cubic-bezier(0.32,0.72,0,1)' }}>
-        <div style={{ flex: 'none', padding: '20px 24px', borderBottom: '1px solid #eef0f2', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+    <div onClick={close} style={{ position: 'fixed', inset: 0, background: 'rgba(20,22,27,.36)', zIndex: 60, display: 'flex', justifyContent: 'flex-end', opacity: shown ? 1 : 0, transition: 'opacity .3s ease-out' }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: 440, maxWidth: '92vw', height: '100%', background: '#fff', boxShadow: '-24px 0 64px -32px rgba(16,24,40,.4)', display: 'flex', flexDirection: 'column', overflow: 'hidden', transform: shown ? 'translateX(0)' : 'translateX(100%)', transition: 'transform .3s cubic-bezier(0.32,0.72,0,1)' }}>
+        <div style={{ padding: '20px 24px', borderBottom: '1px solid #eef0f2', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
-            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, letterSpacing: '-.01em' }}>Invite member</h2>
-            <div style={{ fontSize: 13, color: '#8a9099', marginTop: 2 }}>They&apos;ll get an email invite to join your team.</div>
+            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#16181d' }}>Invite a team member</h2>
+            <div style={{ fontSize: 13, color: '#8a9099', marginTop: 2 }}>{token ? 'Share this code so they can join' : "They'll get an email with a sign-in link"}</div>
           </div>
           <button onClick={close} style={{ width: 34, height: 34, borderRadius: 9, border: 'none', background: '#f1f2f4', color: '#5c626b', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X className="h-[17px] w-[17px]" strokeWidth={2} /></button>
         </div>
-        <div style={{ flex: 1, overflowY: 'auto', padding: '22px 24px', display: 'flex', flexDirection: 'column', gap: 18 }}>
-          <div>
-            <label style={label}>Email address <span style={{ color: '#c0403a' }}>*</span></label>
-            <input autoFocus value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && send()} placeholder="name@example.co.uk" style={field}
-              onFocus={(e) => { e.currentTarget.style.borderColor = '#1f9d63'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(31,157,99,.12)' }}
-              onBlur={(e) => { e.currentTarget.style.borderColor = '#e2e4e8'; e.currentTarget.style.boxShadow = 'none' }} />
-          </div>
-          <div>
-            <label style={label}>Role</label>
-            <select value={role} onChange={(e) => setRole(e.target.value as UserRole)} style={{ ...field, cursor: 'pointer' }}>
-              {USER_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
-            </select>
-          </div>
-          <div>
-            <label style={label}>Site access</label>
-            <select value={siteId} onChange={(e) => setSiteId(e.target.value)} style={{ ...field, cursor: 'pointer' }}>
-              <option value="__all">All sites</option>
-              {sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-            <div style={{ fontSize: 12, color: '#9aa0a8', marginTop: 8, lineHeight: 1.5 }}>You can fine-tune their role and site access from the members list once they join.</div>
-          </div>
+
+        <div style={{ flex: 1, overflowY: 'auto', padding: '22px 24px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+          {token ? (
+            <div style={{ border: '1px solid #e7e9ec', borderRadius: 12, padding: 16 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#9aa0a8', marginBottom: 8 }}>Invite code</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <code style={{ flex: 1, border: '1px solid #e2e4e8', borderRadius: 8, padding: '10px 12px', fontFamily: 'monospace', fontSize: 15, fontWeight: 600, letterSpacing: '.05em', color: '#1c1f24' }}>{token}</code>
+                <button onClick={() => { navigator.clipboard.writeText(token); setCopied(true); toast.success('Copied'); setTimeout(() => setCopied(false), 2000) }}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid #e2e4e8', background: '#fff', color: '#41464d', fontSize: 13, fontWeight: 600, padding: '10px 12px', borderRadius: 9, cursor: 'pointer' }}>
+                  {copied ? <CheckCircle2 className="h-3.5 w-3.5 text-brand" /> : <Copy className="h-3.5 w-3.5" />} {copied ? 'Copied' : 'Copy'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div>
+                <label style={label}>Email <span style={{ color: '#d2453f' }}>*</span></label>
+                <input autoFocus type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="colleague@example.com"
+                  style={{ width: '100%', background: '#fff', border: '1px solid #e2e4e8', borderRadius: 10, padding: '11px 13px', fontSize: 14, color: '#1c1f24', outline: 'none' }}
+                  onFocus={(e) => { e.currentTarget.style.borderColor = '#1f9d63'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(31,157,99,.12)' }}
+                  onBlur={(e) => { e.currentTarget.style.borderColor = '#e2e4e8'; e.currentTarget.style.boxShadow = 'none' }} />
+              </div>
+              <div>
+                <label style={label}>Role</label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {ROLE_OPTS.map((o) => {
+                    const on = role === o.value
+                    return (
+                      <button key={o.value} onClick={() => setRole(o.value)}
+                        style={{ flex: 1, border: on ? '1.5px solid #1f9d63' : '1px solid #e2e4e8', background: on ? '#f5faf7' : '#fff', color: on ? '#1a6e49' : '#5c626b', fontSize: 13, fontWeight: 600, padding: 10, borderRadius: 10, cursor: 'pointer', whiteSpace: 'nowrap' }}>{o.label}</button>
+                    )
+                  })}
+                </div>
+              </div>
+              {sites.length > 0 && (
+                <div>
+                  <label style={label}>Site</label>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {sites.map((s) => {
+                      const on = siteId === s.id
+                      return (
+                        <button key={s.id} onClick={() => setSiteId(s.id)}
+                          style={{ border: on ? '1.5px solid #1f9d63' : '1px solid #e2e4e8', background: on ? '#f5faf7' : '#fff', color: on ? '#1a6e49' : '#5c626b', fontSize: 13, fontWeight: 600, padding: '9px 14px', borderRadius: 10, cursor: 'pointer', whiteSpace: 'nowrap' }}>{s.name}</button>
+                      )
+                    })}
+                  </div>
+                  <div style={{ fontSize: 12, color: '#9aa0a8', marginTop: 8 }}>Site managers and staff see only their site. Owners see the whole estate.</div>
+                </div>
+              )}
+            </>
+          )}
         </div>
-        <div style={{ flex: 'none', display: 'flex', gap: 10, padding: '16px 24px', borderTop: '1px solid #eef0f2' }}>
-          <button onClick={close} style={{ flex: 1, background: '#fff', border: '1px solid #e2e4e8', color: '#5c626b', font: "600 14px 'Geist'", padding: 11, borderRadius: 11, cursor: 'pointer' }}>Cancel</button>
-          <button onClick={send} disabled={!email.trim() || busy} style={{ flex: 1.4, background: email.trim() ? '#1f9d63' : '#cfe6da', border: 'none', color: email.trim() ? '#fff' : '#8fb9a4', font: "600 14px 'Geist'", padding: 11, borderRadius: 11, cursor: email.trim() ? 'pointer' : 'not-allowed' }}>
-            {busy ? 'Sending…' : 'Send invite'}
-          </button>
+
+        <div style={{ display: 'flex', gap: 10, padding: '16px 24px', borderTop: '1px solid #eef0f2' }}>
+          {token ? (
+            <button onClick={close} style={{ flex: 1, background: '#1f9d63', border: 'none', color: '#fff', fontSize: 14, fontWeight: 600, padding: 11, borderRadius: 11, cursor: 'pointer' }}>Done</button>
+          ) : (
+            <>
+              <button onClick={close} style={{ flex: 1, background: '#fff', border: '1px solid #e2e4e8', color: '#5c626b', fontSize: 14, fontWeight: 600, padding: 11, borderRadius: 11, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={() => invite.mutate()} disabled={!email.includes('@') || invite.isPending}
+                style={{ flex: 1.4, background: email.includes('@') ? '#1f9d63' : '#cfe6da', border: 'none', color: email.includes('@') ? '#fff' : '#8fb9a4', fontSize: 14, fontWeight: 600, padding: 11, borderRadius: 11, cursor: email.includes('@') ? 'pointer' : 'not-allowed' }}>
+                {invite.isPending ? 'Sending…' : 'Send invite'}
+              </button>
+            </>
+          )}
         </div>
       </div>
-    </>
+    </div>
   )
 }
