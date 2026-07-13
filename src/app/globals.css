@@ -142,3 +142,21 @@
   55%  { transform: scale(1.08); }
   100% { transform: scale(1); }
 }
+
+@keyframes beacon-check-pop {
+  0% { opacity: 0; transform: scale(.65) rotate(-8deg); }
+  60% { opacity: 1; transform: scale(1.08) rotate(2deg); }
+  100% { opacity: 1; transform: scale(1) rotate(0); }
+}
+
+.animate-beacon-check {
+  animation: beacon-check-pop 420ms cubic-bezier(.22, 1, .36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .feedback-beacon,
+  .feedback-beacon * {
+    animation-duration: .01ms !important;
+    transition-duration: .01ms !important;
+  }
+}

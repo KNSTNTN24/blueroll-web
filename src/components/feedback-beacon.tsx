@@ -41,6 +41,11 @@ const kindStyles = {
   feedback: 'bg-[#f8eefa] text-[#9b51a8]',
 } satisfies Record<FeedbackKind, string>
 
+type BeaconView = 'home' | 'form' | 'success'
+
+const PANEL_EXIT_MS = 220
+const CONTENT_EXIT_MS = 130
+
 export function FeedbackBeacon() {
   const pathname = usePathname()
   const user = useAuthStore((state) => state.user)
@@ -48,30 +53,59 @@ export function FeedbackBeacon() {
   const business = useAuthStore((state) => state.business)
   const currentSiteId = useAuthStore((state) => state.currentSiteId)
   const sites = useAuthStore((state) => state.sites)
+  const [mounted, setMounted] = useState(false)
   const [open, setOpen] = useState(false)
+  const [view, setView] = useState<BeaconView>('home')
+  const [contentVisible, setContentVisible] = useState(true)
   const [kind, setKind] = useState<FeedbackKind | null>(null)
   const [message, setMessage] = useState('')
   const [rating, setRating] = useState<number | null>(null)
   const [submitting, setSubmitting] = useState(false)
-  const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const transitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const animationFrameRef = useRef<number | null>(null)
 
   const reset = useCallback(() => {
+    setView('home')
+    setContentVisible(true)
     setKind(null)
     setMessage('')
     setRating(null)
-    setSubmitted(false)
     setError(null)
   }, [])
 
   const close = useCallback(() => {
+    if (transitionTimerRef.current) clearTimeout(transitionTimerRef.current)
+    if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
     setOpen(false)
-    reset()
     triggerRef.current?.focus()
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current)
+    closeTimerRef.current = setTimeout(() => {
+      setMounted(false)
+      reset()
+    }, PANEL_EXIT_MS)
   }, [reset])
+
+  const openPanel = useCallback(() => {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current)
+    setMounted(true)
+    animationFrameRef.current = requestAnimationFrame(() => setOpen(true))
+  }, [])
+
+  const transitionTo = useCallback((nextView: BeaconView, nextKind?: FeedbackKind) => {
+    if (transitionTimerRef.current) clearTimeout(transitionTimerRef.current)
+    if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
+    setContentVisible(false)
+    transitionTimerRef.current = setTimeout(() => {
+      if (nextKind) setKind(nextKind)
+      setView(nextView)
+      animationFrameRef.current = requestAnimationFrame(() => setContentVisible(true))
+    }, CONTENT_EXIT_MS)
+  }, [])
 
   useEffect(() => {
     if (!open) return
@@ -91,8 +125,14 @@ export function FeedbackBeacon() {
   }, [close, open])
 
   useEffect(() => {
-    if (open && kind && !submitted) textareaRef.current?.focus()
-  }, [kind, open, submitted])
+    if (open && view === 'form' && contentVisible) textareaRef.current?.focus()
+  }, [contentVisible, open, view])
+
+  useEffect(() => () => {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current)
+    if (transitionTimerRef.current) clearTimeout(transitionTimerRef.current)
+    if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
+  }, [])
 
   async function submit(event: FormEvent) {
     event.preventDefault()
@@ -125,9 +165,9 @@ export function FeedbackBeacon() {
     }
     const { error: invokeError } = await supabase.functions.invoke('send-feedback', {
       body: {
-      kind,
-      message: message.trim(),
-      rating: kind === 'feedback' ? rating : null,
+        kind,
+        message: message.trim(),
+        rating: kind === 'feedback' ? rating : null,
         siteId: currentSiteId,
         pageUrl: window.location.href,
         pagePath: pathname,
@@ -140,26 +180,39 @@ export function FeedbackBeacon() {
       setError('We could not send this right now. Please try again.')
       return
     }
-    setSubmitted(true)
+    transitionTo('success')
   }
 
   const selectedCopy = kind ? FEEDBACK_COPY[kind] : null
+  const contentHeight = view === 'home'
+    ? 'h-[390px]'
+    : view === 'success'
+      ? 'h-[280px]'
+      : kind === 'feedback'
+        ? 'h-[390px]'
+        : 'h-[330px]'
 
   return (
     <>
-      {open && (
+      {mounted && (
         <div
           ref={panelRef}
           role="dialog"
           aria-label="Help and feedback"
-          className="fixed bottom-20 right-3 z-[70] flex max-h-[calc(100vh-6rem)] w-[calc(100vw-24px)] max-w-[390px] flex-col overflow-hidden rounded-[18px] border border-[#e1e4e8] bg-card shadow-[0_10px_30px_rgba(16,24,40,.12),0_30px_80px_-24px_rgba(16,24,40,.38)] sm:bottom-24 sm:right-6"
+          aria-hidden={!open}
+          className={cn(
+            'feedback-beacon fixed bottom-20 right-3 z-[70] flex max-h-[calc(100vh-6rem)] w-[calc(100vw-24px)] max-w-[390px] origin-bottom-right flex-col overflow-hidden rounded-[18px] border border-[#e1e4e8] bg-card shadow-[0_10px_30px_rgba(16,24,40,.12),0_30px_80px_-24px_rgba(16,24,40,.38)] transition-[opacity,transform,box-shadow] duration-[220ms] ease-[cubic-bezier(.22,1,.36,1)] sm:bottom-24 sm:right-6',
+            open
+              ? 'translate-y-0 scale-100 opacity-100'
+              : 'pointer-events-none translate-y-2 scale-[.97] opacity-0 shadow-none',
+          )}
         >
           <div className="flex items-center gap-2 border-b border-border px-4 py-3.5">
-            {kind && !submitted ? (
+            {view === 'form' ? (
               <button
                 type="button"
-                onClick={() => { setKind(null); setError(null) }}
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                onClick={() => { setError(null); transitionTo('home') }}
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-[color,background-color,transform] duration-200 hover:-translate-x-0.5 hover:bg-secondary hover:text-foreground"
                 aria-label="Back"
               >
                 <ChevronLeft className="h-[18px] w-[18px]" />
@@ -170,23 +223,27 @@ export function FeedbackBeacon() {
               </span>
             )}
             <div className="min-w-0 flex-1">
-              <div className="text-[14px] font-semibold text-foreground">
-                {submitted ? 'Message sent' : selectedCopy?.label ?? 'Help & feedback'}
+              <div className="text-[14px] font-semibold text-foreground transition-opacity duration-150">
+                {view === 'success' ? 'Message sent' : view === 'form' ? selectedCopy?.label : 'Help & feedback'}
               </div>
-              {!kind && <div className="text-[11.5px] text-muted-foreground">Talk directly to the Blueroll team</div>}
+              {view === 'home' && <div className="text-[11.5px] text-muted-foreground">Talk directly to the Blueroll team</div>}
             </div>
             <button
               type="button"
               onClick={close}
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-[color,background-color,transform] duration-200 hover:rotate-6 hover:bg-secondary hover:text-foreground"
               aria-label="Close"
             >
               <X className="h-[17px] w-[17px]" />
             </button>
           </div>
 
-          <div className="overflow-y-auto">
-            {!kind && !submitted && (
+          <div className={cn('min-h-0 overflow-y-auto transition-[height] duration-300 ease-[cubic-bezier(.22,1,.36,1)]', contentHeight)}>
+            <div className={cn(
+              'transition-[opacity,transform] duration-150 ease-[cubic-bezier(.22,1,.36,1)]',
+              contentVisible ? 'translate-y-0 opacity-100' : 'translate-y-1.5 opacity-0',
+            )}>
+            {view === 'home' && (
               <div className="p-3">
                 <div className="px-1 pb-3 pt-1">
                   <div className="text-[18px] font-semibold tracking-[-0.02em] text-foreground">How can we help?</div>
@@ -202,17 +259,22 @@ export function FeedbackBeacon() {
                       <button
                         key={itemKind}
                         type="button"
-                        onClick={() => { setKind(itemKind); setMessage(''); setRating(null); setError(null) }}
-                        className="flex w-full items-center gap-3 rounded-xl border border-transparent px-2.5 py-2.5 text-left transition-colors hover:border-border hover:bg-accent"
+                        onClick={() => {
+                          setMessage('')
+                          setRating(null)
+                          setError(null)
+                          transitionTo('form', itemKind)
+                        }}
+                        className="group flex w-full items-center gap-3 rounded-xl border border-transparent px-2.5 py-2.5 text-left transition-[border-color,background-color,transform,box-shadow] duration-200 hover:translate-x-0.5 hover:border-border hover:bg-accent hover:shadow-[0_5px_18px_-14px_rgba(16,24,40,.45)]"
                       >
-                        <span className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-xl', kindStyles[itemKind])}>
-                          <Icon className="h-[18px] w-[18px]" strokeWidth={1.8} />
+                        <span className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-transform duration-200 group-hover:scale-105', kindStyles[itemKind])}>
+                          <Icon className="h-[18px] w-[18px] transition-transform duration-200 group-hover:scale-110" strokeWidth={1.8} />
                         </span>
                         <span className="min-w-0 flex-1">
                           <span className="block text-[13px] font-semibold text-foreground">{copy.label}</span>
                           <span className="mt-0.5 block text-[11.5px] text-muted-foreground">{copy.description}</span>
                         </span>
-                        <ChevronLeft className="h-4 w-4 rotate-180 text-[#b0b5bc]" />
+                        <ChevronLeft className="h-4 w-4 rotate-180 text-[#b0b5bc] transition-transform duration-200 group-hover:translate-x-0.5" />
                       </button>
                     )
                   })}
@@ -223,7 +285,7 @@ export function FeedbackBeacon() {
               </div>
             )}
 
-            {kind && selectedCopy && !submitted && (
+            {view === 'form' && kind && selectedCopy && (
               <form onSubmit={submit} className="p-4">
                 <label htmlFor="feedback-message" className="text-[13px] font-semibold text-foreground">
                   {selectedCopy.prompt}
@@ -240,11 +302,14 @@ export function FeedbackBeacon() {
                           key={value}
                           type="button"
                           onClick={() => setRating(value)}
-                          className="flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-amber-tint"
+                          className="flex h-9 w-9 items-center justify-center rounded-lg transition-[background-color,transform] duration-200 hover:scale-110 hover:bg-amber-tint active:scale-95"
                           aria-label={`${value} out of 5`}
                         >
                           <Star
-                            className={cn('h-[19px] w-[19px]', rating && value <= rating ? 'fill-[#d79b32] text-[#d79b32]' : 'text-[#c5c9cf]')}
+                            className={cn(
+                              'h-[19px] w-[19px] transition-[color,fill,transform] duration-200',
+                              rating && value <= rating ? 'scale-110 fill-[#d79b32] text-[#d79b32]' : 'scale-100 text-[#c5c9cf]',
+                            )}
                             strokeWidth={1.7}
                           />
                         </button>
@@ -272,19 +337,30 @@ export function FeedbackBeacon() {
               </form>
             )}
 
-            {submitted && selectedCopy && (
+            {view === 'success' && selectedCopy && (
               <div className="flex flex-col items-center px-7 py-9 text-center">
-                <span className="flex h-14 w-14 items-center justify-center rounded-full bg-brand-tint text-brand-deep">
+                <span className="animate-beacon-check flex h-14 w-14 items-center justify-center rounded-full bg-brand-tint text-brand-deep">
                   <Check className="h-7 w-7" strokeWidth={2} />
                 </span>
                 <div className="mt-4 text-[17px] font-semibold text-foreground">Thank you</div>
                 <p className="mt-1.5 max-w-[280px] text-[12.5px] leading-5 text-muted-foreground">{selectedCopy.success}</p>
                 <div className="mt-5 flex w-full gap-2">
-                  <Button type="button" variant="outline" className="flex-1" onClick={reset}>Send another</Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="flex-1"
+                    onClick={() => {
+                      setMessage('')
+                      setRating(null)
+                      setError(null)
+                      transitionTo('home')
+                    }}
+                  >Send another</Button>
                   <Button type="button" className="flex-1" onClick={close}>Done</Button>
                 </div>
               </div>
             )}
+            </div>
           </div>
         </div>
       )}
@@ -292,13 +368,19 @@ export function FeedbackBeacon() {
       <button
         ref={triggerRef}
         type="button"
-        onClick={() => { if (open) close(); else setOpen(true) }}
+        onClick={() => { if (open) close(); else openPanel() }}
         aria-label={open ? 'Close help and feedback' : 'Open help and feedback'}
         aria-expanded={open}
-        className="fixed bottom-4 right-3 z-[69] flex h-12 items-center gap-2 rounded-full bg-[#171a20] px-4 text-[13px] font-semibold text-white shadow-[0_8px_24px_rgba(16,24,40,.28)] transition-[transform,background] hover:-translate-y-0.5 hover:bg-[#242830] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 sm:bottom-6 sm:right-6"
+        className="feedback-beacon fixed bottom-4 right-3 z-[69] flex h-12 items-center gap-2 rounded-full bg-[#171a20] px-4 text-[13px] font-semibold text-white shadow-[0_8px_24px_rgba(16,24,40,.28)] transition-[transform,background-color,box-shadow] duration-200 ease-out hover:-translate-y-0.5 hover:bg-[#242830] hover:shadow-[0_12px_30px_rgba(16,24,40,.32)] active:translate-y-0 active:scale-[.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 sm:bottom-6 sm:right-6"
       >
-        {open ? <X className="h-[18px] w-[18px]" /> : <MessageCircle className="h-[18px] w-[18px]" />}
-        <span className="hidden sm:inline">{open ? 'Close' : 'Help'}</span>
+        <span className="relative h-[18px] w-[18px]">
+          <MessageCircle className={cn('absolute inset-0 h-[18px] w-[18px] transition-[opacity,transform] duration-200', open ? 'rotate-90 scale-75 opacity-0' : 'rotate-0 scale-100 opacity-100')} />
+          <X className={cn('absolute inset-0 h-[18px] w-[18px] transition-[opacity,transform] duration-200', open ? 'rotate-0 scale-100 opacity-100' : '-rotate-90 scale-75 opacity-0')} />
+        </span>
+        <span className="hidden min-w-[34px] sm:grid">
+          <span className={cn('col-start-1 row-start-1 transition-[opacity,transform] duration-200', open ? '-translate-y-1 opacity-0' : 'translate-y-0 opacity-100')}>Help</span>
+          <span className={cn('col-start-1 row-start-1 transition-[opacity,transform] duration-200', open ? 'translate-y-0 opacity-100' : 'translate-y-1 opacity-0')}>Close</span>
+        </span>
       </button>
     </>
   )
