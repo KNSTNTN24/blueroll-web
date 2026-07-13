@@ -33,6 +33,7 @@ interface BrandResult {
   name: string
   domain: string
   icon: string | null
+  logo: string
   claimed: boolean
 }
 
@@ -151,7 +152,7 @@ export default function SuppliersPage() {
     setForm((current) => ({
       ...current,
       website: current.website || `https://${brand.domain}`,
-      logoUrl: brand.icon ?? '',
+      logoUrl: brand.logo,
       logoDomain: brand.domain,
       logoSource: 'brandfetch',
       logoVerified: true,
@@ -281,7 +282,7 @@ export default function SuppliersPage() {
                         onMouseEnter={(event) => (event.currentTarget.style.background = '#f1f3f4')}
                         onMouseLeave={(event) => (event.currentTarget.style.background = 'transparent')}
                       >
-                        <SupplierLogo name={brand.name} logoUrl={brand.icon} size={34} />
+                        <SupplierLogo name={brand.name} logoUrl={brand.logo} size={34} />
                         <span style={{ minWidth: 0, flex: 1 }}>
                           <span style={{ display: 'block', font: "600 12.5px 'Geist'", color: '#30343a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{brand.name}</span>
                           <span style={{ display: 'block', marginTop: 1, font: "400 11px 'Geist'", color: '#8a9099' }}>{brand.domain}</span>

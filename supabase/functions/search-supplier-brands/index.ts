@@ -26,6 +26,19 @@ function normalizeDomain(value: unknown) {
   return domain && domain.length <= 253 ? domain : null;
 }
 
+function buildLogoUrl(icon: string) {
+  try {
+    const url = new URL(icon);
+    if (url.hostname !== "cdn.brandfetch.io") return icon;
+    const brandId = url.pathname.split("/").filter(Boolean)[0];
+    const clientId = url.searchParams.get("c");
+    if (!brandId || !clientId) return icon;
+    return `https://cdn.brandfetch.io/${brandId}/w/256/h/128/fallback/404/logo.webp?c=${encodeURIComponent(clientId)}`;
+  } catch {
+    return icon;
+  }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
@@ -70,6 +83,7 @@ Deno.serve(async (req: Request) => {
           name: typeof item.name === "string" ? item.name : domain,
           domain,
           icon,
+          logo: buildLogoUrl(icon),
           claimed: item.claimed === true,
         };
       })
