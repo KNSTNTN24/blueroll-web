@@ -106,9 +106,13 @@ Deno.serve(async (req) => {
       });
     }
 
+    const { data: siteCountData } = await supabase.rpc("billable_site_count", { p_business_id: businessId });
+    const quantity = Number(siteCountData ?? 1) || 1;
+
     const subscription = await stripeRequest("/subscriptions", {
       customer: customerId,
       "items[0][price]": STRIPE_PRICE_ID,
+      "items[0][quantity]": String(quantity),
       "trial_period_days": "14",
       "default_payment_method": paymentMethodId,
       "expand[0]": "pending_setup_intent",
