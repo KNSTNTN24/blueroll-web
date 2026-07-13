@@ -80,6 +80,7 @@ async function loadProfileAndBusiness(userId: string, retry = 0): Promise<void> 
         .from('sites')
         .select('*')
         .eq('business_id', business.id)
+        .neq('status', 'removed')
         .order('name')
       const siteList = sites ?? []
       store.setSites(siteList)

@@ -2,10 +2,15 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAuth } from '@/hooks/use-auth'
 import { toast } from 'sonner'
+import { X, Pencil, Trash2, ArrowRight } from 'lucide-react'
+
+interface Site { id: string; name: string; address: string | null; postcode: string | null; fsa_rating: string | null; manager_id: string | null; status: string | null; created_at?: string }
+interface Member { id: string; full_name: string | null; site_id: string | null }
 
 const TILE = ['#1f7a52', '#5b6472', '#8a6d52', '#4e6e81']
 const codeOf = (n: string) => {
@@ -29,36 +34,24 @@ interface FsaEstablishment {
 
 export function SitesSettings() {
   const business = useAuthStore((s) => s.business)
-  const sites = useAuthStore((s) => s.sites)
+  const sites = useAuthStore((s) => s.sites) as unknown as Site[]
+  const setCurrentSiteId = useAuthStore((s) => s.setCurrentSiteId)
   const { refreshProfile } = useAuth()
+  const router = useRouter()
   const bid = business?.id
 
   const [addOpen, setAddOpen] = useState(false)
-  const [menuFor, setMenuFor] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (!menuFor) return
-    const h = () => setMenuFor(null)
-    document.addEventListener('click', h)
-    return () => document.removeEventListener('click', h)
-  }, [menuFor])
+  const [openId, setOpenId] = useState<string | null>(null)
 
   const { data: members = [] } = useQuery({
     queryKey: ['sites-members', bid],
     enabled: !!bid,
-    queryFn: async () => (await supabase.from('profiles').select('id, full_name, site_id').eq('business_id', bid!)).data ?? [],
+    queryFn: async () => (await supabase.from('profiles').select('id, full_name, site_id').eq('business_id', bid!)).data as Member[] ?? [],
   })
-  const memberCount = (siteId: string) => (members as { site_id: string }[]).filter((m) => m.site_id === siteId).length
-  const managerName = (id: string | null) => (members as { id: string; full_name: string }[]).find((m) => m.id === id)?.full_name ?? null
+  const memberCount = (siteId: string) => members.filter((m) => m.site_id === siteId).length
+  const openSite = sites.find((s) => s.id === openId) ?? null
 
-  async function removeSite(id: string, name: string) {
-    if (sites.length <= 1) { toast.error('A group must keep at least one site.'); return }
-    if (!confirm(`Remove ${name}? Its checklists, incidents and other site data will be deleted. This cannot be undone.`)) return
-    const { error } = await supabase.from('sites').delete().eq('id', id)
-    if (error) { toast.error(error.message); return }
-    toast.success('Site removed')
-    await refreshProfile()
-  }
+  function manageTeam(siteId: string) { setCurrentSiteId(siteId); router.push('/team') }
 
   return (
     <div>
@@ -77,17 +70,20 @@ export function SitesSettings() {
         </button>
       </div>
 
-      {/* site cards */}
+      {/* site cards (whole card opens the view panel) */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 22 }}>
         {sites.map((s) => {
           const r = parseInt(s.fsa_rating ?? '')
           const rm = Number.isNaN(r) ? null : ratingMeta(r)
           const mc = memberCount(s.id)
-          const created = (s as { created_at?: string }).created_at
-          const since = created ? new Date(created).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }) : null
+          const since = s.created_at ? new Date(s.created_at).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }) : null
           const onboarding = s.status === 'onboarding'
+          const selected = openId === s.id
           return (
-            <div key={s.id} style={{ background: '#fff', border: '1px solid #e9eaed', borderRadius: 16, boxShadow: '0 1px 2px rgba(16,24,40,.03)', padding: '17px 20px', display: 'flex', alignItems: 'center', gap: 16 }}>
+            <button key={s.id} onClick={() => setOpenId(s.id)}
+              style={{ background: '#fff', border: `1px solid ${selected ? '#cfe8db' : '#e9eaed'}`, borderRadius: 16, boxShadow: '0 1px 2px rgba(16,24,40,.03)', padding: '17px 20px', display: 'flex', alignItems: 'center', gap: 16, cursor: 'pointer', textAlign: 'left', width: '100%', fontFamily: 'inherit', transition: 'border-color .14s' }}
+              onMouseEnter={(e) => { if (!selected) e.currentTarget.style.borderColor = '#cfe8db' }}
+              onMouseLeave={(e) => { if (!selected) e.currentTarget.style.borderColor = '#e9eaed' }}>
               <span style={{ width: 42, height: 42, flex: 'none', borderRadius: 12, background: '#eef7f2', color: '#1f7a52', display: 'flex', alignItems: 'center', justifyContent: 'center', font: "700 14px 'Geist'" }}>{codeOf(s.name)}</span>
               <span style={{ flex: 1, minWidth: 0 }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 9, font: "700 14.5px 'Geist'", color: '#16181d', whiteSpace: 'nowrap' }}>
@@ -98,42 +94,166 @@ export function SitesSettings() {
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, font: "600 11.5px 'Geist'", color: '#1f7a52', background: '#e9f6ef', padding: '3px 9px', borderRadius: 14, flex: 'none' }}><span style={{ width: 5, height: 5, borderRadius: '50%', background: '#1f9d63' }} />Active</span>
                   )}
                 </span>
-                <span style={{ display: 'block', font: "400 12.5px 'Geist'", color: '#9aa0a8', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{[s.postcode, rm ? `FSA ${s.fsa_rating}` : null].filter(Boolean).join(' · ') || 'FSA pending'}</span>
+                <span style={{ display: 'block', font: "400 12.5px 'Geist'", color: '#9aa0a8', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{[s.address || s.postcode, rm ? `FSA ${s.fsa_rating}` : null].filter(Boolean).join(' · ') || 'FSA pending'}</span>
               </span>
               <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2, whiteSpace: 'nowrap', flex: 'none' }}>
                 <span style={{ font: "600 12.5px 'Geist'", color: '#41464d' }}>{mc} team member{mc === 1 ? '' : 's'}</span>
                 {since && <span style={{ font: "400 12px 'Geist'", color: '#9aa0a8' }}>live since {since}</span>}
               </span>
-              <div style={{ position: 'relative', flex: 'none' }} onClick={(e) => e.stopPropagation()}>
-                <button onClick={() => setMenuFor((m) => (m === s.id ? null : s.id))}
-                  style={{ display: 'flex', alignItems: 'center', gap: 6, border: '1px solid #e2e4e8', background: '#fff', color: '#41464d', borderRadius: 10, padding: '8px 14px', font: "600 13px 'Geist'", cursor: 'pointer', whiteSpace: 'nowrap' }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = '#fafbfb'; e.currentTarget.style.color = '#16181d' }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.color = '#41464d' }}>
-                  Manage
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 6 15 12 9 18" /></svg>
-                </button>
-                {menuFor === s.id && (
-                  <div style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, width: 180, background: '#fff', border: '1px solid #e7e9ec', borderRadius: 12, boxShadow: '0 18px 44px -18px rgba(16,24,40,.28)', padding: 5, zIndex: 40 }}>
-                    <button onClick={() => { setMenuFor(null); removeSite(s.id, s.name) }} style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', border: 'none', background: 'none', borderRadius: 8, padding: '8px 9px', font: "500 13px 'Geist'", color: '#c0392b', cursor: 'pointer', textAlign: 'left' }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = '#fdf3f2')} onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}>
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7h16" /><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /><path d="M6.5 7l1 12a1.5 1.5 0 0 0 1.5 1.4h6a1.5 1.5 0 0 0 1.5-1.4l1-12" /></svg>
-                      Remove site
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#c2c6cc" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none' }}><polyline points="9 6 15 12 9 18" /></svg>
+            </button>
           )
         })}
       </div>
 
-      {/* removal note */}
-      <div style={{ background: '#fff', border: '1px solid #e9eaed', borderRadius: 16, boxShadow: '0 1px 2px rgba(16,24,40,.03)', padding: '17px 20px', marginTop: 14, display: 'flex', gap: 13 }}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9aa0a8" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none', marginTop: 2 }}><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
-        <p style={{ margin: 0, font: "400 13px/1.6 'Geist'", color: '#6b7280' }}>Removing a site is done from its own <strong style={{ fontWeight: 600, color: '#41464d' }}>Manage</strong> menu and asks for confirmation. Records are kept for 4 years for EHO inspection even after removal; billing stops the same day.</p>
-      </div>
-
       {addOpen && <AddSiteSlideOver onClose={() => setAddOpen(false)} onDone={async () => { setAddOpen(false); await refreshProfile() }} businessId={bid!} />}
+      {openSite && (
+        <SiteViewPanel key={openSite.id} site={openSite} members={members} teamCount={memberCount(openSite.id)} canRemove={sites.length > 1}
+          onClose={() => setOpenId(null)} onManageTeam={() => manageTeam(openSite.id)}
+          onChanged={async () => { await refreshProfile() }} />
+      )}
+    </div>
+  )
+}
+
+// ── Site view / edit / remove panel ─────────────────────────────────
+function SiteViewPanel({ site, members, teamCount, canRemove, onClose, onManageTeam, onChanged }: {
+  site: Site; members: Member[]; teamCount: number; canRemove: boolean
+  onClose: () => void; onManageTeam: () => void; onChanged: () => Promise<void>
+}) {
+  const [shown, setShown] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [confirming, setConfirming] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [removing, setRemoving] = useState(false)
+  const [name, setName] = useState(site.name)
+  const [address, setAddress] = useState(site.address ?? '')
+  const [managerId, setManagerId] = useState(site.manager_id ?? '')
+
+  useEffect(() => { const t = requestAnimationFrame(() => setShown(true)); return () => cancelAnimationFrame(t) }, [])
+  function close() { setShown(false); setTimeout(onClose, 300) }
+
+  const managerName = members.find((m) => m.id === site.manager_id)?.full_name ?? null
+  const since = site.created_at ? new Date(site.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'
+
+  async function save() {
+    if (!name.trim()) { toast.error('Site name is required'); return }
+    setSaving(true)
+    const { error } = await supabase.from('sites').update({ name: name.trim(), address: address.trim() || null, manager_id: managerId || null }).eq('id', site.id)
+    setSaving(false)
+    if (error) { toast.error(error.message); return }
+    toast.success('Site updated')
+    setEditing(false)
+    await onChanged()
+  }
+
+  async function remove() {
+    if (!canRemove) { toast.error('A group must keep at least one site.'); return }
+    setRemoving(true)
+    // Soft delete: keep the row + all its records (checklists, incidents, docs…) for
+    // 4-year EHO retention; hiding it from the estate stops billing for it.
+    const { error } = await supabase.from('sites').update({ status: 'removed', removed_at: new Date().toISOString() }).eq('id', site.id)
+    setRemoving(false)
+    if (error) { toast.error(error.message); return }
+    toast.success('Site removed — records kept for 4 years')
+    close()
+    await onChanged()
+  }
+
+  const field: React.CSSProperties = { width: '100%', border: '1px solid #e2e4e8', borderRadius: 10, padding: '10px 12px', font: "500 13.5px 'Geist'", color: '#16181d', outline: 'none', background: '#fff' }
+  const lbl: React.CSSProperties = { font: "600 12.5px 'Geist'", color: '#41464d', display: 'block', marginBottom: 7 }
+
+  return (
+    <div onClick={close} style={{ position: 'fixed', inset: 0, background: 'rgba(16,18,29,.32)', zIndex: 60, display: 'flex', justifyContent: 'flex-end', opacity: shown ? 1 : 0, transition: 'opacity .3s ease-out' }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: 400, maxWidth: '92vw', height: '100%', background: '#fff', boxShadow: '-24px 0 60px -30px rgba(16,24,40,.4)', display: 'flex', flexDirection: 'column', overflow: 'hidden', transform: shown ? 'translateX(0)' : 'translateX(100%)', transition: 'transform .3s cubic-bezier(0.32,0.72,0,1)' }}>
+        {/* header */}
+        <div style={{ flex: 'none', padding: '18px 22px', borderBottom: '1px solid #eef0f2', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span style={{ width: 40, height: 40, flex: 'none', borderRadius: 11, background: '#eef7f2', color: '#1f7a52', display: 'flex', alignItems: 'center', justifyContent: 'center', font: "700 13.5px 'Geist'" }}>{codeOf(site.name)}</span>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8, font: "700 16px 'Geist'", color: '#16181d', whiteSpace: 'nowrap' }}>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{site.name}</span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, font: "600 11px 'Geist'", color: '#1f7a52', background: '#e9f6ef', padding: '3px 8px', borderRadius: 14, flex: 'none' }}><span style={{ width: 5, height: 5, borderRadius: '50%', background: '#1f9d63' }} />{site.status === 'onboarding' ? 'Onboarding' : 'Active'}</span>
+            </span>
+          </span>
+          <button onClick={close} style={{ width: 32, height: 32, borderRadius: 9, border: 'none', background: '#f1f2f4', color: '#5c626b', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}><X className="h-4 w-4" strokeWidth={2} /></button>
+        </div>
+
+        {/* body */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '20px 22px' }}>
+          {editing ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div><label style={lbl}>Site name</label><input value={name} onChange={(e) => setName(e.target.value)} style={field} /></div>
+              <div><label style={lbl}>Address</label><input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Street, town, postcode" style={field} /></div>
+              <div>
+                <label style={lbl}>Manager</label>
+                <select value={managerId} onChange={(e) => setManagerId(e.target.value)} style={{ ...field, cursor: 'pointer' }}>
+                  <option value="">No manager</option>
+                  {members.filter((m) => m.full_name).map((m) => <option key={m.id} value={m.id}>{m.full_name}</option>)}
+                </select>
+              </div>
+              <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+                <button onClick={() => { setEditing(false); setName(site.name); setAddress(site.address ?? ''); setManagerId(site.manager_id ?? '') }} style={{ flex: 1, background: '#fff', border: '1px solid #e2e4e8', color: '#5c626b', font: "600 13.5px 'Geist'", padding: '10px', borderRadius: 10, cursor: 'pointer' }}>Cancel</button>
+                <button onClick={save} disabled={saving} style={{ flex: 1.4, background: '#1f9d63', border: 'none', color: '#fff', font: "600 13.5px 'Geist'", padding: '10px', borderRadius: 10, cursor: 'pointer' }}>{saving ? 'Saving…' : 'Save changes'}</button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div style={{ font: "600 11px 'Geist'", letterSpacing: '.07em', textTransform: 'uppercase', color: '#8a9099', marginBottom: 12 }}>Details</div>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <DetailRow label="Address" value={site.address || site.postcode || 'Not set'} />
+                <DetailRow label="Manager" value={managerName || 'No manager yet'} />
+                <DetailRow label="Team members" value={`${teamCount}`} />
+                <DetailRow label="Live since" value={since} />
+                <DetailRow label="Billing" value="£24.99/mo" sub="see Billing & subscription" />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 20 }}>
+                <button onClick={() => setEditing(true)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, border: '1px solid #e2e4e8', background: '#fff', color: '#41464d', font: "600 13.5px 'Geist'", padding: '10px 14px', borderRadius: 10, cursor: 'pointer' }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = '#fafbfb')} onMouseLeave={(e) => (e.currentTarget.style.background = '#fff')}>
+                  <Pencil className="h-4 w-4" strokeWidth={1.8} /> Edit site details
+                </button>
+                <button onClick={onManageTeam} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, border: '1px solid #e2e4e8', background: '#fff', color: '#41464d', font: "600 13.5px 'Geist'", padding: '10px 14px', borderRadius: 10, cursor: 'pointer' }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = '#fafbfb')} onMouseLeave={(e) => (e.currentTarget.style.background = '#fff')}>
+                  Manage team at this site <ArrowRight className="h-4 w-4" strokeWidth={1.8} />
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* remove footer (hidden while editing) */}
+        {!editing && (
+          <div style={{ flex: 'none', borderTop: '1px solid #eef0f2', padding: '14px 22px' }}>
+            {confirming ? (
+              <div style={{ background: '#fdf3f2', border: '1px solid #f5dcda', borderRadius: 12, padding: 14 }}>
+                <div style={{ font: "600 13px 'Geist'", color: '#8f2f26', marginBottom: 5 }}>Remove {site.name}?</div>
+                <div style={{ font: "400 12px/1.5 'Geist'", color: '#a05a52', marginBottom: 12 }}>Billing stops today. Records are kept read-only for 4 years for EHO inspection. This can&apos;t be undone.</div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button onClick={() => setConfirming(false)} style={{ flex: 1, background: '#fff', border: '1px solid #e6c9c5', color: '#8f2f26', font: "600 13px 'Geist'", padding: '9px', borderRadius: 9, cursor: 'pointer' }}>Cancel</button>
+                  <button onClick={remove} disabled={removing} style={{ flex: 1, background: '#c0392b', border: 'none', color: '#fff', font: "600 13px 'Geist'", padding: '9px', borderRadius: 9, cursor: 'pointer' }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = '#a93226')} onMouseLeave={(e) => (e.currentTarget.style.background = '#c0392b')}>{removing ? 'Removing…' : 'Remove site'}</button>
+                </div>
+              </div>
+            ) : (
+              <button onClick={() => canRemove ? setConfirming(true) : toast.error('A group must keep at least one site.')}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, border: 'none', background: 'none', color: '#c0392b', font: "600 13px 'Geist'", padding: '6px 4px', borderRadius: 8, cursor: 'pointer', opacity: canRemove ? 1 : 0.5 }}>
+                <Trash2 className="h-4 w-4" strokeWidth={1.8} /> Remove site
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function DetailRow({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, padding: '10px 0', borderBottom: '1px solid #f4f5f6' }}>
+      <span style={{ font: "500 13px 'Geist'", color: '#8a9099' }}>{label}</span>
+      <span style={{ textAlign: 'right' }}>
+        <span style={{ display: 'block', font: "600 13.5px 'Geist'", color: '#16181d' }}>{value}</span>
+        {sub && <span style={{ display: 'block', font: "400 11.5px 'Geist'", color: '#9aa0a8', marginTop: 1 }}>{sub}</span>}
+      </span>
     </div>
   )
 }
