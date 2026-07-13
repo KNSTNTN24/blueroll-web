@@ -47,6 +47,7 @@ export default function NewChecklistPage() {
   const queryClient = useQueryClient()
   const profile = useAuthStore((s) => s.profile)
   const business = useAuthStore((s) => s.business)
+  const currentSiteId = useAuthStore((s) => s.currentSiteId)
   const [submitting, setSubmitting] = useState(false)
   const [aiGenerating, setAiGenerating] = useState(false)
   const [wizardOpen, setWizardOpen] = useState(false)
@@ -229,6 +230,7 @@ export default function NewChecklistPage() {
         .insert({
           ...templateData,
           business_id: business.id,
+          site_id: currentSiteId,
           active: true,
           supervisor_role: data.supervisor_role || null,
           deadline_time: data.deadline_time || null,

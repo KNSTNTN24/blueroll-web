@@ -14,6 +14,7 @@ import { format } from 'date-fns'
 export default function NewDeliveryPage() {
   const profile = useAuthStore((s) => s.profile)
   const business = useAuthStore((s) => s.business)
+  const currentSiteId = useAuthStore((s) => s.currentSiteId)
   const router = useRouter()
   const queryClient = useQueryClient()
 
@@ -44,6 +45,7 @@ export default function NewDeliveryPage() {
 
       const { error } = await supabase.from('deliveries').insert({
         business_id: business.id,
+        site_id: currentSiteId,
         supplier_id: supplierId,
         received_by: profile.id,
         received_at: new Date(deliveredAt).toISOString(),
