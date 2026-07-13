@@ -34,6 +34,14 @@ export function SitesSettings() {
   const bid = business?.id
 
   const [addOpen, setAddOpen] = useState(false)
+  const [menuFor, setMenuFor] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!menuFor) return
+    const h = () => setMenuFor(null)
+    document.addEventListener('click', h)
+    return () => document.removeEventListener('click', h)
+  }, [menuFor])
 
   const { data: members = [] } = useQuery({
     queryKey: ['sites-members', bid],
@@ -53,70 +61,79 @@ export function SitesSettings() {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div>
       {/* header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 20, flexWrap: 'wrap' }}>
         <div>
-          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, letterSpacing: '-.01em', color: '#16181d' }}>Sites</h1>
-          <div style={{ color: '#6b7280', fontSize: 13.5, marginTop: 4 }}>{business?.name ?? 'Your group'} · plan includes up to 10 sites</div>
+          <h1 style={{ margin: 0, fontSize: 25, fontWeight: 700, letterSpacing: '-.02em', color: '#16181d' }}>Sites</h1>
+          <p style={{ margin: '6px 0 0', fontSize: 14, color: '#6b7280' }}>Each site has its own checklists, team and records. £24.99/mo per site, billed together.</p>
         </div>
         <button onClick={() => setAddOpen(true)}
-          style={{ display: 'flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap', background: '#1f9d63', border: 'none', color: '#fff', fontSize: 14, fontWeight: 600, padding: '11px 17px', borderRadius: 11, cursor: 'pointer', boxShadow: '0 1px 2px rgba(16,24,40,.1)' }}
-          onMouseEnter={(e) => (e.currentTarget.style.background = '#1c8e5a')}
+          style={{ display: 'flex', alignItems: 'center', gap: 7, whiteSpace: 'nowrap', background: '#1f9d63', border: 'none', color: '#fff', font: "600 13.5px 'Geist'", padding: '9px 16px', borderRadius: 10, cursor: 'pointer' }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = '#1a8a56')}
           onMouseLeave={(e) => (e.currentTarget.style.background = '#1f9d63')}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
           Add site
         </button>
       </div>
 
-      {/* rows */}
-      <div style={{ background: '#fff', border: '1px solid #e9eaed', borderRadius: 16, boxShadow: '0 1px 2px rgba(16,24,40,.03),0 14px 36px -28px rgba(16,24,40,.16)', overflow: 'hidden' }}>
-        {sites.map((s, i) => {
+      {/* site cards */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 22 }}>
+        {sites.map((s) => {
           const r = parseInt(s.fsa_rating ?? '')
-          const hasFsa = !Number.isNaN(r)
-          const rm = hasFsa ? ratingMeta(r) : null
-          const mgr = managerName(s.manager_id)
+          const rm = Number.isNaN(r) ? null : ratingMeta(r)
           const mc = memberCount(s.id)
-          const meta = [s.postcode, mgr || 'No manager yet', `${mc} member${mc === 1 ? '' : 's'}`].filter(Boolean).join(' · ')
+          const created = (s as { created_at?: string }).created_at
+          const since = created ? new Date(created).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }) : null
+          const onboarding = s.status === 'onboarding'
           return (
-            <div key={s.id} className="st-row" style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '15px 20px', borderBottom: i === sites.length - 1 ? 'none' : '1px solid #f2f3f5', transition: 'background .14s' }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = '#fafbfb')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
-              <div style={{ width: 38, height: 38, borderRadius: 10, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12.5, fontWeight: 700, flex: 'none', background: TILE[i % TILE.length] }}>{codeOf(s.name)}</div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 14.5, fontWeight: 600, color: '#1c1f24', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.name}</span>
-                  {s.status === 'onboarding' && (
-                    <span style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: '#7c828b', background: '#f1f2f4', padding: '3px 7px', borderRadius: 5, flex: 'none' }}>Onboarding</span>
+            <div key={s.id} style={{ background: '#fff', border: '1px solid #e9eaed', borderRadius: 16, boxShadow: '0 1px 2px rgba(16,24,40,.03)', padding: '17px 20px', display: 'flex', alignItems: 'center', gap: 16 }}>
+              <span style={{ width: 42, height: 42, flex: 'none', borderRadius: 12, background: '#eef7f2', color: '#1f7a52', display: 'flex', alignItems: 'center', justifyContent: 'center', font: "700 14px 'Geist'" }}>{codeOf(s.name)}</span>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 9, font: "700 14.5px 'Geist'", color: '#16181d', whiteSpace: 'nowrap' }}>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.name}</span>
+                  {onboarding ? (
+                    <span style={{ font: "600 11.5px 'Geist'", color: '#b07d1e', background: '#fbf3e6', border: '1px solid #f2e2c4', padding: '3px 9px', borderRadius: 14, flex: 'none' }}>Onboarding</span>
+                  ) : (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, font: "600 11.5px 'Geist'", color: '#1f7a52', background: '#e9f6ef', padding: '3px 9px', borderRadius: 14, flex: 'none' }}><span style={{ width: 5, height: 5, borderRadius: '50%', background: '#1f9d63' }} />Active</span>
                   )}
-                </div>
-                <div style={{ fontSize: 12.5, color: '#8a9099', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{meta}</div>
+                </span>
+                <span style={{ display: 'block', font: "400 12.5px 'Geist'", color: '#9aa0a8', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{[s.postcode, rm ? `FSA ${s.fsa_rating}` : null].filter(Boolean).join(' · ') || 'FSA pending'}</span>
+              </span>
+              <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2, whiteSpace: 'nowrap', flex: 'none' }}>
+                <span style={{ font: "600 12.5px 'Geist'", color: '#41464d' }}>{mc} team member{mc === 1 ? '' : 's'}</span>
+                {since && <span style={{ font: "400 12px 'Geist'", color: '#9aa0a8' }}>live since {since}</span>}
+              </span>
+              <div style={{ position: 'relative', flex: 'none' }} onClick={(e) => e.stopPropagation()}>
+                <button onClick={() => setMenuFor((m) => (m === s.id ? null : s.id))}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, border: '1px solid #e2e4e8', background: '#fff', color: '#41464d', borderRadius: 10, padding: '8px 14px', font: "600 13px 'Geist'", cursor: 'pointer', whiteSpace: 'nowrap' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = '#fafbfb'; e.currentTarget.style.color = '#16181d' }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.color = '#41464d' }}>
+                  Manage
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 6 15 12 9 18" /></svg>
+                </button>
+                {menuFor === s.id && (
+                  <div style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, width: 180, background: '#fff', border: '1px solid #e7e9ec', borderRadius: 12, boxShadow: '0 18px 44px -18px rgba(16,24,40,.28)', padding: 5, zIndex: 40 }}>
+                    <button onClick={() => { setMenuFor(null); removeSite(s.id, s.name) }} style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', border: 'none', background: 'none', borderRadius: 8, padding: '8px 9px', font: "500 13px 'Geist'", color: '#c0392b', cursor: 'pointer', textAlign: 'left' }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = '#fdf3f2')} onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}>
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7h16" /><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /><path d="M6.5 7l1 12a1.5 1.5 0 0 0 1.5 1.4h6a1.5 1.5 0 0 0 1.5-1.4l1-12" /></svg>
+                      Remove site
+                    </button>
+                  </div>
+                )}
               </div>
-              {hasFsa && rm ? (
-                <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: 12, fontWeight: 700, padding: '5px 9px', borderRadius: 7, background: rm.bg, color: rm.color, whiteSpace: 'nowrap', flex: 'none' }}>FSA {s.fsa_rating}</span>
-              ) : (
-                <span style={{ fontSize: 12, fontWeight: 500, color: '#b0b5bc', whiteSpace: 'nowrap', flex: 'none' }}>FSA pending</span>
-              )}
-              <button onClick={() => removeSite(s.id, s.name)} className="st-remove" title="Remove site"
-                style={{ border: 'none', background: 'none', color: '#c2c6cc', cursor: 'pointer', padding: 6, display: 'flex', borderRadius: 8, flex: 'none' }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = '#fbecec'; e.currentTarget.style.color = '#d2453f' }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = '#c2c6cc' }}>
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7h16" /><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /><path d="M6.5 7l1 12a1.5 1.5 0 0 0 1.5 1.4h6a1.5 1.5 0 0 0 1.5-1.4l1-12" /></svg>
-              </button>
             </div>
           )
         })}
       </div>
 
-      {/* info banner */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#f5faf7', border: '1px solid #dcefe4', borderRadius: 12, padding: '12px 15px' }}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1f7a52" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none' }}><circle cx="12" cy="12" r="8.5" /><path d="M12 11v5" /><circle cx="12" cy="8" r="0.8" fill="#1f7a52" /></svg>
-        <span style={{ fontSize: 12.5, color: '#1a6e49', lineHeight: 1.5 }}>A new site gets its own checklists, incidents and team. Recipes and the HACCP pack are shared across the group. It appears in the site switcher for everyone with estate access.</span>
+      {/* removal note */}
+      <div style={{ background: '#fff', border: '1px solid #e9eaed', borderRadius: 16, boxShadow: '0 1px 2px rgba(16,24,40,.03)', padding: '17px 20px', marginTop: 14, display: 'flex', gap: 13 }}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9aa0a8" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none', marginTop: 2 }}><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
+        <p style={{ margin: 0, font: "400 13px/1.6 'Geist'", color: '#6b7280' }}>Removing a site is done from its own <strong style={{ fontWeight: 600, color: '#41464d' }}>Manage</strong> menu and asks for confirmation. Records are kept for 4 years for EHO inspection even after removal; billing stops the same day.</p>
       </div>
 
       {addOpen && <AddSiteSlideOver onClose={() => setAddOpen(false)} onDone={async () => { setAddOpen(false); await refreshProfile() }} businessId={bid!} />}
-
-      <style>{`.st-row .st-remove{opacity:0;transition:opacity .14s}.st-row:hover .st-remove{opacity:1}`}</style>
     </div>
   )
 }
@@ -168,7 +185,7 @@ function AddSiteSlideOver({ onClose, onDone, businessId }: { onClose: () => void
       })
       if (error) throw error
       if (email.trim()) {
-        await supabase.rpc('create_invite', { p_email: email.trim(), p_role: 'manager' }).catch(() => {})
+        try { await supabase.rpc('create_invite', { p_email: email.trim(), p_role: 'manager' }) } catch { /* non-blocking */ }
       }
       toast.success('Site added')
       onDone()

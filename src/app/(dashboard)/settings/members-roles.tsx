@@ -1,10 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { toast } from 'sonner'
+import { Plus, X } from 'lucide-react'
 import { USER_ROLES, ROLE_LABELS, type UserRole } from '@/lib/constants'
 
 interface Member {
@@ -16,11 +17,12 @@ interface Member {
   is_group_admin: boolean | null
 }
 
-const TILE = ['#1f7a52', '#5b6472', '#8a6d52', '#4e6e81']
-const initials = (n: string | null, e: string | null) => {
-  const s = n || e || '?'
-  const p = s.split(' ').filter(Boolean)
-  return (p.length >= 2 ? p[0][0] + p[1][0] : s.slice(0, 2)).toUpperCase()
+const AVATARS: [string, string][] = [['#e9f6ef', '#1f7a52'], ['#e4edfb', '#3f6bc4'], ['#fbf3e6', '#b07d1e'], ['#f1f0f4', '#6b6580'], ['#eef2f6', '#4e6e81']]
+const initials = (n: string | null, e: string | null) => { const s = n || e || '?'; const p = s.split(' ').filter(Boolean); return (p.length >= 2 ? p[0][0] + p[1][0] : s.slice(0, 2)).toUpperCase() }
+function rolePill(role: UserRole | null): { bg: string; ink: string } {
+  if (role === 'owner') return { bg: '#e9f6ef', ink: '#1f7a52' }
+  if (role && /manager/.test(role)) return { bg: '#e4edfb', ink: '#3f6bc4' }
+  return { bg: '#eef0f2', ink: '#6b7280' }
 }
 
 export function MembersRoles() {
@@ -30,9 +32,7 @@ export function MembersRoles() {
   const qc = useQueryClient()
   const bid = business?.id
   const [savingId, setSavingId] = useState<string | null>(null)
-  const [inviting, setInviting] = useState(false)
-  const [inviteEmail, setInviteEmail] = useState('')
-  const [inviteRole, setInviteRole] = useState<UserRole>('kitchen_staff')
+  const [inviteOpen, setInviteOpen] = useState(false)
 
   const { data: members = [] } = useQuery({
     queryKey: ['members-roles', bid],
@@ -53,66 +53,53 @@ export function MembersRoles() {
     qc.invalidateQueries({ queryKey: ['sites-members', bid] })
   }
 
-  async function sendInvite() {
-    if (!inviteEmail.trim()) return
-    const { data, error } = await supabase.rpc('create_invite', { p_email: inviteEmail.trim(), p_role: inviteRole })
-    if (error) { toast.error(error.message); return }
-    toast.success(`Invite created${data ? ` · code ${data}` : ''}`)
-    setInviteEmail(''); setInviting(false)
-  }
-
-  const pillSelect: React.CSSProperties = { appearance: 'none', WebkitAppearance: 'none', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, padding: '5px 10px', borderRadius: 20, background: '#f1f2f4', color: '#41464d', flex: 'none' }
-  const accessSelect: React.CSSProperties = { appearance: 'none', WebkitAppearance: 'none', border: 'none', background: 'none', cursor: 'pointer', fontSize: 12.5, fontWeight: 500, color: '#5c626b', textAlign: 'right', flex: 'none', minWidth: 110, direction: 'rtl' }
+  const pillSelect: React.CSSProperties = { appearance: 'none', WebkitAppearance: 'none', border: 'none', cursor: 'pointer', font: "600 12px 'Geist'", padding: '4px 12px', borderRadius: 14, textAlign: 'center', textAlignLast: 'center', flex: 'none' }
+  const siteSelect: React.CSSProperties = { appearance: 'none', WebkitAppearance: 'none', border: 'none', background: 'none', cursor: 'pointer', font: "500 12.5px 'Geist'", color: '#6b7280', textAlign: 'right', width: 130, direction: 'rtl' }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 20 }}>
+    <div>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 20, flexWrap: 'wrap' }}>
         <div>
-          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, letterSpacing: '-.01em', color: '#16181d' }}>Members &amp; roles</h1>
-          <div style={{ color: '#6b7280', fontSize: 13.5, marginTop: 4 }}>Who can see what — access is per site, roles are per person</div>
+          <h1 style={{ margin: 0, fontSize: 25, fontWeight: 700, letterSpacing: '-.02em', color: '#16181d' }}>Team</h1>
+          <p style={{ margin: '6px 0 0', fontSize: 14, color: '#6b7280' }}>Unlimited team members on every plan — invite your whole kitchen.</p>
         </div>
-        <button onClick={() => setInviting((v) => !v)}
-          style={{ display: 'flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap', background: '#1f9d63', border: 'none', color: '#fff', fontSize: 14, fontWeight: 600, padding: '11px 17px', borderRadius: 11, cursor: 'pointer', boxShadow: '0 1px 2px rgba(16,24,40,.1)' }}
-          onMouseEnter={(e) => (e.currentTarget.style.background = '#1c8e5a')}
-          onMouseLeave={(e) => (e.currentTarget.style.background = '#1f9d63')}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-          Invite member
+        <button onClick={() => setInviteOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: 7, border: 'none', background: '#1f9d63', color: '#fff', borderRadius: 10, padding: '9px 16px', cursor: 'pointer', font: "600 13.5px 'Geist'", whiteSpace: 'nowrap' }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = '#1a8a56')} onMouseLeave={(e) => (e.currentTarget.style.background = '#1f9d63')}>
+          <Plus className="h-[13px] w-[13px]" strokeWidth={2.4} /> Invite member
         </button>
       </div>
 
-      {inviting && (
-        <div style={{ display: 'flex', gap: 8, background: '#fff', border: '1px solid #e9eaed', borderRadius: 12, padding: 12 }}>
-          <input autoFocus value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && sendInvite()}
-            placeholder="colleague@email.com" style={{ flex: 1, border: '1px solid #e2e4e8', borderRadius: 9, padding: '9px 12px', fontSize: 13.5, outline: 'none' }} />
-          <select value={inviteRole} onChange={(e) => setInviteRole(e.target.value as UserRole)} style={{ border: '1px solid #e2e4e8', borderRadius: 9, padding: '9px 10px', fontSize: 13.5 }}>
-            {USER_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
-          </select>
-          <button onClick={sendInvite} disabled={!inviteEmail.trim()} style={{ background: '#1f9d63', border: 'none', color: '#fff', fontSize: 13.5, fontWeight: 600, padding: '9px 15px', borderRadius: 9, cursor: 'pointer', opacity: inviteEmail.trim() ? 1 : 0.5 }}>Send</button>
+      {/* members */}
+      <div style={{ background: '#fff', border: '1px solid #e9eaed', borderRadius: 16, boxShadow: '0 1px 2px rgba(16,24,40,.03)', overflow: 'hidden', marginTop: 22 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '15px 20px 13px' }}>
+          <span style={{ font: "700 15px 'Geist'", letterSpacing: '-.01em' }}>Members</span>
+          <span style={{ font: "600 12px 'Geist'", color: '#8a9099', background: '#f1f2f4', padding: '3px 9px', borderRadius: 14 }}>{members.length}</span>
+          <span style={{ marginLeft: 'auto', font: "500 12px 'Geist'", color: '#9aa0a8' }}>roles control what each member can see and sign off</span>
         </div>
-      )}
-
-      <div style={{ background: '#fff', border: '1px solid #e9eaed', borderRadius: 16, boxShadow: '0 1px 2px rgba(16,24,40,.03),0 14px 36px -28px rgba(16,24,40,.16)', overflow: 'hidden' }}>
         {members.map((m, i) => {
           const busy = savingId === m.id
-          const isOwner = m.role === 'owner'
+          const rp = rolePill(m.role)
+          const [abg, aink] = AVATARS[i % AVATARS.length]
           return (
-            <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '14px 20px', borderBottom: i === members.length - 1 ? 'none' : '1px solid #f2f3f5' }}>
-              <div style={{ width: 34, height: 34, borderRadius: '50%', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, flex: 'none', background: TILE[i % TILE.length] }}>{initials(m.full_name, m.email)}</div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 14, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {m.full_name || m.email || 'Unknown'}{m.id === me?.id && <span style={{ color: '#9aa0a8', fontWeight: 500 }}> (you)</span>}
-                </div>
-                <div style={{ fontSize: 12.5, color: '#8a9099', marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.email}</div>
-              </div>
-              <select value={m.role ?? ''} disabled={busy} onChange={(e) => patch(m.id, { role: e.target.value })}
-                style={{ ...pillSelect, background: isOwner ? '#16181d' : '#f1f2f4', color: isOwner ? '#fff' : '#41464d', opacity: busy ? 0.5 : 1 }}>
-                {USER_ROLES.map((r) => <option key={r} value={r} style={{ color: '#16181d', background: '#fff' }}>{ROLE_LABELS[r]}</option>)}
-              </select>
+            <div key={m.id} className="tm-row" style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '11px 20px', borderTop: '1px solid #f4f5f6', transition: 'background .14s' }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = '#fafbfb')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
+              <span style={{ width: 34, height: 34, flex: 'none', borderRadius: '50%', background: abg, color: aink, display: 'flex', alignItems: 'center', justifyContent: 'center', font: "700 12.5px 'Geist'" }}>{initials(m.full_name, m.email)}</span>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8, font: "600 13.5px 'Geist'", color: '#16181d', whiteSpace: 'nowrap' }}>
+                  {m.full_name || m.email || 'Unknown'}
+                  {m.id === me?.id && <span style={{ font: "600 10.5px 'Geist'", color: '#8a9099', background: '#f1f2f4', padding: '2px 7px', borderRadius: 10 }}>YOU</span>}
+                </span>
+                <span style={{ display: 'block', font: "400 12px 'Geist'", color: '#9aa0a8', marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.email}</span>
+              </span>
               <select value={m.is_group_admin ? '__all' : (m.site_id ?? '')} disabled={busy}
                 onChange={(e) => { const v = e.target.value; if (v === '__all') patch(m.id, { is_group_admin: true }); else patch(m.id, { is_group_admin: false, site_id: v || null }) }}
-                style={{ ...accessSelect, opacity: busy ? 0.5 : 1 }}>
+                style={{ ...siteSelect, opacity: busy ? 0.5 : 1 }} title="Site access">
                 <option value="__all" style={{ direction: 'ltr' }}>All sites</option>
                 {sites.map((s) => <option key={s.id} value={s.id} style={{ direction: 'ltr' }}>{s.name}</option>)}
+              </select>
+              <select value={m.role ?? ''} disabled={busy} onChange={(e) => patch(m.id, { role: e.target.value })}
+                style={{ ...pillSelect, background: rp.bg, color: rp.ink, opacity: busy ? 0.5 : 1 }} title="Role">
+                {USER_ROLES.map((r) => <option key={r} value={r} style={{ color: '#16181d', background: '#fff' }}>{ROLE_LABELS[r]}</option>)}
               </select>
             </div>
           )
@@ -120,10 +107,97 @@ export function MembersRoles() {
         {members.length === 0 && <p style={{ padding: 24, textAlign: 'center', fontSize: 13, color: '#8a9099' }}>No members yet.</p>}
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#f5f6f7', border: '1px solid #eceef0', borderRadius: 12, padding: '12px 15px' }}>
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9aa0a8" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none' }}><circle cx="12" cy="12" r="8.5" /><path d="M12 11v5" /><circle cx="12" cy="8" r="0.8" fill="#9aa0a8" /></svg>
-        <span style={{ fontSize: 12.5, color: '#6b7280', lineHeight: 1.5 }}>Owners and estate managers see every site. Site managers and staff see only the sites they&apos;re assigned to — the site switcher shows just those.</span>
+      {/* roles explainer */}
+      <div style={{ background: '#fff', border: '1px solid #e9eaed', borderRadius: 16, boxShadow: '0 1px 2px rgba(16,24,40,.03)', padding: 20, marginTop: 14 }}>
+        <div style={{ font: "600 11px 'Geist'", letterSpacing: '.07em', textTransform: 'uppercase', color: '#8a9099', marginBottom: 13 }}>What each role can do</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 14 }}>
+          {[
+            { label: 'Owner', bg: '#e9f6ef', ink: '#1f7a52', desc: 'Everything, including billing, sites and team management.' },
+            { label: 'Manager', bg: '#e4edfb', ink: '#3f6bc4', desc: 'Runs their site: checklists, recipes, reports, sign-offs, team invites.' },
+            { label: 'Staff', bg: '#eef0f2', ink: '#6b7280', desc: 'Completes checks and logs temperatures. No settings access.' },
+          ].map((r) => (
+            <div key={r.label}>
+              <span style={{ font: "600 12px 'Geist'", color: r.ink, background: r.bg, padding: '4px 11px', borderRadius: 14 }}>{r.label}</span>
+              <p style={{ margin: '9px 0 0', font: "400 12.5px/1.55 'Geist'", color: '#6b7280' }}>{r.desc}</p>
+            </div>
+          ))}
+        </div>
       </div>
+
+      {inviteOpen && <InviteSlideOver sites={sites} onClose={() => setInviteOpen(false)} />}
+
+      <style>{`.tm-row select:hover{filter:brightness(0.97)}`}</style>
     </div>
+  )
+}
+
+// ── Invite slide-over ───────────────────────────────────────────────
+function InviteSlideOver({ sites, onClose }: { sites: { id: string; name: string }[]; onClose: () => void }) {
+  const [shown, setShown] = useState(false)
+  const [email, setEmail] = useState('')
+  const [role, setRole] = useState<UserRole>('kitchen_staff')
+  const [siteId, setSiteId] = useState<string>('__all')
+  const [busy, setBusy] = useState(false)
+  const qc = useQueryClient()
+  const bid = useAuthStore.getState().business?.id
+
+  useEffect(() => { const t = requestAnimationFrame(() => setShown(true)); return () => cancelAnimationFrame(t) }, [])
+  function close() { setShown(false); setTimeout(onClose, 300) }
+
+  async function send() {
+    if (!email.trim()) return
+    setBusy(true)
+    const { data, error } = await supabase.rpc('create_invite', { p_email: email.trim(), p_role: role })
+    setBusy(false)
+    if (error) { toast.error(error.message); return }
+    toast.success(`Invite sent to ${email.trim()}${data ? ` · code ${data}` : ''}`)
+    qc.invalidateQueries({ queryKey: ['members-roles', bid] })
+    close()
+  }
+
+  const field: React.CSSProperties = { width: '100%', border: '1px solid #e2e4e8', borderRadius: 10, padding: '11px 13px', font: "500 14px 'Geist'", color: '#16181d', outline: 'none', background: '#fff' }
+  const label: React.CSSProperties = { font: "600 13px 'Geist'", color: '#41464d', display: 'block', marginBottom: 8 }
+
+  return (
+    <>
+      <div onClick={close} style={{ position: 'fixed', inset: 0, background: 'rgba(20,22,27,.36)', zIndex: 60, opacity: shown ? 1 : 0, transition: 'opacity .3s ease-out' }} />
+      <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 440, maxWidth: '94vw', background: '#fff', zIndex: 61, boxShadow: '-24px 0 60px -30px rgba(16,24,40,.4)', display: 'flex', flexDirection: 'column', transform: shown ? 'translateX(0)' : 'translateX(100%)', transition: 'transform .3s cubic-bezier(0.32,0.72,0,1)' }}>
+        <div style={{ flex: 'none', padding: '20px 24px', borderBottom: '1px solid #eef0f2', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+          <div>
+            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, letterSpacing: '-.01em' }}>Invite member</h2>
+            <div style={{ fontSize: 13, color: '#8a9099', marginTop: 2 }}>They&apos;ll get an email invite to join your team.</div>
+          </div>
+          <button onClick={close} style={{ width: 34, height: 34, borderRadius: 9, border: 'none', background: '#f1f2f4', color: '#5c626b', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X className="h-[17px] w-[17px]" strokeWidth={2} /></button>
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '22px 24px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+          <div>
+            <label style={label}>Email address <span style={{ color: '#c0403a' }}>*</span></label>
+            <input autoFocus value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && send()} placeholder="name@example.co.uk" style={field}
+              onFocus={(e) => { e.currentTarget.style.borderColor = '#1f9d63'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(31,157,99,.12)' }}
+              onBlur={(e) => { e.currentTarget.style.borderColor = '#e2e4e8'; e.currentTarget.style.boxShadow = 'none' }} />
+          </div>
+          <div>
+            <label style={label}>Role</label>
+            <select value={role} onChange={(e) => setRole(e.target.value as UserRole)} style={{ ...field, cursor: 'pointer' }}>
+              {USER_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={label}>Site access</label>
+            <select value={siteId} onChange={(e) => setSiteId(e.target.value)} style={{ ...field, cursor: 'pointer' }}>
+              <option value="__all">All sites</option>
+              {sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+            <div style={{ fontSize: 12, color: '#9aa0a8', marginTop: 8, lineHeight: 1.5 }}>You can fine-tune their role and site access from the members list once they join.</div>
+          </div>
+        </div>
+        <div style={{ flex: 'none', display: 'flex', gap: 10, padding: '16px 24px', borderTop: '1px solid #eef0f2' }}>
+          <button onClick={close} style={{ flex: 1, background: '#fff', border: '1px solid #e2e4e8', color: '#5c626b', font: "600 14px 'Geist'", padding: 11, borderRadius: 11, cursor: 'pointer' }}>Cancel</button>
+          <button onClick={send} disabled={!email.trim() || busy} style={{ flex: 1.4, background: email.trim() ? '#1f9d63' : '#cfe6da', border: 'none', color: email.trim() ? '#fff' : '#8fb9a4', font: "600 14px 'Geist'", padding: 11, borderRadius: 11, cursor: email.trim() ? 'pointer' : 'not-allowed' }}>
+            {busy ? 'Sending…' : 'Send invite'}
+          </button>
+        </div>
+      </div>
+    </>
   )
 }
