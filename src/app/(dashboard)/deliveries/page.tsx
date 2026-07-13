@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
@@ -11,17 +11,20 @@ import { InspectionEmpty, EmptyPrimary, DeliveriesArt } from '@/components/share
 import { HeaderButton } from '@/components/shared/header-button'
 import { SupplierLogo } from '@/components/supplier-logo'
 
+interface DeliveryPhoto { id: string; photo_url: string; file_name: string | null }
 interface Delivery {
   id: string
   supplier_id: string
   product_temperature: number | null
   notes: string | null
-  photos: string[] | null
+  photos: DeliveryPhoto[] | null
   received_at: string
   site_id: string | null
   supplier?: { name: string; logo_url: string | null } | null
   receiver?: { full_name: string | null; email: string } | null
 }
+
+const sanitizeName = (n: string) => n.replace(/[^a-zA-Z0-9._-]/g, '_')
 
 const tempMeta = (t: number | null) =>
   t === null ? null
@@ -47,12 +50,15 @@ export default function DeliveriesPage() {
   const [fTemp, setFTemp] = useState('')
   const [fNotes, setFNotes] = useState('')
   const [fWhen, setFWhen] = useState(new Date())
+  const [fPhotos, setFPhotos] = useState<File[]>([])
+  const [existingPhotos, setExistingPhotos] = useState<DeliveryPhoto[]>([])
+  const [removedIds, setRemovedIds] = useState<string[]>([])
 
   const { data: deliveries = [], isLoading } = useQuery({
     queryKey: ['deliveries', bid, currentSiteId],
     enabled: !!bid,
     queryFn: async () => {
-      let q = supabase.from('deliveries').select('id, supplier_id, product_temperature, notes, received_at, site_id, supplier:suppliers(name, logo_url), receiver:profiles!deliveries_received_by_fkey(full_name, email)').eq('business_id', bid!)
+      let q = supabase.from('deliveries').select('id, supplier_id, product_temperature, notes, received_at, site_id, supplier:suppliers(name, logo_url), receiver:profiles!deliveries_received_by_fkey(full_name, email), photos:delivery_photos(id, photo_url, file_name)').eq('business_id', bid!)
       if (currentSiteId) q = q.eq('site_id', currentSiteId)
       return (await q.order('received_at', { ascending: false })).data as unknown as Delivery[] ?? []
     },
@@ -71,25 +77,43 @@ export default function DeliveriesPage() {
   const missingPhoto = deliveries.filter((d) => !d.photos || d.photos.length === 0).length
   const last = deliveries[0]
 
-  function openPanel() { setEditing(null); setFSite(currentSiteId ?? ''); setFSupplier(''); setFTemp(''); setFNotes(''); setFWhen(new Date()); setOpen(true); requestAnimationFrame(() => setShown(true)) }
-  function openEdit(d: Delivery) { setEditing(d); setFSite(d.site_id ?? ''); setFSupplier(d.supplier_id); setFTemp(d.product_temperature !== null ? String(d.product_temperature) : ''); setFNotes(d.notes ?? ''); setFWhen(parseISO(d.received_at)); setOpen(true); requestAnimationFrame(() => setShown(true)) }
-  function closePanel() { setShown(false); setTimeout(() => { setOpen(false); setEditing(null) }, 300) }
+  function resetPhotos() { setFPhotos([]); setExistingPhotos([]); setRemovedIds([]) }
+  function openPanel() { setEditing(null); setFSite(currentSiteId ?? ''); setFSupplier(''); setFTemp(''); setFNotes(''); setFWhen(new Date()); resetPhotos(); setOpen(true); requestAnimationFrame(() => setShown(true)) }
+  function openEdit(d: Delivery) { setEditing(d); setFSite(d.site_id ?? ''); setFSupplier(d.supplier_id); setFTemp(d.product_temperature !== null ? String(d.product_temperature) : ''); setFNotes(d.notes ?? ''); setFWhen(parseISO(d.received_at)); setFPhotos([]); setExistingPhotos(d.photos ?? []); setRemovedIds([]); setOpen(true); requestAnimationFrame(() => setShown(true)) }
+  function closePanel() { setShown(false); setTimeout(() => { setOpen(false); setEditing(null); resetPhotos() }, 300) }
 
   const save = useMutation({
     mutationFn: async () => {
       if (!bid || !profile?.id) throw new Error('No business')
       const site = currentSiteId ?? (fSite || null)
+      let deliveryId: string
       if (editing) {
         const { error } = await supabase.from('deliveries').update({
           site_id: site, supplier_id: fSupplier, product_temperature: fTemp ? parseFloat(fTemp) : null, notes: fNotes.trim() || null,
         }).eq('id', editing.id)
         if (error) throw error
+        deliveryId = editing.id
+        if (removedIds.length) {
+          const paths = (editing.photos ?? []).filter((p) => removedIds.includes(p.id)).map((p) => p.photo_url)
+          await supabase.from('delivery_photos').delete().in('id', removedIds)
+          if (paths.length) await supabase.storage.from('documents').remove(paths)
+        }
       } else {
-        const { error } = await supabase.from('deliveries').insert({
+        const { data, error } = await supabase.from('deliveries').insert({
           business_id: bid, site_id: site, supplier_id: fSupplier, received_by: profile.id,
           received_at: fWhen.toISOString(), product_temperature: fTemp ? parseFloat(fTemp) : null, notes: fNotes.trim() || null,
-        })
-        if (error) throw error
+        }).select('id').single()
+        if (error || !data) throw error ?? new Error('Insert failed')
+        deliveryId = data.id
+      }
+      // upload newly added photos to storage + record in delivery_photos
+      for (let i = 0; i < fPhotos.length; i++) {
+        const file = fPhotos[i]
+        const path = `${bid}/delivery-photos/${Date.now()}_${i}_${sanitizeName(file.name)}`
+        const up = await supabase.storage.from('documents').upload(path, file, { contentType: file.type })
+        if (up.error) throw up.error
+        const ins = await supabase.from('delivery_photos').insert({ delivery_id: deliveryId, photo_url: path, file_name: file.name })
+        if (ins.error) throw ins.error
       }
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['deliveries'] }); toast.success(editing ? 'Delivery updated' : 'Delivery recorded'); closePanel() },
@@ -219,11 +243,22 @@ export default function DeliveriesPage() {
                 <div style={{ fontSize: 12, color: tempWarn ? '#b07d1e' : '#9aa0a8', marginTop: 7, lineHeight: 1.5 }}>{tempWarn ? 'Above 5°C for chilled goods — check and consider rejecting.' : 'Leave empty if not applicable (e.g. ambient goods).'}</div>
               </div>
               <div>
-                <Label>Photo</Label>
-                <div style={{ border: '1.5px dashed #d0d5d9', borderRadius: 12, padding: '20px', textAlign: 'center', color: '#8a9099', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-                  <ImageIcon className="h-5 w-5" strokeWidth={1.7} style={{ color: '#c2c6cc' }} />
-                  <span style={{ fontSize: 12.5 }}>Add a photo of the delivery or label</span>
+                <Label>Photos</Label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {existingPhotos.filter((p) => !removedIds.includes(p.id)).map((p) => (
+                    <StoredThumb key={p.id} path={p.photo_url} onRemove={() => setRemovedIds((r) => [...r, p.id])} />
+                  ))}
+                  {fPhotos.map((f, i) => (
+                    <NewThumb key={i} file={f} onRemove={() => setFPhotos((ps) => ps.filter((_, j) => j !== i))} />
+                  ))}
+                  <label style={{ width: 78, height: 78, border: '1.5px dashed #d0d5d9', borderRadius: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, color: '#8a9099', cursor: 'pointer', flex: 'none' }}>
+                    <ImageIcon className="h-5 w-5" strokeWidth={1.7} style={{ color: '#c2c6cc' }} />
+                    <span style={{ fontSize: 11 }}>Add</span>
+                    <input type="file" accept="image/*" multiple style={{ display: 'none' }}
+                      onChange={(e) => { const fs = Array.from(e.target.files ?? []); if (fs.length) setFPhotos((ps) => [...ps, ...fs]); e.currentTarget.value = '' }} />
+                  </label>
                 </div>
+                <div style={{ fontSize: 12, color: '#9aa0a8', marginTop: 7 }}>Add a photo of the delivery, label or docket.</div>
               </div>
               <div>
                 <Label>Notes</Label>
@@ -262,6 +297,34 @@ function IconBtn({ children, onClick, title, danger }: { children: React.ReactNo
   )
 }
 function Label({ children }: { children: React.ReactNode }) { return <label style={{ font: "600 13px 'Geist'", color: '#41464d', display: 'block', marginBottom: 8 }}>{children}</label> }
+
+function Thumb({ src, onRemove, onView }: { src: string | null; onRemove: () => void; onView?: () => void }) {
+  return (
+    <div style={{ position: 'relative', width: 78, height: 78, borderRadius: 12, overflow: 'hidden', border: '1px solid #e2e4e8', background: '#f4f5f6', flex: 'none' }}>
+      {src && <img src={src} alt="" onClick={onView} style={{ width: '100%', height: '100%', objectFit: 'cover', cursor: onView ? 'zoom-in' : 'default' }} />}
+      <button onClick={onRemove} aria-label="Remove photo"
+        style={{ position: 'absolute', top: 3, right: 3, width: 20, height: 20, borderRadius: '50%', border: 'none', background: 'rgba(20,22,27,.62)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <X className="h-3 w-3" strokeWidth={2.4} />
+      </button>
+    </div>
+  )
+}
+
+function NewThumb({ file, onRemove }: { file: File; onRemove: () => void }) {
+  const [url, setUrl] = useState<string | null>(null)
+  useEffect(() => { const u = URL.createObjectURL(file); setUrl(u); return () => URL.revokeObjectURL(u) }, [file])
+  return <Thumb src={url} onRemove={onRemove} />
+}
+
+function StoredThumb({ path, onRemove }: { path: string; onRemove: () => void }) {
+  const [url, setUrl] = useState<string | null>(null)
+  useEffect(() => {
+    let alive = true
+    supabase.storage.from('documents').createSignedUrl(path, 3600).then(({ data }) => { if (alive) setUrl(data?.signedUrl ?? null) })
+    return () => { alive = false }
+  }, [path])
+  return <Thumb src={url} onRemove={onRemove} onView={() => url && window.open(url, '_blank')} />
+}
 
 function Cell({ eye, label, value, sub, dot, valueSize }: { eye: React.CSSProperties; label: string; value: string; sub?: string; dot?: string; valueSize?: number }) {
   return (
