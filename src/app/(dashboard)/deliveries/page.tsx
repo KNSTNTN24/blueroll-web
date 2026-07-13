@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { toast } from 'sonner'
-import { Plus, Camera, ChevronRight, X, Image as ImageIcon } from 'lucide-react'
+import { Plus, Camera, X, Image as ImageIcon, Pencil, Trash2 } from 'lucide-react'
 import { format, subDays, parseISO } from 'date-fns'
 import { InspectionEmpty, EmptyPrimary, DeliveriesArt } from '@/components/shared/inspection-empty'
 import { HeaderButton } from '@/components/shared/header-button'
@@ -41,11 +41,12 @@ export default function DeliveriesPage() {
 
   const [open, setOpen] = useState(false)
   const [shown, setShown] = useState(false)
+  const [editing, setEditing] = useState<Delivery | null>(null)
   const [fSite, setFSite] = useState<string>('')
   const [fSupplier, setFSupplier] = useState<string>('')
   const [fTemp, setFTemp] = useState('')
   const [fNotes, setFNotes] = useState('')
-  const [fWhen] = useState(new Date())
+  const [fWhen, setFWhen] = useState(new Date())
 
   const { data: deliveries = [], isLoading } = useQuery({
     queryKey: ['deliveries', bid, currentSiteId],
@@ -70,20 +71,34 @@ export default function DeliveriesPage() {
   const missingPhoto = deliveries.filter((d) => !d.photos || d.photos.length === 0).length
   const last = deliveries[0]
 
-  function openPanel() { setFSite(currentSiteId ?? ''); setFSupplier(''); setFTemp(''); setFNotes(''); setOpen(true); requestAnimationFrame(() => setShown(true)) }
-  function closePanel() { setShown(false); setTimeout(() => setOpen(false), 300) }
+  function openPanel() { setEditing(null); setFSite(currentSiteId ?? ''); setFSupplier(''); setFTemp(''); setFNotes(''); setFWhen(new Date()); setOpen(true); requestAnimationFrame(() => setShown(true)) }
+  function openEdit(d: Delivery) { setEditing(d); setFSite(d.site_id ?? ''); setFSupplier(d.supplier_id); setFTemp(d.product_temperature !== null ? String(d.product_temperature) : ''); setFNotes(d.notes ?? ''); setFWhen(parseISO(d.received_at)); setOpen(true); requestAnimationFrame(() => setShown(true)) }
+  function closePanel() { setShown(false); setTimeout(() => { setOpen(false); setEditing(null) }, 300) }
 
   const save = useMutation({
     mutationFn: async () => {
       if (!bid || !profile?.id) throw new Error('No business')
       const site = currentSiteId ?? (fSite || null)
-      const { error } = await supabase.from('deliveries').insert({
-        business_id: bid, site_id: site, supplier_id: fSupplier, received_by: profile.id,
-        received_at: fWhen.toISOString(), product_temperature: fTemp ? parseFloat(fTemp) : null, notes: fNotes.trim() || null,
-      })
-      if (error) throw error
+      if (editing) {
+        const { error } = await supabase.from('deliveries').update({
+          site_id: site, supplier_id: fSupplier, product_temperature: fTemp ? parseFloat(fTemp) : null, notes: fNotes.trim() || null,
+        }).eq('id', editing.id)
+        if (error) throw error
+      } else {
+        const { error } = await supabase.from('deliveries').insert({
+          business_id: bid, site_id: site, supplier_id: fSupplier, received_by: profile.id,
+          received_at: fWhen.toISOString(), product_temperature: fTemp ? parseFloat(fTemp) : null, notes: fNotes.trim() || null,
+        })
+        if (error) throw error
+      }
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['deliveries'] }); toast.success('Delivery recorded'); closePanel() },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['deliveries'] }); toast.success(editing ? 'Delivery updated' : 'Delivery recorded'); closePanel() },
+    onError: (e: Error) => toast.error(e.message),
+  })
+
+  const del = useMutation({
+    mutationFn: async (d: Delivery) => { const { error } = await supabase.from('deliveries').delete().eq('id', d.id); if (error) throw error },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['deliveries'] }); toast.success('Delivery deleted') },
     onError: (e: Error) => toast.error(e.message),
   })
 
@@ -160,7 +175,10 @@ export default function DeliveriesPage() {
                         {photoCount > 0 ? (
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, font: "600 12px 'Geist'", padding: '4px 9px', borderRadius: 20, background: '#eaf4ee', color: '#1a6e49' }}><Camera className="h-3 w-3" strokeWidth={2} />{photoCount}</span>
                         ) : <span style={{ font: "500 13px 'Geist'", color: '#b0b5bc' }}>—</span>}
-                        <ChevronRight className="del-go h-[15px] w-[15px]" strokeWidth={1.8} style={{ color: '#c2c6cc', opacity: 0, transition: 'opacity .14s' }} />
+                        <div className="del-go" style={{ display: 'flex', alignItems: 'center', gap: 6, opacity: 0, transition: 'opacity .14s' }}>
+                          <IconBtn title="Edit" onClick={() => openEdit(d)}><Pencil className="h-[15px] w-[15px]" strokeWidth={1.8} /></IconBtn>
+                          <IconBtn title="Delete" danger onClick={() => { if (confirm(`Delete this delivery from ${d.supplier?.name ?? 'supplier'}?`)) del.mutate(d) }}><Trash2 className="h-[15px] w-[15px]" strokeWidth={1.8} /></IconBtn>
+                        </div>
                       </div>
                     </div>
                   )
@@ -178,8 +196,8 @@ export default function DeliveriesPage() {
           <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 460, maxWidth: '94vw', background: '#fff', zIndex: 61, boxShadow: '-24px 0 60px -30px rgba(16,24,40,.4)', display: 'flex', flexDirection: 'column', transform: shown ? 'translateX(0)' : 'translateX(100%)', transition: 'transform .3s cubic-bezier(0.32,0.72,0,1)' }}>
             <div style={{ flex: 'none', padding: '20px 24px', borderBottom: '1px solid #eef0f2', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
               <div>
-                <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, letterSpacing: '-.01em' }}>New delivery</h2>
-                <div style={{ fontSize: 13, color: '#8a9099', marginTop: 2 }}>Recording for {currentSiteId ? siteName(currentSiteId) : (fSite ? siteName(fSite) : 'your group')}</div>
+                <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, letterSpacing: '-.01em' }}>{editing ? 'Edit delivery' : 'New delivery'}</h2>
+                <div style={{ fontSize: 13, color: '#8a9099', marginTop: 2 }}>{editing ? 'Update this goods-in record' : `Recording for ${currentSiteId ? siteName(currentSiteId) : (fSite ? siteName(fSite) : 'your group')}`}</div>
               </div>
               <button onClick={closePanel} style={{ width: 34, height: 34, borderRadius: 9, border: 'none', background: '#f1f2f4', color: '#5c626b', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X className="h-[17px] w-[17px]" strokeWidth={2} /></button>
             </div>
@@ -190,7 +208,7 @@ export default function DeliveriesPage() {
               <FieldChips label="Supplier" required options={suppliers} value={fSupplier} onPick={setFSupplier} empty="No approved suppliers yet — add one in Suppliers." showLogos />
               <div>
                 <Label>Date &amp; time</Label>
-                <div style={{ border: '1px solid #e2e4e8', borderRadius: 10, padding: '11px 13px', font: "500 14px 'Geist'", color: '#41464d' }}>{format(fWhen, 'd MMM yyyy, HH:mm')} <span style={{ color: '#9aa0a8' }}>· now</span></div>
+                <div style={{ border: '1px solid #e2e4e8', borderRadius: 10, padding: '11px 13px', font: "500 14px 'Geist'", color: '#41464d' }}>{format(fWhen, 'd MMM yyyy, HH:mm')}{!editing && <span style={{ color: '#9aa0a8' }}> · now</span>}</div>
               </div>
               <div>
                 <Label>Temperature (°C)</Label>
@@ -219,7 +237,7 @@ export default function DeliveriesPage() {
               <button onClick={closePanel} style={{ background: '#fff', border: '1px solid #e2e4e8', color: '#41464d', font: "600 14px 'Geist'", padding: '11px 18px', borderRadius: 11, cursor: 'pointer' }}>Cancel</button>
               <button onClick={() => save.mutate()} disabled={!canSave || save.isPending}
                 style={{ background: canSave ? '#1f9d63' : '#a9d8c0', border: 'none', color: '#fff', font: "600 14px 'Geist'", padding: '11px 20px', borderRadius: 11, cursor: canSave ? 'pointer' : 'not-allowed', boxShadow: canSave ? '0 1px 2px rgba(16,24,40,.1)' : 'none' }}>
-                {save.isPending ? 'Recording…' : 'Record delivery'}
+                {save.isPending ? 'Saving…' : editing ? 'Save changes' : 'Record delivery'}
               </button>
             </div>
           </div>
@@ -232,6 +250,17 @@ export default function DeliveriesPage() {
 }
 
 function Div() { return <div style={{ width: 1, background: '#eef0f2', margin: '15px 0' }} /> }
+
+function IconBtn({ children, onClick, title, danger }: { children: React.ReactNode; onClick: () => void; title: string; danger?: boolean }) {
+  return (
+    <button title={title} onClick={onClick}
+      style={{ width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid #e2e4e8', background: '#fff', color: '#8a9099', borderRadius: 8, cursor: 'pointer', transition: 'color .14s, border-color .14s' }}
+      onMouseEnter={(e) => { e.currentTarget.style.color = danger ? '#c0403a' : '#1c1f24'; e.currentTarget.style.borderColor = danger ? '#e6b7b2' : '#cdd1d6' }}
+      onMouseLeave={(e) => { e.currentTarget.style.color = '#8a9099'; e.currentTarget.style.borderColor = '#e2e4e8' }}>
+      {children}
+    </button>
+  )
+}
 function Label({ children }: { children: React.ReactNode }) { return <label style={{ font: "600 13px 'Geist'", color: '#41464d', display: 'block', marginBottom: 8 }}>{children}</label> }
 
 function Cell({ eye, label, value, sub, dot, valueSize }: { eye: React.CSSProperties; label: string; value: string; sub?: string; dot?: string; valueSize?: number }) {
