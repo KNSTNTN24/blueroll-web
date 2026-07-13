@@ -10,6 +10,13 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
 async function stripeGet(endpoint: string) {
   const res = await fetch(`https://api.stripe.com/v1${endpoint}`, {
     headers: { Authorization: `Bearer ${STRIPE_SECRET_KEY}` },
@@ -43,7 +50,39 @@ Deno.serve(async (req) => {
     const { action, customerId, subscriptionId, businessId, userId, returnUrl } =
       await req.json();
 
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    // ── Auth + ownership guard ──
+    const authHeader = req.headers.get("Authorization") ?? "";
+    const asUser = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_ANON_KEY")!, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const {
+      data: { user },
+    } = await asUser.auth.getUser();
+    if (!user) return json({ error: "Not authenticated" }, 401);
+
+    const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+    const { data: prof } = await admin
+      .from("profiles")
+      .select("role, business_id")
+      .eq("id", user.id)
+      .single();
+
+    let targetBiz = businessId as string | undefined;
+    if (!targetBiz && customerId) {
+      const { data: b } = await admin
+        .from("businesses")
+        .select("id")
+        .eq("stripe_customer_id", customerId)
+        .single();
+      targetBiz = b?.id;
+    }
+
+    if (!prof || prof.role !== "owner" || !targetBiz || prof.business_id !== targetBiz) {
+      return json({ error: "Not authorized for this business" }, 403);
+    }
+
+    const supabase = admin;
 
     // ── Portal: open Stripe Customer Portal ──
     if (action === "portal") {
