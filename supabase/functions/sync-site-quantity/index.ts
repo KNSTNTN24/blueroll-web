@@ -37,13 +37,15 @@ Deno.serve(async (req) => {
 
     // find the subscription's first item id
     const sub = await stripeGet(`/subscriptions/${biz.subscription_id}`);
+    if (sub?.error) return json({ synced: false, error: sub.error.message ?? "stripe error" }, 502);
     const itemId = sub?.items?.data?.[0]?.id;
     if (!itemId) return json({ synced: false, reason: "no subscription item" });
 
-    await stripePost(`/subscription_items/${itemId}`, {
+    const updated = await stripePost(`/subscription_items/${itemId}`, {
       quantity: String(quantity),
       proration_behavior: "create_prorations",
     });
+    if (updated?.error) return json({ synced: false, error: updated.error.message ?? "stripe error" }, 502);
     return json({ synced: true, quantity });
   } catch (err) {
     return json({ error: (err as Error).message }, 500);
