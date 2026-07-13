@@ -45,6 +45,8 @@ export default function DeliveriesPage() {
   const [open, setOpen] = useState(false)
   const [shown, setShown] = useState(false)
   const [editing, setEditing] = useState<Delivery | null>(null)
+  const [viewing, setViewing] = useState<Delivery | null>(null)
+  const [vShown, setVShown] = useState(false)
   const [fSite, setFSite] = useState<string>('')
   const [fSupplier, setFSupplier] = useState<string>('')
   const [fTemp, setFTemp] = useState('')
@@ -81,6 +83,9 @@ export default function DeliveriesPage() {
   function openPanel() { setEditing(null); setFSite(currentSiteId ?? ''); setFSupplier(''); setFTemp(''); setFNotes(''); setFWhen(new Date()); resetPhotos(); setOpen(true); requestAnimationFrame(() => setShown(true)) }
   function openEdit(d: Delivery) { setEditing(d); setFSite(d.site_id ?? ''); setFSupplier(d.supplier_id); setFTemp(d.product_temperature !== null ? String(d.product_temperature) : ''); setFNotes(d.notes ?? ''); setFWhen(parseISO(d.received_at)); setFPhotos([]); setExistingPhotos(d.photos ?? []); setRemovedIds([]); setOpen(true); requestAnimationFrame(() => setShown(true)) }
   function closePanel() { setShown(false); setTimeout(() => { setOpen(false); setEditing(null); resetPhotos() }, 300) }
+  function openView(d: Delivery) { setViewing(d); requestAnimationFrame(() => setVShown(true)) }
+  function closeView() { setVShown(false); setTimeout(() => setViewing(null), 300) }
+  function editFromView(d: Delivery) { setVShown(false); setTimeout(() => { setViewing(null); openEdit(d) }, 260) }
 
   const save = useMutation({
     mutationFn: async () => {
@@ -178,7 +183,7 @@ export default function DeliveriesPage() {
                   const tm = tempMeta(d.product_temperature)
                   const photoCount = d.photos?.length ?? 0
                   return (
-                    <div key={d.id} className="del-row" style={{ display: 'grid', gridTemplateColumns: GRID, gap: 12, padding: '13px 20px', borderBottom: i === deliveries.length - 1 ? 'none' : '1px solid #f2f3f5', alignItems: 'center', transition: 'background .14s' }}
+                    <div key={d.id} className="del-row" onClick={() => openView(d)} style={{ display: 'grid', gridTemplateColumns: GRID, gap: 12, padding: '13px 20px', borderBottom: i === deliveries.length - 1 ? 'none' : '1px solid #f2f3f5', alignItems: 'center', transition: 'background .14s', cursor: 'pointer' }}
                       onMouseEnter={(e) => (e.currentTarget.style.background = '#fafbfb')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
                         <SupplierLogo name={d.supplier?.name ?? 'Supplier'} logoUrl={d.supplier?.logo_url} size={34} />
@@ -279,6 +284,64 @@ export default function DeliveriesPage() {
         </>
       )}
 
+      {/* view slide-over (read-only) */}
+      {viewing && (() => {
+        const d = viewing
+        const tm = tempMeta(d.product_temperature)
+        const photos = d.photos ?? []
+        return (
+          <>
+            <div onClick={closeView} style={{ position: 'fixed', inset: 0, background: 'rgba(20,22,27,.36)', zIndex: 60, opacity: vShown ? 1 : 0, transition: 'opacity .3s ease-out' }} />
+            <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 460, maxWidth: '94vw', background: '#fff', zIndex: 61, boxShadow: '-24px 0 60px -30px rgba(16,24,40,.4)', display: 'flex', flexDirection: 'column', transform: vShown ? 'translateX(0)' : 'translateX(100%)', transition: 'transform .3s cubic-bezier(0.32,0.72,0,1)' }}>
+              <div style={{ flex: 'none', padding: '20px 24px', borderBottom: '1px solid #eef0f2', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+                  <SupplierLogo name={d.supplier?.name ?? 'Supplier'} logoUrl={d.supplier?.logo_url} size={40} />
+                  <div style={{ minWidth: 0 }}>
+                    <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, letterSpacing: '-.01em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.supplier?.name ?? 'Supplier'}</h2>
+                    <div style={{ fontSize: 13, color: '#8a9099', marginTop: 2 }}>{format(parseISO(d.received_at), 'd MMM yyyy, HH:mm')}</div>
+                  </div>
+                </div>
+                <button onClick={closeView} style={{ width: 34, height: 34, borderRadius: 9, border: 'none', background: '#f1f2f4', color: '#5c626b', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}><X className="h-[17px] w-[17px]" strokeWidth={2} /></button>
+              </div>
+              <div style={{ flex: 1, overflowY: 'auto', padding: '22px 24px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 22 }}>
+                  {allSites && <ViewField label="Site" value={siteName(d.site_id)} />}
+                  <ViewField label="Received by" value={d.receiver?.full_name ?? '—'} />
+                  <div style={{ minWidth: 120 }}>
+                    <div style={{ font: "600 11px 'Geist'", letterSpacing: '.05em', textTransform: 'uppercase', color: '#9aa0a8', marginBottom: 8 }}>Temperature</div>
+                    {tm ? (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, font: "600 13px 'Geist'", padding: '5px 11px', borderRadius: 20, background: tm.bg, color: tm.fg, fontVariantNumeric: 'tabular-nums' }}><span style={{ width: 6, height: 6, borderRadius: '50%', background: tm.dot }} />{d.product_temperature}°C</span>
+                    ) : <span style={{ font: "500 14px 'Geist'", color: '#b0b5bc' }}>Not recorded</span>}
+                  </div>
+                </div>
+                {d.product_temperature !== null && d.product_temperature > 5 && (
+                  <div style={{ background: '#fbf1e1', border: '1px solid #f2e2c4', borderRadius: 12, padding: '11px 14px', font: "500 12.5px 'Geist'", color: '#8a6a1f', lineHeight: 1.5 }}>Above 5&deg;C for chilled goods — this was flagged at goods-in.</div>
+                )}
+                <div>
+                  <div style={{ font: "600 11px 'Geist'", letterSpacing: '.05em', textTransform: 'uppercase', color: '#9aa0a8', marginBottom: 8 }}>Notes</div>
+                  <div style={{ font: `500 14px 'Geist'`, color: d.notes ? '#41464d' : '#b0b5bc', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{d.notes || 'No notes'}</div>
+                </div>
+                <div>
+                  <div style={{ font: "600 11px 'Geist'", letterSpacing: '.05em', textTransform: 'uppercase', color: '#9aa0a8', marginBottom: 8 }}>Photos {photos.length > 0 && <span style={{ color: '#c2c6cc' }}>· {photos.length}</span>}</div>
+                  {photos.length === 0 ? (
+                    <div style={{ font: "500 13px 'Geist'", color: '#b0b5bc' }}>No photos attached</div>
+                  ) : (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      {photos.map((p) => <ViewThumb key={p.id} path={p.photo_url} />)}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div style={{ flex: 'none', display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '16px 24px', borderTop: '1px solid #eef0f2' }}>
+                <button onClick={() => { if (confirm(`Delete this delivery from ${d.supplier?.name ?? 'supplier'}?`)) { del.mutate(d); closeView() } }}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 7, background: '#fff', border: '1px solid #e6b7b2', color: '#c0403a', font: "600 14px 'Geist'", padding: '11px 16px', borderRadius: 11, cursor: 'pointer' }}><Trash2 className="h-4 w-4" strokeWidth={1.8} /> Delete</button>
+                <button onClick={() => editFromView(d)} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, background: '#1f9d63', border: 'none', color: '#fff', font: "600 14px 'Geist'", padding: '11px 20px', borderRadius: 11, cursor: 'pointer', boxShadow: '0 1px 2px rgba(16,24,40,.1)' }}><Pencil className="h-4 w-4" strokeWidth={1.9} /> Edit delivery</button>
+              </div>
+            </div>
+          </>
+        )
+      })()}
+
       <style>{`.del-row:hover .del-go{opacity:1 !important}`}</style>
     </div>
   )
@@ -288,7 +351,7 @@ function Div() { return <div style={{ width: 1, background: '#eef0f2', margin: '
 
 function IconBtn({ children, onClick, title, danger }: { children: React.ReactNode; onClick: () => void; title: string; danger?: boolean }) {
   return (
-    <button title={title} onClick={onClick}
+    <button title={title} onClick={(e) => { e.stopPropagation(); onClick() }}
       style={{ width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid #e2e4e8', background: '#fff', color: '#8a9099', borderRadius: 8, cursor: 'pointer', transition: 'color .14s, border-color .14s' }}
       onMouseEnter={(e) => { e.currentTarget.style.color = danger ? '#c0403a' : '#1c1f24'; e.currentTarget.style.borderColor = danger ? '#e6b7b2' : '#cdd1d6' }}
       onMouseLeave={(e) => { e.currentTarget.style.color = '#8a9099'; e.currentTarget.style.borderColor = '#e2e4e8' }}>
@@ -314,6 +377,29 @@ function NewThumb({ file, onRemove }: { file: File; onRemove: () => void }) {
   const [url, setUrl] = useState<string | null>(null)
   useEffect(() => { const u = URL.createObjectURL(file); setUrl(u); return () => URL.revokeObjectURL(u) }, [file])
   return <Thumb src={url} onRemove={onRemove} />
+}
+
+function ViewField({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ minWidth: 120 }}>
+      <div style={{ font: "600 11px 'Geist'", letterSpacing: '.05em', textTransform: 'uppercase', color: '#9aa0a8', marginBottom: 8 }}>{label}</div>
+      <div style={{ font: "500 14px 'Geist'", color: '#41464d' }}>{value}</div>
+    </div>
+  )
+}
+
+function ViewThumb({ path }: { path: string }) {
+  const [url, setUrl] = useState<string | null>(null)
+  useEffect(() => {
+    let alive = true
+    supabase.storage.from('documents').createSignedUrl(path, 3600).then(({ data }) => { if (alive) setUrl(data?.signedUrl ?? null) })
+    return () => { alive = false }
+  }, [path])
+  return (
+    <div onClick={() => url && window.open(url, '_blank')} style={{ width: 78, height: 78, borderRadius: 12, overflow: 'hidden', border: '1px solid #e2e4e8', background: '#f4f5f6', flex: 'none', cursor: url ? 'zoom-in' : 'default' }}>
+      {url && <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+    </div>
+  )
 }
 
 function StoredThumb({ path, onRemove }: { path: string; onRemove: () => void }) {
