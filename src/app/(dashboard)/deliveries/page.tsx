@@ -9,6 +9,7 @@ import { Plus, Camera, ChevronRight, X, Image as ImageIcon } from 'lucide-react'
 import { format, subDays, parseISO } from 'date-fns'
 import { InspectionEmpty, EmptyPrimary, DeliveriesArt } from '@/components/shared/inspection-empty'
 import { HeaderButton } from '@/components/shared/header-button'
+import { SupplierLogo } from '@/components/supplier-logo'
 
 interface Delivery {
   id: string
@@ -18,12 +19,10 @@ interface Delivery {
   photos: string[] | null
   received_at: string
   site_id: string | null
-  supplier?: { name: string } | null
+  supplier?: { name: string; logo_url: string | null } | null
   receiver?: { full_name: string | null; email: string } | null
 }
 
-const TILE = ['#1f7a52', '#5b6472', '#8a6d52', '#4e6e81']
-const initials = (n: string) => { const p = n.split(' ').filter(Boolean); return (p.length >= 2 ? p[0][0] + p[1][0] : n.slice(0, 2)).toUpperCase() }
 const tempMeta = (t: number | null) =>
   t === null ? null
     : t <= 5 ? { bg: '#eaf4ee', fg: '#1a6e49', dot: '#1f9d63' }
@@ -52,7 +51,7 @@ export default function DeliveriesPage() {
     queryKey: ['deliveries', bid, currentSiteId],
     enabled: !!bid,
     queryFn: async () => {
-      let q = supabase.from('deliveries').select('id, supplier_id, product_temperature, notes, received_at, site_id, supplier:suppliers(name), receiver:profiles!deliveries_received_by_fkey(full_name, email)').eq('business_id', bid!)
+      let q = supabase.from('deliveries').select('id, supplier_id, product_temperature, notes, received_at, site_id, supplier:suppliers(name, logo_url), receiver:profiles!deliveries_received_by_fkey(full_name, email)').eq('business_id', bid!)
       if (currentSiteId) q = q.eq('site_id', currentSiteId)
       return (await q.order('received_at', { ascending: false })).data as unknown as Delivery[] ?? []
     },
@@ -61,10 +60,8 @@ export default function DeliveriesPage() {
   const { data: suppliers = [] } = useQuery({
     queryKey: ['delivery-suppliers', bid],
     enabled: !!bid,
-    queryFn: async () => (await supabase.from('suppliers').select('id, name').eq('business_id', bid!).order('name')).data as { id: string; name: string }[] ?? [],
+    queryFn: async () => (await supabase.from('suppliers').select('id, name, logo_url').eq('business_id', bid!).order('name')).data as { id: string; name: string; logo_url: string | null }[] ?? [],
   })
-
-  const supplierColor = (id: string) => TILE[(suppliers.findIndex((s) => s.id === id) + 4) % TILE.length]
 
   // summary
   const weekAgo = subDays(new Date(), 7)
@@ -145,7 +142,7 @@ export default function DeliveriesPage() {
                     <div key={d.id} className="del-row" style={{ display: 'grid', gridTemplateColumns: GRID, gap: 12, padding: '13px 20px', borderBottom: i === deliveries.length - 1 ? 'none' : '1px solid #f2f3f5', alignItems: 'center', transition: 'background .14s' }}
                       onMouseEnter={(e) => (e.currentTarget.style.background = '#fafbfb')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
-                        <div style={{ width: 34, height: 34, borderRadius: 9, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', font: "700 11.5px 'Geist'", flex: 'none', background: supplierColor(d.supplier_id) }}>{initials(d.supplier?.name ?? '?')}</div>
+                        <SupplierLogo name={d.supplier?.name ?? 'Supplier'} logoUrl={d.supplier?.logo_url} size={34} />
                         <span style={{ font: "600 14px 'Geist'", whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.supplier?.name ?? 'Supplier'}</span>
                       </div>
                       {allSites && <span style={{ font: "500 13px 'Geist'", color: '#5c626b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{siteName(d.site_id)}</span>}
@@ -190,7 +187,7 @@ export default function DeliveriesPage() {
               {allSites && (
                 <FieldChips label="Site" required options={sites.map((s) => ({ id: s.id, name: s.name }))} value={fSite} onPick={setFSite} />
               )}
-              <FieldChips label="Supplier" required options={suppliers} value={fSupplier} onPick={setFSupplier} empty="No approved suppliers yet — add one in Suppliers." />
+              <FieldChips label="Supplier" required options={suppliers} value={fSupplier} onPick={setFSupplier} empty="No approved suppliers yet — add one in Suppliers." showLogos />
               <div>
                 <Label>Date &amp; time</Label>
                 <div style={{ border: '1px solid #e2e4e8', borderRadius: 10, padding: '11px 13px', font: "500 14px 'Geist'", color: '#41464d' }}>{format(fWhen, 'd MMM yyyy, HH:mm')} <span style={{ color: '#9aa0a8' }}>· now</span></div>
@@ -250,7 +247,7 @@ function Cell({ eye, label, value, sub, dot, valueSize }: { eye: React.CSSProper
   )
 }
 
-function FieldChips({ label, required, options, value, onPick, empty }: { label: string; required?: boolean; options: { id: string; name: string }[]; value: string; onPick: (id: string) => void; empty?: string }) {
+function FieldChips({ label, required, options, value, onPick, empty, showLogos = false }: { label: string; required?: boolean; options: { id: string; name: string; logo_url?: string | null }[]; value: string; onPick: (id: string) => void; empty?: string; showLogos?: boolean }) {
   return (
     <div>
       <Label>{label}{required && <span style={{ color: '#c0403a' }}> *</span>}</Label>
@@ -262,7 +259,10 @@ function FieldChips({ label, required, options, value, onPick, empty }: { label:
             const on = value === o.id
             return (
               <button key={o.id} onClick={() => onPick(o.id)}
-                style={{ border: on ? '1.5px solid #1f9d63' : '1px solid #e2e4e8', background: on ? '#f5faf7' : '#fff', color: on ? '#1a6e49' : '#5c626b', font: "600 13px 'Geist'", padding: '8px 13px', borderRadius: 10, cursor: 'pointer', whiteSpace: 'nowrap' }}>{o.name}</button>
+                style={{ border: on ? '1.5px solid #1f9d63' : '1px solid #e2e4e8', background: on ? '#f5faf7' : '#fff', color: on ? '#1a6e49' : '#5c626b', font: "600 13px 'Geist'", padding: showLogos ? '6px 11px 6px 7px' : '8px 13px', borderRadius: 10, cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 7 }}>
+                {showLogos && <SupplierLogo name={o.name} logoUrl={o.logo_url} size={24} width={34} />}
+                {o.name}
+              </button>
             )
           })}
         </div>
