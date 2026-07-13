@@ -212,7 +212,7 @@ export function FeedbackBeacon() {
               <button
                 type="button"
                 onClick={() => { setError(null); transitionTo('home') }}
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-[color,background-color,transform] duration-200 hover:-translate-x-0.5 hover:bg-secondary hover:text-foreground"
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground"
                 aria-label="Back"
               >
                 <ChevronLeft className="h-[18px] w-[18px]" />
@@ -231,7 +231,7 @@ export function FeedbackBeacon() {
             <button
               type="button"
               onClick={close}
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-[color,background-color,transform] duration-200 hover:rotate-6 hover:bg-secondary hover:text-foreground"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground"
               aria-label="Close"
             >
               <X className="h-[17px] w-[17px]" />
@@ -265,16 +265,16 @@ export function FeedbackBeacon() {
                           setError(null)
                           transitionTo('form', itemKind)
                         }}
-                        className="group flex w-full items-center gap-3 rounded-xl border border-transparent px-2.5 py-2.5 text-left transition-[border-color,background-color,transform,box-shadow] duration-200 hover:translate-x-0.5 hover:border-border hover:bg-accent hover:shadow-[0_5px_18px_-14px_rgba(16,24,40,.45)]"
+                        className="flex w-full items-center gap-3 rounded-xl border border-transparent px-2.5 py-2.5 text-left hover:border-border hover:bg-accent"
                       >
-                        <span className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-transform duration-200 group-hover:scale-105', kindStyles[itemKind])}>
-                          <Icon className="h-[18px] w-[18px] transition-transform duration-200 group-hover:scale-110" strokeWidth={1.8} />
+                        <span className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-xl', kindStyles[itemKind])}>
+                          <Icon className="h-[18px] w-[18px]" strokeWidth={1.8} />
                         </span>
                         <span className="min-w-0 flex-1">
                           <span className="block text-[13px] font-semibold text-foreground">{copy.label}</span>
                           <span className="mt-0.5 block text-[11.5px] text-muted-foreground">{copy.description}</span>
                         </span>
-                        <ChevronLeft className="h-4 w-4 rotate-180 text-[#b0b5bc] transition-transform duration-200 group-hover:translate-x-0.5" />
+                        <ChevronLeft className="h-4 w-4 rotate-180 text-[#b0b5bc]" />
                       </button>
                     )
                   })}
@@ -302,7 +302,7 @@ export function FeedbackBeacon() {
                           key={value}
                           type="button"
                           onClick={() => setRating(value)}
-                          className="flex h-9 w-9 items-center justify-center rounded-lg transition-[background-color,transform] duration-200 hover:scale-110 hover:bg-amber-tint active:scale-95"
+                          className="flex h-9 w-9 items-center justify-center rounded-lg hover:bg-amber-tint active:scale-95"
                           aria-label={`${value} out of 5`}
                         >
                           <Star
@@ -330,7 +330,7 @@ export function FeedbackBeacon() {
                   <span className="text-[11.5px] text-warn" role="alert">{error}</span>
                   <span className="ml-auto shrink-0 text-[10.5px] tabular-nums text-[#a0a5ad]">{message.length}/4000</span>
                 </div>
-                <Button type="submit" className="mt-3 w-full" disabled={submitting}>
+                <Button type="submit" className="mt-3 w-full transition-none" disabled={submitting}>
                   {submitting ? <LoaderCircle className="animate-spin" /> : <Send />}
                   {submitting ? 'Sending…' : 'Send to Blueroll'}
                 </Button>
@@ -348,7 +348,7 @@ export function FeedbackBeacon() {
                   <Button
                     type="button"
                     variant="outline"
-                    className="flex-1"
+                    className="flex-1 transition-none"
                     onClick={() => {
                       setMessage('')
                       setRating(null)
@@ -356,7 +356,7 @@ export function FeedbackBeacon() {
                       transitionTo('home')
                     }}
                   >Send another</Button>
-                  <Button type="button" className="flex-1" onClick={close}>Done</Button>
+                  <Button type="button" className="flex-1 transition-none" onClick={close}>Done</Button>
                 </div>
               </div>
             )}
@@ -371,7 +371,7 @@ export function FeedbackBeacon() {
         onClick={() => { if (open) close(); else openPanel() }}
         aria-label={open ? 'Close help and feedback' : 'Open help and feedback'}
         aria-expanded={open}
-        className="feedback-beacon fixed bottom-4 right-3 z-[69] flex h-12 items-center gap-2 rounded-full bg-[#171a20] px-4 text-[13px] font-semibold text-white shadow-[0_8px_24px_rgba(16,24,40,.28)] transition-[transform,background-color,box-shadow] duration-200 ease-out hover:-translate-y-0.5 hover:bg-[#242830] hover:shadow-[0_12px_30px_rgba(16,24,40,.32)] active:translate-y-0 active:scale-[.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 sm:bottom-6 sm:right-6"
+        className="feedback-beacon fixed bottom-4 right-3 z-[69] flex h-12 items-center gap-2 rounded-full bg-[#171a20] px-4 text-[13px] font-semibold text-white shadow-[0_8px_24px_rgba(16,24,40,.28)] hover:bg-[#242830] active:scale-[.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 sm:bottom-6 sm:right-6"
       >
         <span className="relative h-[18px] w-[18px]">
           <MessageCircle className={cn('absolute inset-0 h-[18px] w-[18px] transition-[opacity,transform] duration-200', open ? 'rotate-90 scale-75 opacity-0' : 'rotate-0 scale-100 opacity-100')} />
