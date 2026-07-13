@@ -27,6 +27,40 @@ begin
 
   select manual_status into v_status2 from public.businesses where id = v_biz2;
   assert v_status2 is null, 'second business for a repeat email should end up unentitled (manual_status null)';
+
+  -- both entitlement columns must be cleared, not just manual_status
+  assert not exists (
+    select 1 from public.businesses
+    where id = v_biz2 and (manual_status is not null or manual_until is not null)
+  ), 'second business must have BOTH manual_status and manual_until cleared';
 end $$;
+
+-- Regression/concurrency-safety proof: consuming the SAME brand-new email
+-- twice in immediate sequence must never raise (no unique_violation should
+-- ever escape consume_trial, which is the whole point of the atomic-upsert
+-- fix) — the second call must silently revoke, not error.
+do $$
+declare
+  v_email2 text := lower('trial-dedup-race-' || floor(random()*1000000)::text || '@example.com');
+  v_biz3 uuid;
+  v_biz4 uuid;
+  v_status3 text;
+  v_status4 text;
+begin
+  insert into public.businesses(name) values ('TRIAL_DEDUP_TEST_3') returning id into v_biz3;
+  update public.businesses set manual_status = 'trialing', manual_until = now() + interval '14 days' where id = v_biz3;
+
+  insert into public.businesses(name) values ('TRIAL_DEDUP_TEST_4') returning id into v_biz4;
+  update public.businesses set manual_status = 'trialing', manual_until = now() + interval '14 days' where id = v_biz4;
+
+  perform public.consume_trial(v_email2, v_biz3);
+  perform public.consume_trial(v_email2, v_biz4);  -- must not raise unique_violation
+
+  select manual_status into v_status3 from public.businesses where id = v_biz3;
+  select manual_status into v_status4 from public.businesses where id = v_biz4;
+  assert v_status3 = 'trialing', 'first call for new email should keep trial';
+  assert v_status4 is null, 'second call for same email (in sequence) should revoke without error';
+end $$;
+
 select 'ALL PASS' as result;
 rollback;
