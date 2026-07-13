@@ -85,12 +85,18 @@ async function loadProfileAndBusiness(userId: string, retry = 0): Promise<void> 
       const siteList = sites ?? []
       store.setSites(siteList)
 
-      const persisted = readPersistedSite()
-      let active: string | null = useAuthStore.getState().currentSiteId
-      if (!active || !siteList.some((s) => s.id === active)) {
-        if (persisted && siteList.some((s) => s.id === persisted)) active = persisted
-        else if (profile.is_group_admin) active = siteList.length > 1 ? null : (siteList[0]?.id ?? null)
-        else active = profile.site_id ?? siteList[0]?.id ?? null
+      let active: string | null
+      if (profile.is_group_admin) {
+        const persisted = readPersistedSite()
+        active = useAuthStore.getState().currentSiteId
+        if (!active || !siteList.some((s) => s.id === active)) {
+          if (persisted && siteList.some((s) => s.id === persisted)) active = persisted
+          else active = siteList.length > 1 ? null : (siteList[0]?.id ?? null)
+        }
+      } else {
+        // Non-admins are hard-locked to their home site — RLS enforces this;
+        // the store must match so the UI never shows an empty "other site".
+        active = profile.site_id ?? siteList[0]?.id ?? null
       }
       store.setCurrentSiteId(active)
     } else if (retry < MAX_RETRIES) {

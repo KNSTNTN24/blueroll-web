@@ -30,6 +30,7 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
   const businessName = business?.name || 'My Business'
   // Settings is org-level — no site switcher there (design spec)
   const multiSite = sites.length > 1 && !pathname?.startsWith('/settings')
+  const canSwitchSites = multiSite && !!profile?.is_group_admin
   const currentSite = sites.find((s) => s.id === currentSiteId) ?? null
   const [commandOpen, setCommandOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -87,7 +88,7 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
           )}
 
           {/* Site switcher — only for multi-site groups */}
-          {multiSite && (
+          {canSwitchSites && (
             <div ref={siteRef} className="relative shrink-0">
               <button onClick={() => setSiteMenuOpen((o) => !o)}
                 className="flex items-center gap-1.5 rounded-[9px] border border-input bg-card px-2.5 py-1.5 text-[13px] font-semibold text-foreground transition-colors hover:bg-accent">
@@ -117,6 +118,13 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {multiSite && !canSwitchSites && currentSite && (
+            <div className="flex shrink-0 items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1.5 text-[13px] font-medium text-foreground">
+              <Building2 className="h-4 w-4 text-muted-foreground" strokeWidth={1.8} />
+              <span className="max-w-[160px] truncate">{currentSite.name}</span>
             </div>
           )}
 
