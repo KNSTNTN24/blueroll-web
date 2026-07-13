@@ -133,6 +133,7 @@ export function MembersRoles() {
 
 // ── Invite slide-over (mirrors the main Team page) ──────────────────
 const ROLE_OPTS = [
+  { label: 'Owner', value: 'owner' },
   { label: 'Site manager', value: 'manager' },
   { label: 'Kitchen staff', value: 'kitchen_staff' },
   { label: 'Front of house', value: 'front_of_house' },
@@ -207,12 +208,12 @@ function InviteSlideOver({ sites, onClose }: { sites: { id: string; name: string
               </div>
               <div>
                 <label style={label}>Role</label>
-                <div style={{ display: 'flex', gap: 8 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                   {ROLE_OPTS.map((o) => {
                     const on = role === o.value
                     return (
                       <button key={o.value} onClick={() => setRole(o.value)}
-                        style={{ flex: 1, border: on ? '1.5px solid #1f9d63' : '1px solid #e2e4e8', background: on ? '#f5faf7' : '#fff', color: on ? '#1a6e49' : '#5c626b', fontSize: 13, fontWeight: 600, padding: 10, borderRadius: 10, cursor: 'pointer', whiteSpace: 'nowrap' }}>{o.label}</button>
+                        style={{ border: on ? '1.5px solid #1f9d63' : '1px solid #e2e4e8', background: on ? '#f5faf7' : '#fff', color: on ? '#1a6e49' : '#5c626b', fontSize: 13, fontWeight: 600, padding: 10, borderRadius: 10, cursor: 'pointer', whiteSpace: 'nowrap' }}>{o.label}</button>
                     )
                   })}
                 </div>

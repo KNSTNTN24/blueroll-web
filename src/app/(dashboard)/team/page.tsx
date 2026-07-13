@@ -110,6 +110,7 @@ export default function TeamPage() {
   function resetInvite() { setInviteShown(false); setTimeout(() => setShowInvite(false), 300) }
 
   const ROLE_OPTS = [
+    { label: 'Owner', value: 'owner' },
     { label: 'Site manager', value: 'manager' },
     { label: 'Kitchen staff', value: 'kitchen_staff' },
     { label: 'Front of house', value: 'front_of_house' },
@@ -194,12 +195,12 @@ export default function TeamPage() {
 
                   <div>
                     <label style={{ fontSize: 13, fontWeight: 600, color: '#41464d', display: 'block', marginBottom: 8 }}>Role</label>
-                    <div style={{ display: 'flex', gap: 8 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                       {ROLE_OPTS.map((o) => {
                         const on = inviteRole === o.value
                         return (
                           <button key={o.value} onClick={() => setInviteRole(o.value)}
-                            style={{ flex: 1, border: on ? '1.5px solid #1f9d63' : '1px solid #e2e4e8', background: on ? '#f5faf7' : '#fff', color: on ? '#1a6e49' : '#5c626b', fontSize: 13, fontWeight: 600, padding: 10, borderRadius: 10, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                            style={{ border: on ? '1.5px solid #1f9d63' : '1px solid #e2e4e8', background: on ? '#f5faf7' : '#fff', color: on ? '#1a6e49' : '#5c626b', fontSize: 13, fontWeight: 600, padding: 10, borderRadius: 10, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                             {o.label}
                           </button>
                         )
