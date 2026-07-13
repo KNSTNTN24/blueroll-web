@@ -57,6 +57,26 @@ export default function SettingsPage() {
   useEffect(() => { setGroupName(business?.name ?? '') }, [business?.name])
   useEffect(() => { setEquipmentList(business?.equipment ?? []) }, [business?.equipment])
 
+  // Personal preferences (persisted to profiles.preferences jsonb).
+  const savedPrefs = ((profile as unknown as { preferences?: Record<string, string> })?.preferences) ?? {}
+  const [prefs, setPrefs] = useState({
+    language: savedPrefs.language ?? 'en-GB', timezone: savedPrefs.timezone ?? 'Europe/London',
+    temp_unit: savedPrefs.temp_unit ?? 'celsius', date_format: savedPrefs.date_format ?? 'DD/MM/YYYY',
+  })
+  useEffect(() => {
+    const p = ((profile as unknown as { preferences?: Record<string, string> })?.preferences) ?? {}
+    setPrefs({ language: p.language ?? 'en-GB', timezone: p.timezone ?? 'Europe/London', temp_unit: p.temp_unit ?? 'celsius', date_format: p.date_format ?? 'DD/MM/YYYY' })
+  }, [profile?.id])
+  async function savePref(key: keyof typeof prefs, value: string) {
+    if (!profile?.id) return
+    const next = { ...prefs, [key]: value }
+    setPrefs(next)
+    const { error } = await supabase.from('profiles').update({ preferences: next }).eq('id', profile.id)
+    if (error) { toast.error(error.message); return }
+    useAuthStore.getState().setProfile({ ...profile, preferences: next } as typeof profile)
+    toast.success('Preference saved')
+  }
+
   const nameChanged = `${firstName} ${lastName}`.trim() !== (profile?.full_name ?? '')
   async function handleSaveName() {
     if (!profile?.id) return
@@ -177,10 +197,28 @@ export default function SettingsPage() {
             <div style={{ ...CARD, padding: 20 }}>
               <div style={{ ...MICRO, marginBottom: 14 }}>Preferences</div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-                <Field label="Language"><input value="English (UK)" readOnly style={{ ...FIELD, cursor: 'default' }} /></Field>
-                <Field label="Time zone"><input value="Europe/London" readOnly style={{ ...FIELD, cursor: 'default' }} /></Field>
-                <Field label="Temperature units"><input value="Celsius (°C)" readOnly style={{ ...FIELD, cursor: 'default' }} /></Field>
-                <Field label="Date format"><input value="DD/MM/YYYY" readOnly style={{ ...FIELD, cursor: 'default' }} /></Field>
+                <Field label="Language">
+                  <select value={prefs.language} onChange={(e) => savePref('language', e.target.value)} style={{ ...FIELD, cursor: 'pointer' }}>
+                    <option value="en-GB">English (UK)</option>
+                    <option value="en-US">English (US)</option>
+                  </select>
+                </Field>
+                <Field label="Time zone">
+                  <select value={prefs.timezone} onChange={(e) => savePref('timezone', e.target.value)} style={{ ...FIELD, cursor: 'pointer' }}>
+                    {['Europe/London', 'Europe/Dublin', 'Europe/Paris', 'Europe/Madrid', 'UTC'].map((tz) => <option key={tz} value={tz}>{tz}</option>)}
+                  </select>
+                </Field>
+                <Field label="Temperature units">
+                  <select value={prefs.temp_unit} onChange={(e) => savePref('temp_unit', e.target.value)} style={{ ...FIELD, cursor: 'pointer' }}>
+                    <option value="celsius">Celsius (°C)</option>
+                    <option value="fahrenheit">Fahrenheit (°F)</option>
+                  </select>
+                </Field>
+                <Field label="Date format">
+                  <select value={prefs.date_format} onChange={(e) => savePref('date_format', e.target.value)} style={{ ...FIELD, cursor: 'pointer' }}>
+                    {['DD/MM/YYYY', 'MM/DD/YYYY', 'YYYY-MM-DD'].map((f) => <option key={f} value={f}>{f}</option>)}
+                  </select>
+                </Field>
               </div>
             </div>
 
