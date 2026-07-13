@@ -1,3 +1,10 @@
+-- ⚠️ EMERGENCY ROLLBACK — NOT A MIGRATION. Do NOT place in supabase/migrations/.
+-- Reverts the site-scoped RLS swap (20260712100200 + 100300) back to the original
+-- business-level policies. Apply MANUALLY via the Management API ONLY if the site
+-- isolation must be undone. Applied migrations here are run by raw SQL API, not the
+-- Supabase CLI — so this file lives outside migrations/ to keep `supabase db push`
+-- from silently reverting production. Does NOT touch entitlement_write_gate_* policies.
+
 set search_path = public;
 begin;
 
