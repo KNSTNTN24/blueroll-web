@@ -1,7 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const STRIPE_SECRET_KEY = Deno.env.get("STRIPE_SECRET_KEY")!;
-const STRIPE_PRICE_ID = Deno.env.get("STRIPE_PRICE_ID") || "price_1TEVMUHaq4vjSIKeWZNDhuFg";
+const STRIPE_PRICE_ID = Deno.env.get("STRIPE_PRICE_ID") || "price_1TQOyvAJ1gsWpnv6SlnbGWVu";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
@@ -65,15 +65,16 @@ Deno.serve(async (req) => {
 
     const { data: biz } = await supabase
       .from("businesses")
-      .select("stripe_customer_id, subscription_status, subscription_id")
+      .select("stripe_customer_id, subscription_id, stripe_status, trial_ends_at")
       .eq("id", businessId)
       .single();
 
-    // Idempotency: if already on a paid plan, just succeed.
-    if (
-      biz?.subscription_status === "active" ||
-      biz?.subscription_status === "trialing"
-    ) {
+    // Idempotency keyed on the STRIPE SUBSCRIPTION, not on entitlement.
+    // A business gets a free manual trial at signup (set_default_trial), which
+    // makes it "trialing" WITHOUT any Stripe subscription. We must still create
+    // the Stripe subscription here so the card is on file and billing starts at
+    // trial end. Only skip if a real Stripe subscription already exists.
+    if (biz?.subscription_id) {
       return new Response(
         JSON.stringify({ ok: true, alreadySubscribed: true }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } },
@@ -109,11 +110,23 @@ Deno.serve(async (req) => {
     const { data: siteCountData } = await supabase.rpc("billable_site_count", { p_business_id: businessId });
     const quantity = Number(siteCountData ?? 1) || 1;
 
+    // Align the Stripe trial to the free-trial window already granted at signup
+    // so the customer never gets a double trial. If that window is missing or
+    // already elapsed, fall back to a fresh 14-day trial.
+    const nowSec = Math.floor(Date.now() / 1000);
+    const existingTrialEnd = biz?.trial_ends_at
+      ? Math.floor(new Date(biz.trial_ends_at).getTime() / 1000)
+      : null;
+    const trialParams: Record<string, string> =
+      existingTrialEnd && existingTrialEnd > nowSec + 60
+        ? { "trial_end": String(existingTrialEnd) }
+        : { "trial_period_days": "14" };
+
     const subscription = await stripeRequest("/subscriptions", {
       customer: customerId,
       "items[0][price]": STRIPE_PRICE_ID,
       "items[0][quantity]": String(quantity),
-      "trial_period_days": "14",
+      ...trialParams,
       "default_payment_method": paymentMethodId,
       "expand[0]": "pending_setup_intent",
     });
@@ -128,6 +141,10 @@ Deno.serve(async (req) => {
         subscription_id: subscription.id,
         stripe_status: subscription.status, // "trialing" on success
         stripe_until: trialEndIso,
+        // Stripe now owns the trial and billing → drop the free manual trial so
+        // it can't outrank Stripe in the entitlement arbiter or double up.
+        manual_status: null,
+        manual_until: null,
       })
       .eq("id", businessId);
 
