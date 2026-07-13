@@ -5,12 +5,11 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { PAYWALL_FEATURES } from '@/lib/constants'
+import { CardSubscriptionForm } from '@/components/shared/card-form'
 
 export default function PaywallPage() {
   const router = useRouter()
   const [checkingSession, setCheckingSession] = useState(true)
-  const [startingTrial, setStartingTrial] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
   // Check if already subscribed
   useEffect(() => {
@@ -64,53 +63,6 @@ export default function PaywallPage() {
     }
   }, [router])
 
-  async function handleStartTrial() {
-    setStartingTrial(true)
-    setError(null)
-
-    try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.user) {
-        setError('Not authenticated. Please sign in again.')
-        setStartingTrial(false)
-        return
-      }
-
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('business_id')
-        .eq('id', session.user.id)
-        .single()
-
-      if (!profile?.business_id) {
-        setError('No business found.')
-        setStartingTrial(false)
-        return
-      }
-
-      // TEST STUB: seed a manual trial; the DB arbiter computes
-      // subscription_status/trial_ends_at from per-source fields.
-      const { error: updateError } = await supabase
-        .from('businesses')
-        .update({
-          manual_status: 'trialing',
-          manual_until: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
-        })
-        .eq('id', profile.business_id)
-
-      if (updateError) {
-        setError('Failed to activate trial: ' + updateError.message)
-        setStartingTrial(false)
-        return
-      }
-
-      window.location.href = '/dashboard'
-    } catch {
-      setError('Something went wrong. Please try again.')
-      setStartingTrial(false)
-    }
-  }
-
   if (checkingSession) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-emerald-700">
@@ -150,26 +102,9 @@ export default function PaywallPage() {
             ))}
           </ul>
 
-          {error && (
-            <div className="mt-6 rounded-lg bg-red-500/20 px-4 py-3 text-sm text-white border border-red-400/30">
-              {error}
-            </div>
-          )}
-
-          <button
-            onClick={handleStartTrial}
-            disabled={startingTrial}
-            className="mt-8 w-full rounded-xl bg-white px-6 py-4 text-lg font-semibold text-emerald-700 shadow-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            {startingTrial ? (
-              <span className="flex items-center justify-center gap-2">
-                <span className="h-5 w-5 animate-spin rounded-full border-2 border-emerald-600 border-t-transparent" />
-                Starting...
-              </span>
-            ) : (
-              'Start free trial'
-            )}
-          </button>
+          <div className="mt-8 rounded-2xl bg-white p-6 text-left shadow-lg">
+            <CardSubscriptionForm submitLabel="Start free trial" redirectTo="/dashboard" />
+          </div>
           <p className="mt-2 text-sm text-emerald-100">
             then &pound;14.99/mo after 14 days
           </p>
