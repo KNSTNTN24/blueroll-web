@@ -8,27 +8,54 @@ import { toast } from 'sonner'
 import { Plus, Pencil, Trash2, X } from 'lucide-react'
 import { InspectionEmpty, EmptyPrimary, SuppliersArt } from '@/components/shared/inspection-empty'
 import { HeaderButton } from '@/components/shared/header-button'
+import { SupplierLogo } from '@/components/supplier-logo'
 
 interface Supplier {
   id: string
   name: string
   contact_name: string | null
   phone: string | null
+  email: string | null
   address: string | null
   goods_supplied: string | null
   notes: string | null
+  website: string | null
+  logo_url: string | null
+  logo_domain: string | null
+  logo_source: string | null
+  logo_verified: boolean
   delivery_days: string[] | null
   business_id: string
 }
 
+interface BrandResult {
+  brandId: string | null
+  name: string
+  domain: string
+  icon: string | null
+  claimed: boolean
+}
+
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const
 const DAY_SHORT: Record<string, string> = { Mon: 'M', Tue: 'T', Wed: 'W', Thu: 'T', Fri: 'F', Sat: 'S', Sun: 'S' }
-const TILE = ['#1f7a52', '#5b6472', '#8a6d52', '#4e6e81']
-const initials = (n: string) => { const p = n.split(' ').filter(Boolean); return (p.length >= 2 ? p[0][0] + p[1][0] : n.slice(0, 2)).toUpperCase() }
 const GRID = 'minmax(140px,1.5fr) minmax(90px,1fr) 158px 112px'
 
-interface Form { name: string; goods: string; contact: string; phone: string; address: string; notes: string; days: string[] }
-const BLANK: Form = { name: '', goods: '', contact: '', phone: '', address: '', notes: '', days: [] }
+interface Form {
+  name: string
+  goods: string
+  contact: string
+  phone: string
+  email: string
+  address: string
+  notes: string
+  website: string
+  days: string[]
+  logoUrl: string
+  logoDomain: string
+  logoSource: string
+  logoVerified: boolean
+}
+const BLANK: Form = { name: '', goods: '', contact: '', phone: '', email: '', address: '', notes: '', website: '', days: [], logoUrl: '', logoDomain: '', logoSource: '', logoVerified: false }
 
 export default function SuppliersPage() {
   const profile = useAuthStore((s) => s.profile)
@@ -41,6 +68,9 @@ export default function SuppliersPage() {
   const [shown, setShown] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
   const [form, setForm] = useState<Form>(BLANK)
+  const [brandResults, setBrandResults] = useState<BrandResult[]>([])
+  const [brandSearching, setBrandSearching] = useState(false)
+  const [brandError, setBrandError] = useState<string | null>(null)
 
   const { data: suppliers = [], isLoading } = useQuery({
     queryKey: ['suppliers', bid],
@@ -48,10 +78,26 @@ export default function SuppliersPage() {
     queryFn: async () => (await supabase.from('suppliers').select('*').eq('business_id', bid!).order('name')).data as Supplier[] ?? [],
   })
 
-  function openAdd() { setEditId(null); setForm(BLANK); setPanelOpen(true); requestAnimationFrame(() => setShown(true)) }
+  function resetBrandSearch() { setBrandResults([]); setBrandSearching(false); setBrandError(null) }
+  function openAdd() { setEditId(null); setForm(BLANK); resetBrandSearch(); setPanelOpen(true); requestAnimationFrame(() => setShown(true)) }
   function openEdit(s: Supplier) {
     setEditId(s.id)
-    setForm({ name: s.name, goods: s.goods_supplied ?? '', contact: s.contact_name ?? '', phone: s.phone ?? '', address: s.address ?? '', notes: s.notes ?? '', days: s.delivery_days ?? [] })
+    setForm({
+      name: s.name,
+      goods: s.goods_supplied ?? '',
+      contact: s.contact_name ?? '',
+      phone: s.phone ?? '',
+      email: s.email ?? '',
+      address: s.address ?? '',
+      notes: s.notes ?? '',
+      website: s.website ?? '',
+      days: s.delivery_days ?? [],
+      logoUrl: s.logo_url ?? '',
+      logoDomain: s.logo_domain ?? '',
+      logoSource: s.logo_source ?? '',
+      logoVerified: s.logo_verified ?? false,
+    })
+    resetBrandSearch()
     setPanelOpen(true); requestAnimationFrame(() => setShown(true))
   }
   function closePanel() { setShown(false); setTimeout(() => setPanelOpen(false), 300) }
@@ -60,8 +106,11 @@ export default function SuppliersPage() {
     mutationFn: async () => {
       if (!bid) throw new Error('No business')
       const payload = {
-        name: form.name.trim(), contact_name: form.contact.trim() || null, phone: form.phone.trim() || null,
+        name: form.name.trim(), contact_name: form.contact.trim() || null, phone: form.phone.trim() || null, email: form.email.trim() || null,
         address: form.address.trim() || null, goods_supplied: form.goods.trim() || null, notes: form.notes.trim() || null,
+        website: form.website.trim() || null, logo_url: form.logoUrl || null, logo_domain: form.logoDomain || null,
+        logo_source: form.logoSource || null, logo_verified: form.logoVerified,
+        logo_updated_at: form.logoUrl ? new Date().toISOString() : null,
         delivery_days: form.days.length ? DAYS.filter((d) => form.days.includes(d)) : null, business_id: bid,
       }
       if (editId) { const { error } = await supabase.from('suppliers').update(payload).eq('id', editId); if (error) throw error }
@@ -78,6 +127,43 @@ export default function SuppliersPage() {
   })
 
   const canSave = form.name.trim().length > 0
+
+  async function searchBrands() {
+    if (form.name.trim().length < 2) {
+      setBrandError('Enter at least two characters in the supplier name.')
+      return
+    }
+    setBrandSearching(true)
+    setBrandError(null)
+    setBrandResults([])
+    const { data, error } = await supabase.functions.invoke('search-supplier-brands', { body: { query: form.name.trim() } })
+    setBrandSearching(false)
+    if (error) {
+      setBrandError('Logo search is not available yet. Try again later.')
+      return
+    }
+    const results = (data?.results ?? []) as BrandResult[]
+    setBrandResults(results)
+    if (!results.length) setBrandError('No matching brands found. Initials will be used instead.')
+  }
+
+  function chooseBrand(brand: BrandResult) {
+    setForm((current) => ({
+      ...current,
+      website: current.website || `https://${brand.domain}`,
+      logoUrl: brand.icon ?? '',
+      logoDomain: brand.domain,
+      logoSource: 'brandfetch',
+      logoVerified: true,
+    }))
+    setBrandResults([])
+    setBrandError(null)
+  }
+
+  function removeLogo() {
+    setForm((current) => ({ ...current, logoUrl: '', logoDomain: '', logoSource: '', logoVerified: false }))
+    resetBrandSearch()
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, fontFamily: "'Geist',system-ui,sans-serif", color: '#16181d' }}>
@@ -112,7 +198,7 @@ export default function SuppliersPage() {
               <div key={s.id} className="sup-row" style={{ display: 'grid', gridTemplateColumns: GRID, gap: 10, padding: '13px 20px', borderBottom: i === suppliers.length - 1 ? 'none' : '1px solid #f2f3f5', alignItems: 'center', transition: 'background .14s' }}
                 onMouseEnter={(e) => (e.currentTarget.style.background = '#fafbfb')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
-                  <div style={{ width: 36, height: 36, borderRadius: 10, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', font: "700 12px 'Geist'", flex: 'none', background: TILE[i % TILE.length] }}>{initials(s.name)}</div>
+                  <SupplierLogo name={s.name} logoUrl={s.logo_url} />
                   <div style={{ minWidth: 0 }}>
                     <div style={{ font: "600 14px 'Geist'", whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.name}</div>
                     <div style={{ fontSize: 12.5, color: '#8a9099', marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{subline}</div>
@@ -120,7 +206,7 @@ export default function SuppliersPage() {
                 </div>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ font: "500 13.5px 'Geist'", color: '#41464d', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.contact_name?.trim() || '—'}</div>
-                  <div style={{ fontSize: 12.5, color: '#8a9099', marginTop: 1, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{s.phone?.trim() || '—'}</div>
+                  <div style={{ fontSize: 12.5, color: '#8a9099', marginTop: 1, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.email?.trim() || s.phone?.trim() || '—'}</div>
                 </div>
                 <div style={{ display: 'flex', gap: 3 }}>
                   {DAYS.map((d) => {
@@ -159,10 +245,61 @@ export default function SuppliersPage() {
             </div>
             <div style={{ flex: 1, overflowY: 'auto', padding: '22px 24px', display: 'flex', flexDirection: 'column', gap: 18 }}>
               <Field label="Supplier name" required><Input value={form.name} onChange={(v) => setForm((f) => ({ ...f, name: v }))} placeholder="e.g. Brindisa" autoFocus /></Field>
+              <div style={{ border: '1px solid #e5e7ea', borderRadius: 13, padding: 14, background: '#fafbfb' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <SupplierLogo name={form.name || 'Supplier'} logoUrl={form.logoUrl} size={44} />
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ font: "600 13px 'Geist'", color: '#30343a' }}>{form.logoUrl ? 'Supplier logo selected' : 'Add supplier logo'}</div>
+                    <div style={{ marginTop: 2, font: "400 11.5px 'Geist'", color: '#8a9099', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {form.logoDomain || 'Search by supplier name and confirm the right brand'}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={searchBrands}
+                    disabled={brandSearching || form.name.trim().length < 2}
+                    style={{ border: '1px solid #d9dde1', background: '#fff', color: '#41464d', font: "600 12px 'Geist'", padding: '7px 10px', borderRadius: 8, cursor: brandSearching || form.name.trim().length < 2 ? 'not-allowed' : 'pointer', opacity: brandSearching || form.name.trim().length < 2 ? 0.55 : 1, whiteSpace: 'nowrap' }}
+                  >
+                    {brandSearching ? 'Searching…' : form.logoUrl ? 'Change' : 'Find logo'}
+                  </button>
+                  {form.logoUrl && (
+                    <button type="button" onClick={removeLogo} aria-label="Remove logo" style={{ width: 30, height: 30, border: 'none', background: 'transparent', color: '#9aa0a8', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 8 }}>
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+                {brandError && <div style={{ marginTop: 10, font: "500 11.5px 'Geist'", color: '#8a5b18' }}>{brandError}</div>}
+                {brandResults.length > 0 && (
+                  <div style={{ marginTop: 12, borderTop: '1px solid #e8eaed', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <div style={{ padding: '0 4px 4px', font: "600 10.5px 'Geist'", color: '#9aa0a8', letterSpacing: '.05em', textTransform: 'uppercase' }}>Choose the correct company</div>
+                    {brandResults.map((brand) => (
+                      <button
+                        key={brand.brandId ?? brand.domain}
+                        type="button"
+                        onClick={() => chooseBrand(brand)}
+                        style={{ width: '100%', border: 'none', background: 'transparent', display: 'flex', alignItems: 'center', gap: 10, padding: '8px 6px', borderRadius: 9, textAlign: 'left' }}
+                        onMouseEnter={(event) => (event.currentTarget.style.background = '#f1f3f4')}
+                        onMouseLeave={(event) => (event.currentTarget.style.background = 'transparent')}
+                      >
+                        <SupplierLogo name={brand.name} logoUrl={brand.icon} size={34} />
+                        <span style={{ minWidth: 0, flex: 1 }}>
+                          <span style={{ display: 'block', font: "600 12.5px 'Geist'", color: '#30343a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{brand.name}</span>
+                          <span style={{ display: 'block', marginTop: 1, font: "400 11px 'Geist'", color: '#8a9099' }}>{brand.domain}</span>
+                        </span>
+                        {brand.claimed && <span style={{ font: "600 9.5px 'Geist'", color: '#1a6e49', background: '#e7f0ea', padding: '3px 6px', borderRadius: 20 }}>Verified</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <Field label="Goods supplied"><Input value={form.goods} onChange={(v) => setForm((f) => ({ ...f, goods: v }))} placeholder="e.g. Fresh produce, dairy" /></Field>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                 <Field label="Contact name"><Input value={form.contact} onChange={(v) => setForm((f) => ({ ...f, contact: v }))} placeholder="Contact person" /></Field>
                 <Field label="Phone"><Input value={form.phone} onChange={(v) => setForm((f) => ({ ...f, phone: v }))} placeholder="Phone number" /></Field>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                <Field label="Email"><Input value={form.email} onChange={(v) => setForm((f) => ({ ...f, email: v }))} placeholder="orders@supplier.com" /></Field>
+                <Field label="Website"><Input value={form.website} onChange={(v) => setForm((f) => ({ ...f, website: v }))} placeholder="https://supplier.com" /></Field>
               </div>
               <Field label="Address"><Input value={form.address} onChange={(v) => setForm((f) => ({ ...f, address: v }))} placeholder="Full address" /></Field>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
