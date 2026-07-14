@@ -262,7 +262,6 @@ export default function SettingsPage() {
         return (
           <div>
             <h1 style={PAGE_H1}>Billing &amp; subscription</h1>
-            <p style={PAGE_SUB}>One simple price — <strong style={{ color: '#16181d', fontWeight: 700 }}>£24.99 per site, per month</strong>. Every site gets everything.</p>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, alignItems: 'flex-start', marginTop: 22 }}>
               {/* main */}
               <div style={{ flex: '1 1 440px', display: 'flex', flexDirection: 'column', gap: 14 }}>
