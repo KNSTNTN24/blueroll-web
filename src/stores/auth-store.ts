@@ -54,6 +54,8 @@ interface AuthState {
   profile: Profile | null
   business: Business | null
   sites: Site[]
+  /** The member's accessible sites (their member_sites, or all sites for a group admin). */
+  memberSiteIds: string[]
   /** null = "All sites" (group-admin estate view); otherwise the selected site. */
   currentSiteId: string | null
   isLoading: boolean
@@ -61,6 +63,7 @@ interface AuthState {
   setProfile: (profile: Profile | null) => void
   setBusiness: (business: Business | null) => void
   setSites: (sites: Site[]) => void
+  setMemberSiteIds: (ids: string[]) => void
   setCurrentSiteId: (id: string | null) => void
   setLoading: (loading: boolean) => void
   reset: () => void
@@ -71,13 +74,15 @@ export const useAuthStore = create<AuthState>((set) => ({
   profile: null,
   business: null,
   sites: [],
+  memberSiteIds: [],
   currentSiteId: null,
   isLoading: true,
   setUser: (user) => set({ user }),
   setProfile: (profile) => set({ profile }),
   setBusiness: (business) => set({ business }),
   setSites: (sites) => set({ sites }),
+  setMemberSiteIds: (memberSiteIds) => set({ memberSiteIds }),
   setCurrentSiteId: (id) => { persistSite(id); set({ currentSiteId: id }) },
   setLoading: (isLoading) => set({ isLoading }),
-  reset: () => set({ user: null, profile: null, business: null, sites: [], currentSiteId: null, isLoading: false }),
+  reset: () => set({ user: null, profile: null, business: null, sites: [], memberSiteIds: [], currentSiteId: null, isLoading: false }),
 }))

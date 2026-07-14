@@ -85,6 +85,14 @@ async function loadProfileAndBusiness(userId: string, retry = 0): Promise<void> 
       const siteList = sites ?? []
       store.setSites(siteList)
 
+      // Phase 2: the member's accessible sites (group admins see all).
+      if (profile.is_group_admin) {
+        store.setMemberSiteIds(siteList.map((s) => s.id))
+      } else {
+        const { data: ms } = await supabase.from('member_sites').select('site_id').eq('profile_id', profile.id)
+        store.setMemberSiteIds((ms ?? []).map((r: { site_id: string }) => r.site_id))
+      }
+
       let active: string | null
       if (profile.is_group_admin) {
         const persisted = readPersistedSite()

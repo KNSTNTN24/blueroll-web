@@ -20,6 +20,9 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
   const router = useRouter()
   const pathname = usePathname()
   const { profile, business, user, sites, currentSiteId, setCurrentSiteId } = useAuthStore()
+  const memberSiteIds = useAuthStore((s) => s.memberSiteIds)
+  // Phase 2: the switcher offers a member's accessible sites (group admins see all).
+  const accessibleSites = profile?.is_group_admin ? sites : sites.filter((s) => memberSiteIds.includes(s.id))
   // Group-shared pages carry a chip clarifying the switcher is context-only here
   const sharedChip = pathname?.startsWith('/haccp-pack') ? 'Pack shared across all sites'
     : pathname?.startsWith('/suppliers') ? 'Approved list shared across all sites'
@@ -29,8 +32,8 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
   const displayEmail = profile?.email || user?.email || ''
   const businessName = business?.name || 'My Business'
   // Settings is org-level — no site switcher there (design spec)
-  const multiSite = sites.length > 1 && !pathname?.startsWith('/settings')
-  const canSwitchSites = multiSite && !!profile?.is_group_admin
+  const multiSite = accessibleSites.length > 1 && !pathname?.startsWith('/settings')
+  const canSwitchSites = multiSite && (!!profile?.is_group_admin || accessibleSites.length > 1)
   const currentSite = sites.find((s) => s.id === currentSiteId) ?? null
   const [commandOpen, setCommandOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -94,7 +97,7 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
                 className="flex items-center gap-1.5 rounded-[9px] border border-input bg-card px-2.5 py-1.5 text-[13px] font-semibold text-foreground transition-colors hover:bg-accent">
                 <Building2 className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={1.8} />
                 <span className="max-w-[120px] truncate sm:max-w-[160px]">{currentSite ? currentSite.name : 'All sites'}</span>
-                <span className="rounded-full bg-secondary px-1.5 text-[11px] font-semibold text-muted-foreground">{sites.length}</span>
+                <span className="rounded-full bg-secondary px-1.5 text-[11px] font-semibold text-muted-foreground">{accessibleSites.length}</span>
                 <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
               </button>
               {siteMenuOpen && (
@@ -108,7 +111,7 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
                   )}
                   {profile?.is_group_admin && <div className="my-1 h-px bg-border" />}
                   <div className="max-h-[300px] overflow-y-auto">
-                    {sites.map((s) => (
+                    {accessibleSites.map((s) => (
                       <button key={s.id} onClick={() => { setCurrentSiteId(s.id); setSiteMenuOpen(false) }}
                         className={cn('flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-[13px] transition-colors hover:bg-muted', currentSiteId === s.id ? 'font-semibold text-brand-deep' : 'text-foreground')}>
                         <span className="truncate">{s.name}</span>
