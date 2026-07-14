@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { toast } from 'sonner'
@@ -17,6 +17,8 @@ const VAT_RATE = 0.2
 const DEMO_THRESHOLD = 4
 const gbp = (n: number) => `£${n.toFixed(2)}`
 const initialsOf = (n: string) => { const p = n.split(' ').filter(Boolean); return (p.length >= 2 ? p[0][0] + p[1][0] : n.slice(0, 2)).toUpperCase() }
+const CARD_BRAND: Record<string, string> = { visa: 'VISA', mastercard: 'MC', amex: 'AMEX', discover: 'DISC', diners: 'DINERS', jcb: 'JCB', unionpay: 'UP' }
+const brandLabel = (b?: string) => (b ? (CARD_BRAND[b.toLowerCase()] ?? b.slice(0, 4).toUpperCase()) : 'CARD')
 
 const CARD: React.CSSProperties = { background: '#fff', border: '1px solid #e9eaed', borderRadius: 16, boxShadow: '0 1px 2px rgba(16,24,40,.03)' }
 const PAGE_H1: React.CSSProperties = { margin: 0, fontSize: 25, fontWeight: 700, letterSpacing: '-.02em', color: '#16181d' }
@@ -105,6 +107,23 @@ export default function SettingsPage() {
     onSuccess: (data) => window.location.assign(data.portalUrl),
     onError: (err: Error) => toast.error(err.message || 'Failed to open subscription portal'),
   })
+
+  // Real card on file (brand + last4) from Stripe — replaces the placeholder card.
+  const cardQuery = useQuery({
+    queryKey: ['payment-method', business?.stripe_customer_id],
+    enabled: !!business?.stripe_customer_id,
+    staleTime: 5 * 60 * 1000,
+    queryFn: async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await supabase.functions.invoke('manage-subscription', {
+        headers: session ? { Authorization: `Bearer ${session.access_token}` } : undefined,
+        body: { action: 'payment-method', customerId: business!.stripe_customer_id },
+      })
+      if (res.error) throw res.error
+      return (res.data as { card: { brand: string; last4: string; expMonth: number; expYear: number } | null }).card
+    },
+  })
+  const card = cardQuery.data
 
   const displayName = profile?.full_name || profile?.email?.split('@')[0] || 'You'
   const roleLabel = ROLE_LABELS[(profile?.role ?? '') as UserRole] ?? profile?.role ?? '—'
@@ -249,8 +268,11 @@ export default function SettingsPage() {
                   <div style={{ ...CARD, flex: '1 1 210px', padding: 18 }}>
                     <div style={MICRO}>Payment method</div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginTop: 12 }}>
-                      <span style={{ width: 42, height: 28, borderRadius: 6, background: '#14161b', color: '#fff', font: "700 10px 'Geist'", display: 'flex', alignItems: 'center', justifyContent: 'center', letterSpacing: '.05em', flex: 'none' }}>VISA</span>
-                      <div style={{ fontSize: 13.5, color: '#41464d' }}>•••• 4242</div>
+                      <span style={{ width: 42, height: 28, borderRadius: 6, background: card ? '#14161b' : '#e2e4e8', color: card ? '#fff' : '#9aa0a8', font: "700 10px 'Geist'", display: 'flex', alignItems: 'center', justifyContent: 'center', letterSpacing: '.05em', flex: 'none' }}>{card ? brandLabel(card.brand) : 'CARD'}</span>
+                      <div style={{ fontSize: 13.5, color: '#41464d' }}>
+                        {cardQuery.isLoading ? 'Loading…' : card ? `•••• ${card.last4}` : (business?.stripe_customer_id ? 'No card on file' : 'No billing set up')}
+                      </div>
+                      {card && <span style={{ fontSize: 12, color: '#9aa0a8', marginLeft: 2 }}>exp {String(card.expMonth).padStart(2, '0')}/{String(card.expYear).slice(-2)}</span>}
                       <button onClick={() => manageSubscriptionMutation.mutate()} title="Opens the Stripe customer portal" style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 4, border: 'none', background: 'none', color: '#1f7a52', font: "600 12.5px 'Geist'", cursor: 'pointer' }}>Change <ExternalLink className="h-3 w-3" /></button>
                     </div>
                   </div>
