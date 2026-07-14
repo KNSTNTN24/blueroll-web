@@ -32,6 +32,10 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
   const displayEmail = profile?.email || user?.email || ''
   const businessName = business?.name || 'My Business'
   // Settings is org-level — no site switcher there (design spec)
+  // orgMultiSite = the BUSINESS has >1 site (drives the site-name chip + "shared across all
+  // sites" labels, which are org-level context). multiSite = the MEMBER can reach >1 site
+  // (drives the interactive switcher). These differ once a member is scoped to a subset.
+  const orgMultiSite = sites.length > 1 && !pathname?.startsWith('/settings')
   const multiSite = accessibleSites.length > 1 && !pathname?.startsWith('/settings')
   const canSwitchSites = multiSite && (!!profile?.is_group_admin || accessibleSites.length > 1)
   const currentSite = sites.find((s) => s.id === currentSiteId) ?? null
@@ -124,7 +128,7 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
             </div>
           )}
 
-          {multiSite && !canSwitchSites && currentSite && (
+          {orgMultiSite && !canSwitchSites && currentSite && (
             <div className="flex shrink-0 items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1.5 text-[13px] font-medium text-foreground">
               <Building2 className="h-4 w-4 text-muted-foreground" strokeWidth={1.8} />
               <span className="max-w-[160px] truncate">{currentSite.name}</span>
@@ -132,7 +136,7 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
           )}
 
           {/* Group-shared context chip */}
-          {multiSite && sharedChip && (
+          {orgMultiSite && sharedChip && (
             <span className="hidden shrink-0 items-center rounded-md bg-secondary px-2 py-1 text-[11.5px] font-semibold text-muted-foreground md:inline-flex">
               {sharedChip}
             </span>
