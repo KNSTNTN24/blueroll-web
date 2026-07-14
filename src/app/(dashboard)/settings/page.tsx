@@ -5,8 +5,8 @@ import { useMutation } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { toast } from 'sonner'
-import { ExternalLink, Plus, X, ArrowRight, CreditCard, Lock } from 'lucide-react'
-import { ROLE_LABELS, DEFAULT_EQUIPMENT, type UserRole } from '@/lib/constants'
+import { ExternalLink, ArrowRight, CreditCard, Lock } from 'lucide-react'
+import { ROLE_LABELS, type UserRole } from '@/lib/constants'
 import { SitesSettings } from './sites-settings'
 import { MembersRoles } from './members-roles'
 import { NotificationsSettings } from './notifications-settings'
@@ -46,16 +46,8 @@ export default function SettingsPage() {
   const [firstName, setFirstName] = useState(nameParts[0] ?? '')
   const [lastName, setLastName] = useState(nameParts.slice(1).join(' '))
   const [savingName, setSavingName] = useState(false)
-  // Org + equipment (admin)
-  const [groupName, setGroupName] = useState(business?.name ?? '')
-  const [savingOrg, setSavingOrg] = useState(false)
-  const [equipmentList, setEquipmentList] = useState<string[]>(business?.equipment ?? [])
-  const [customEquipment, setCustomEquipment] = useState('')
-  const [savingEquipment, setSavingEquipment] = useState(false)
 
   useEffect(() => { const p = (profile?.full_name ?? '').split(' '); setFirstName(p[0] ?? ''); setLastName(p.slice(1).join(' ')) }, [profile?.full_name])
-  useEffect(() => { setGroupName(business?.name ?? '') }, [business?.name])
-  useEffect(() => { setEquipmentList(business?.equipment ?? []) }, [business?.equipment])
 
   // Personal preferences (persisted to profiles.preferences jsonb).
   const savedPrefs = ((profile as unknown as { preferences?: Record<string, string> })?.preferences) ?? {}
@@ -89,32 +81,6 @@ export default function SettingsPage() {
       toast.success('Profile updated')
     } catch (err: unknown) { toast.error(err instanceof Error ? err.message : 'Failed to update') } finally { setSavingName(false) }
   }
-
-  async function handleSaveOrg() {
-    if (!business?.id) return
-    setSavingOrg(true)
-    try {
-      const { error } = await supabase.from('businesses').update({ name: groupName || null }).eq('id', business.id)
-      if (error) throw error
-      useAuthStore.getState().setBusiness({ ...business, name: groupName })
-      toast.success('Saved')
-    } catch (err: unknown) { toast.error(err instanceof Error ? err.message : 'Failed to save') } finally { setSavingOrg(false) }
-  }
-
-  function toggleEquipment(item: string) { setEquipmentList((prev) => (prev.includes(item) ? prev.filter((e) => e !== item) : [...prev, item])) }
-  function addCustomEquipment() { const t = customEquipment.trim(); if (!t || equipmentList.includes(t)) return; setEquipmentList((p) => [...p, t]); setCustomEquipment('') }
-  async function handleSaveEquipment() {
-    if (!business?.id) return
-    setSavingEquipment(true)
-    try {
-      const { error } = await supabase.from('businesses').update({ equipment: equipmentList }).eq('id', business.id)
-      if (error) throw error
-      useAuthStore.getState().setBusiness({ ...business, equipment: equipmentList })
-      toast.success('Equipment saved')
-    } catch (err: unknown) { toast.error(err instanceof Error ? err.message : 'Failed to save equipment') } finally { setSavingEquipment(false) }
-  }
-  const equipmentChanged = JSON.stringify(equipmentList.slice().sort()) !== JSON.stringify((business?.equipment ?? []).slice().sort())
-  const allEquipmentOptions = [...DEFAULT_EQUIPMENT, ...equipmentList.filter((e) => !(DEFAULT_EQUIPMENT as readonly string[]).includes(e))]
 
   async function handleSignOut() { await supabase.auth.signOut(); reset(); window.location.href = '/onboarding' }
   async function handleResetPassword() {
@@ -237,40 +203,6 @@ export default function SettingsPage() {
                   onMouseEnter={(e) => (e.currentTarget.style.background = '#fdf3f2')} onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}>Sign out</button>
               </SecurityRow>
             </div>
-
-            {/* Organisation & equipment (admins) */}
-            {isGroupAdmin && (
-              <div style={{ ...CARD, padding: 20 }}>
-                <div style={{ ...MICRO, marginBottom: 14 }}>Organisation</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-                  <Field label="Group name">
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <input value={groupName} onChange={(e) => setGroupName(e.target.value)} style={{ ...FIELD, flex: 1 }} onFocus={focusRing} onBlur={blurRing} />
-                      <button onClick={handleSaveOrg} disabled={savingOrg || groupName === (business?.name ?? '')} style={{ ...GREEN_BTN, padding: '9px 14px', opacity: savingOrg || groupName === (business?.name ?? '') ? 0.55 : 1 }}>{savingOrg ? '…' : 'Save'}</button>
-                    </div>
-                  </Field>
-                  <Field label="Registered address"><input value={business?.address ?? 'Not set'} readOnly style={{ ...FIELD, background: '#fafbfb', color: business?.address ? '#6b7280' : '#9aa0a8', cursor: 'default' }} /></Field>
-                </div>
-                <div style={{ ...MICRO, margin: '20px 0 12px' }}>Kitchen equipment <span style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400, color: '#9aa0a8' }}>· used for AI checklist generation</span></div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {allEquipmentOptions.map((item) => {
-                    const selected = equipmentList.includes(item)
-                    const isCustom = !(DEFAULT_EQUIPMENT as readonly string[]).includes(item)
-                    return (
-                      <button key={item} type="button" onClick={() => toggleEquipment(item)}
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, borderRadius: 20, padding: '6px 11px', fontSize: 12, fontWeight: 600, cursor: 'pointer', border: selected ? '1px solid #bfe0cd' : '1px solid #e7e9ec', background: selected ? '#eaf4ee' : '#f7f8f9', color: selected ? '#1a6e49' : '#5c626b' }}>
-                        {item}{isCustom && selected && <X className="h-3 w-3" />}
-                      </button>
-                    )
-                  })}
-                </div>
-                <div style={{ display: 'flex', gap: 8, marginTop: 12, maxWidth: 460 }}>
-                  <input value={customEquipment} onChange={(e) => setCustomEquipment(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCustomEquipment() } }} placeholder="Add custom equipment…" style={{ ...FIELD, flex: 1, fontSize: 13 }} onFocus={focusRing} onBlur={blurRing} />
-                  <button onClick={addCustomEquipment} disabled={!customEquipment.trim()} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid #e2e4e8', background: '#fff', color: '#5c626b', fontSize: 13, fontWeight: 600, padding: '9px 13px', borderRadius: 9, cursor: 'pointer', opacity: customEquipment.trim() ? 1 : 0.55 }}><Plus className="h-3.5 w-3.5" /> Add</button>
-                  {equipmentChanged && <button onClick={handleSaveEquipment} disabled={savingEquipment} style={{ ...GREEN_BTN, padding: '9px 14px' }}>{savingEquipment ? '…' : 'Save'}</button>}
-                </div>
-              </div>
-            )}
           </div>
         </div>
       )}
