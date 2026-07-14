@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 import {
   LayoutDashboard, ClipboardCheck, ChefHat, UtensilsCrossed,
   ShieldAlert, BarChart3, Users, AlertTriangle, Truck, Factory,
-  FileText, BookOpen, ShieldCheck, Settings, ChevronsLeft, ChevronsRight,
+  FileText, ShieldCheck, Settings, ChevronsLeft, ChevronsRight,
 } from 'lucide-react'
 
 const nav = [
@@ -29,7 +29,6 @@ const nav = [
     { label: 'Deliveries', href: '/deliveries', icon: Truck },
     { label: 'Suppliers', href: '/suppliers', icon: Factory },
     { label: 'Documents', href: '/documents', icon: FileText },
-    { label: 'Diary', href: '/diary', icon: BookOpen },
   ]},
 ]
 

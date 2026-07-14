@@ -23,7 +23,6 @@ import {
   Truck,
   Factory,
   FileText,
-  BookOpen,
   ShieldCheck,
   Settings,
   Plus,
@@ -43,7 +42,6 @@ const pages = [
   { label: 'Deliveries', href: '/deliveries', icon: Truck },
   { label: 'Suppliers', href: '/suppliers', icon: Factory },
   { label: 'Documents', href: '/documents', icon: FileText },
-  { label: 'Diary', href: '/diary', icon: BookOpen },
   { label: 'HACCP Pack', href: '/haccp-pack', icon: ShieldCheck },
   { label: 'Settings', href: '/settings', icon: Settings },
 ]
