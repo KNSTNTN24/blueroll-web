@@ -27,8 +27,8 @@ create policy "Delete own or managed completions" on checklist_completions for d
 -- manage_recipes group (owner+manager+chef)
 drop policy if exists "Chefs can manage recipes" on recipes;
 create policy "Chefs can manage recipes" on recipes for all
-  using (business_id = get_my_business_id() and has_capability('manage_recipes') and can_write_kitchen_row(site_id))
-  with check (business_id = get_my_business_id() and has_capability('manage_recipes') and can_write_kitchen_row(site_id));
+  using (business_id = get_my_business_id() and has_capability('manage_recipes'))
+  with check (business_id = get_my_business_id() and has_capability('manage_recipes'));
 
 drop policy if exists "Chefs can manage recipe ingredients" on recipe_ingredients;
 create policy "Chefs can manage recipe ingredients" on recipe_ingredients for all
@@ -66,11 +66,11 @@ drop policy if exists "Managers can manage training" on training_records;
 create policy "Managers can manage training" on training_records for all
   using (business_id = get_my_business_id() and has_capability('manage_team'));
 
--- manage_suppliers (kitchen table — keep can_write_kitchen_row)
+-- manage_suppliers (business-level; kitchen reverted from site-scope earlier)
 drop policy if exists "Managers can manage suppliers" on suppliers;
 create policy "Managers can manage suppliers" on suppliers for all
-  using (business_id = get_my_business_id() and has_capability('manage_suppliers') and can_write_kitchen_row(site_id))
-  with check (business_id = get_my_business_id() and has_capability('manage_suppliers') and can_write_kitchen_row(site_id));
+  using (business_id = get_my_business_id() and has_capability('manage_suppliers'))
+  with check (business_id = get_my_business_id() and has_capability('manage_suppliers'));
 
 -- manage_sites (owner-only today)
 drop policy if exists sites_write on sites;
