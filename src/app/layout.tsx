@@ -6,7 +6,7 @@ import './globals.css'
 // Single product typeface — Geist (see FONTS.md). No secondary or mono family.
 const geist = Geist({
   subsets: ['latin'],
-  weight: ['400', '500', '600', '700'],
+  weight: ['400', '500', '600', '700', '800'],
   variable: '--font-geist',
 })
 

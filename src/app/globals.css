@@ -100,7 +100,10 @@
 @layer base {
   * { @apply border-border; }
   body {
-    @apply bg-background text-foreground antialiased;
+    /* No -webkit-font-smoothing override: the design mockups render at the
+       OS default (heavier). `antialiased` (grayscale AA) made text look
+       thinner than the designs on macOS, so it's intentionally omitted. */
+    @apply bg-background text-foreground;
     font-feature-settings: 'rlig' 1, 'calt' 1;
   }
   /* Geist must be applied to form controls explicitly — they don't inherit it. */
