@@ -30,6 +30,9 @@ const GREEN_BTN: React.CSSProperties = { border: 'none', background: '#1f9d63', 
 const focusRing = (e: React.FocusEvent<HTMLInputElement>) => { e.currentTarget.style.borderColor = '#1f9d63'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(31,157,99,.13)' }
 const blurRing = (e: React.FocusEvent<HTMLInputElement>) => { e.currentTarget.style.borderColor = '#e2e4e8'; e.currentTarget.style.boxShadow = 'none' }
 
+type StripeInvoice = { subtotal: number | null; tax: number; total: number | null; currency: string | null; nextPaymentDate: string | null }
+type StripeSub = { status: string; cancelAtPeriodEnd: boolean; trialEnd: string | null; currentPeriodEnd: string | null; quantity: number | null; unitAmount: number | null; currency: string | null; interval: string | null; invoice: StripeInvoice | null }
+
 type Tab = 'Profile' | 'Sites' | 'Team' | 'Billing' | 'Notifications'
 const TAB_LABEL: Record<Tab, string> = { Profile: 'Profile', Sites: 'Sites', Team: 'Team', Billing: 'Billing & subscription', Notifications: 'Notifications' }
 
@@ -124,6 +127,24 @@ export default function SettingsPage() {
     },
   })
   const card = cardQuery.data
+
+  // Real subscription pricing from Stripe (unit price, quantity, status, and the
+  // upcoming invoice's real subtotal/tax/total/next-date) — replaces hardcoded £/site.
+  const subQuery = useQuery({
+    queryKey: ['subscription', business?.stripe_customer_id],
+    enabled: !!business?.stripe_customer_id,
+    staleTime: 5 * 60 * 1000,
+    queryFn: async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await supabase.functions.invoke('manage-subscription', {
+        headers: session ? { Authorization: `Bearer ${session.access_token}` } : undefined,
+        body: { action: 'subscription', customerId: business!.stripe_customer_id },
+      })
+      if (res.error) throw res.error
+      return (res.data as { subscription: StripeSub | null }).subscription
+    },
+  })
+  const sub = subQuery.data
 
   const displayName = profile?.full_name || profile?.email?.split('@')[0] || 'You'
   const roleLabel = ROLE_LABELS[(profile?.role ?? '') as UserRole] ?? profile?.role ?? '—'
@@ -228,12 +249,16 @@ export default function SettingsPage() {
 
       {/* ── Billing & subscription ── */}
       {tab === 'Billing' && (() => {
-        const siteCount = Math.max(sites.length, 1)
-        const subtotal = siteCount * PRICE_PER_SITE
-        const vat = subtotal * VAT_RATE
-        const total = subtotal + vat
-        const now = new Date(); const nextInvoice = new Date(now.getFullYear(), now.getMonth() + 1, 1)
-        const nextInvoiceStr = nextInvoice.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+        // Prefer real Stripe numbers; fall back to the local estimate only when there is no live subscription yet.
+        const perSite = sub?.unitAmount != null ? sub.unitAmount / 100 : PRICE_PER_SITE
+        const siteCount = sub?.quantity ?? Math.max(sites.length, 1)
+        const subtotal = sub?.invoice?.subtotal != null ? sub.invoice.subtotal / 100 : siteCount * perSite
+        const vat = sub?.invoice?.tax != null ? sub.invoice.tax / 100 : subtotal * VAT_RATE
+        const total = sub?.invoice?.total != null ? sub.invoice.total / 100 : subtotal + vat
+        const vatPct = subtotal > 0 ? Math.round((vat / subtotal) * 100) : Math.round(VAT_RATE * 100)
+        const nextInvoiceDate = sub?.invoice?.nextPaymentDate ?? sub?.currentPeriodEnd ?? null
+        const nextInvoiceStr = (nextInvoiceDate ? new Date(nextInvoiceDate) : new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1))
+          .toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
         return (
           <div>
             <h1 style={PAGE_H1}>Billing &amp; subscription</h1>
@@ -255,11 +280,11 @@ export default function SettingsPage() {
                         <div style={{ fontSize: 12.5, color: '#8a9099', marginTop: 1 }}>{(s as { postcode?: string }).postcode || 'Active site'}</div>
                       </div>
                       <span style={{ font: "600 11.5px 'Geist'", color: '#1a6e49', background: '#e9f6ef', padding: '3px 9px', borderRadius: 20 }}>Active</span>
-                      <span style={{ font: "600 13.5px 'Geist'", color: '#41464d', fontVariantNumeric: 'tabular-nums', width: 84, textAlign: 'right' }}>{gbp(PRICE_PER_SITE)}/mo</span>
+                      <span style={{ font: "600 13.5px 'Geist'", color: '#41464d', fontVariantNumeric: 'tabular-nums', width: 84, textAlign: 'right' }}>{gbp(perSite)}/mo</span>
                     </div>
                   ))}
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '13px 20px', background: '#fafbfb', borderTop: '1px solid #eef0f2' }}>
-                    <span style={{ fontSize: 13, color: '#6b7280' }}>{siteCount} site{siteCount === 1 ? '' : 's'} × {gbp(PRICE_PER_SITE)}</span>
+                    <span style={{ fontSize: 13, color: '#6b7280' }}>{siteCount} site{siteCount === 1 ? '' : 's'} × {gbp(perSite)}</span>
                     <span style={{ font: "700 15px 'Geist'", fontVariantNumeric: 'tabular-nums' }}>{gbp(subtotal)}<span style={{ font: "500 13px 'Geist'", color: '#8a9099' }}>/mo</span></span>
                   </div>
                 </div>
@@ -300,8 +325,8 @@ export default function SettingsPage() {
                   <div style={MICRO}>Next invoice</div>
                   <div style={{ fontSize: 14, fontWeight: 600, color: '#16181d', marginTop: 9 }}>{nextInvoiceStr}</div>
                   <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 9 }}>
-                    <BillRow l={`${siteCount} site${siteCount === 1 ? '' : 's'} × ${gbp(PRICE_PER_SITE)}`} r={gbp(subtotal)} />
-                    <BillRow l="VAT (20%)" r={gbp(vat)} muted />
+                    <BillRow l={`${siteCount} site${siteCount === 1 ? '' : 's'} × ${gbp(perSite)}`} r={gbp(subtotal)} />
+                    <BillRow l={`VAT (${vatPct}%)`} r={gbp(vat)} muted />
                     <div style={{ height: 1, background: '#eef0f2', margin: '3px 0' }} />
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
                       <span style={{ fontSize: 13.5, fontWeight: 600 }}>Total</span>

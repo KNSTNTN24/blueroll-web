@@ -124,6 +124,57 @@ Deno.serve(async (req) => {
       return json({ card });
     }
 
+    // ── Subscription: real pricing from Stripe (price, quantity, status,
+    //    and the upcoming invoice's real subtotal / tax / total / next date) ──
+    if (action === "subscription") {
+      if (!customerId) throw new Error("Missing customerId");
+      const subs = await stripeGet(
+        `/subscriptions?customer=${customerId}&limit=1`
+      );
+      const sub = subs?.data?.[0];
+      if (!sub) return json({ subscription: null });
+      const item = sub.items?.data?.[0];
+      const price = item?.price;
+
+      let invoice = null;
+      try {
+        const up = await stripeGet(`/invoices/upcoming?customer=${customerId}`);
+        if (up && !up.error) {
+          invoice = {
+            subtotal: up.subtotal ?? null,
+            tax: up.tax ?? 0,
+            total: up.total ?? null,
+            currency: up.currency ?? null,
+            nextPaymentDate: up.next_payment_attempt
+              ? new Date(up.next_payment_attempt * 1000).toISOString()
+              : up.period_end
+              ? new Date(up.period_end * 1000).toISOString()
+              : null,
+          };
+        }
+      } catch (_) {
+        // upcoming invoice can 404 for some states — pricing below still works
+      }
+
+      return json({
+        subscription: {
+          status: sub.status, // trialing | active | past_due | canceled | unpaid
+          cancelAtPeriodEnd: sub.cancel_at_period_end ?? false,
+          trialEnd: sub.trial_end
+            ? new Date(sub.trial_end * 1000).toISOString()
+            : null,
+          currentPeriodEnd: sub.current_period_end
+            ? new Date(sub.current_period_end * 1000).toISOString()
+            : null,
+          quantity: item?.quantity ?? null,
+          unitAmount: price?.unit_amount ?? null, // minor units (pence)
+          currency: price?.currency ?? sub.currency ?? null,
+          interval: price?.recurring?.interval ?? null,
+          invoice,
+        },
+      });
+    }
+
     // ── Cancel: cancel subscription at period end ──
     if (action === "cancel") {
       if (!subscriptionId || !businessId)
