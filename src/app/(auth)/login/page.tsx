@@ -7,9 +7,8 @@ import { supabase } from '@/lib/supabase'
 import { Loader2, ArrowRight } from 'lucide-react'
 import { useBrand } from '../layout'
 
-// Older reset emails point their recovery link here; /onboarding owns the
-// set-new-password step. Captured at module load, before the Supabase client
-// consumes and strips the hash.
+// A recovery link may land here; /reset-password owns the set-new-password
+// step. Captured at module load, before the Supabase client consumes the hash.
 const recoveryFromHash =
   typeof window === 'undefined' ? null
     : window.location.hash.includes('type=recovery') ? 'active'
@@ -34,7 +33,8 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (recoveryFromHash) {
-      router.replace(recoveryFromHash === 'expired' ? '/onboarding?recovery=expired' : '/onboarding?recovery=1')
+      // Preserve the recovery hash so /reset-password can complete the flow.
+      window.location.replace('/reset-password' + window.location.hash)
       return
     }
     supabase.auth.getSession().then(({ data: { session } }) => {

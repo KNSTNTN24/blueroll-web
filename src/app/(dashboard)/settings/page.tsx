@@ -85,7 +85,7 @@ export default function SettingsPage() {
   async function handleSignOut() { await supabase.auth.signOut(); reset(); window.location.href = '/onboarding' }
   async function handleResetPassword() {
     if (!profile?.email) return
-    const { error } = await supabase.auth.resetPasswordForEmail(profile.email, { redirectTo: `${window.location.origin}/onboarding` })
+    const { error } = await supabase.auth.resetPasswordForEmail(profile.email, { redirectTo: `${window.location.origin}/reset-password` })
     if (error) toast.error(error.message); else toast.success('Password reset link sent to your email')
   }
 

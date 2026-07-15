@@ -16,7 +16,6 @@ import {
   UserPlus,
   Trash2,
   Plus,
-  Mail,
 } from 'lucide-react'
 import { useBrand } from '../layout'
 import { useAuthStore } from '@/stores/auth-store'
@@ -53,7 +52,6 @@ type Step =
   | 'signup'
   | 'card'
   | 'done'
-  | 'reset-password'
 
 // --- Shared UI atoms ---
 
@@ -198,25 +196,7 @@ const BRAND_COPY: Record<Step, { headline: string; subtitle: string }> = {
     headline: 'Less than a pack of blue rolls.',
     subtitle: '£14.99/month after your 14-day free trial. Cancel anytime.',
   },
-  'reset-password': {
-    headline: "Let's get you back in.",
-    subtitle: 'Set a new password and pick up right where you left off.',
-  },
 }
-
-// Password-reset emails redirect here with a Supabase recovery hash
-// (#access_token=…&type=recovery), or an error hash if the link expired.
-// Captured at module load, before the Supabase client consumes and strips it.
-// /login also forwards recovery landings here as ?recovery=1|expired.
-function readRecoveryFromUrl(): 'active' | 'expired' | null {
-  if (typeof window === 'undefined') return null
-  const hash = window.location.hash
-  const query = new URLSearchParams(window.location.search)
-  if (hash.includes('error_code=otp_expired') || query.get('recovery') === 'expired') return 'expired'
-  if (hash.includes('type=recovery') || query.has('recovery')) return 'active'
-  return null
-}
-const initialRecovery = readRecoveryFromUrl()
 
 // --- Stripe ---
 
@@ -606,9 +586,7 @@ function MultiSiteRow({ sel, removable, onSelect, onClear, onRemove }: {
 export default function OnboardingPage() {
   const router = useRouter()
   const { setContent } = useBrand()
-  const [step, setStep] = useState<Step>(initialRecovery ? 'reset-password' : 'name')
-  const recoveryRef = useRef(initialRecovery !== null)
-  const [recoveryExpired, setRecoveryExpired] = useState(initialRecovery === 'expired')
+  const [step, setStep] = useState<Step>('name')
   const [isJoinFlow, setIsJoinFlow] = useState(false)
   const [isMultiSite, setIsMultiSite] = useState(false)
   const [checking, setChecking] = useState(false)
@@ -618,40 +596,20 @@ export default function OnboardingPage() {
     setContent(BRAND_COPY[step])
   }, [step, setContent])
 
-  // Catch the password-recovery redirect even if the URL hash was consumed
-  // before this component mounted (e.g. client-side navigation from /login).
-  useEffect(() => {
-    const fromUrl = readRecoveryFromUrl()
-    if (fromUrl) {
-      recoveryRef.current = true
-      if (fromUrl === 'expired') setRecoveryExpired(true)
-      setStep('reset-password')
-    }
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY') {
-        recoveryRef.current = true
-        setStep('reset-password')
-      }
-    })
-    return () => subscription.unsubscribe()
-  }, [])
-
   // If user is already logged in with a full profile, redirect to dashboard
   // Otherwise stay on onboarding (covers case where signup created user but profile is incomplete)
-  // — except in password-recovery mode, where they must set a new password first.
   useEffect(() => {
     let cancelled = false
     ;(async () => {
       try {
-        if (recoveryRef.current) return
         const { data: { session } } = await supabase.auth.getSession()
-        if (cancelled || recoveryRef.current || !session?.user) return
+        if (cancelled || !session?.user) return
         const { data: profile } = await supabase
           .from('profiles')
           .select('id, business_id')
           .eq('id', session.user.id)
           .maybeSingle()
-        if (cancelled || recoveryRef.current) return
+        if (cancelled) return
         if (profile?.business_id) {
           window.location.assign('/dashboard')
         }
@@ -678,14 +636,6 @@ export default function OnboardingPage() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [signupError, setSignupError] = useState('')
   const [signupLoading, setSignupLoading] = useState(false)
-  const [forgotStatus, setForgotStatus] = useState<'idle' | 'sending' | 'sent'>('idle')
-
-  // Set-new-password (recovery) step
-  const [newPassword, setNewPassword] = useState('')
-  const [confirmNewPassword, setConfirmNewPassword] = useState('')
-  const [resetError, setResetError] = useState('')
-  const [resetLoading, setResetLoading] = useState(false)
-  const [resetDone, setResetDone] = useState(false)
 
   // Multi-site estate onboarding
   const [groupName, setGroupName] = useState('')
@@ -856,45 +806,6 @@ export default function OnboardingPage() {
     }
   }
 
-  const handleForgotPassword = async () => {
-    const addr = email.trim()
-    if (!addr) {
-      setSignupError('Enter your email above first, then tap “Forgot password?” and we’ll send you a reset link.')
-      return
-    }
-    setSignupError('')
-    setForgotStatus('sending')
-    const { error } = await supabase.auth.resetPasswordForEmail(addr, {
-      redirectTo: `${window.location.origin}/onboarding`,
-    })
-    if (error) {
-      setSignupError(error.message)
-      setForgotStatus('idle')
-      return
-    }
-    setForgotStatus('sent')
-  }
-
-  const handleResetPassword = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setResetError('')
-    if (newPassword.length < 6) { setResetError('Password must be at least 6 characters'); return }
-    if (newPassword !== confirmNewPassword) { setResetError('Passwords don’t match'); return }
-    setResetLoading(true)
-    const { error } = await supabase.auth.updateUser({ password: newPassword })
-    if (error) {
-      setResetError(
-        error.message.toLowerCase().includes('session')
-          ? 'Your reset link has expired.'
-          : error.message,
-      )
-      setResetLoading(false)
-      return
-    }
-    setResetDone(true)
-    setResetLoading(false)
-  }
-
   const ratingColor = (rating: string) => {
     const n = parseInt(rating)
     if (n >= 4) return 'text-emerald-700 bg-brand/10'
@@ -910,77 +821,7 @@ export default function OnboardingPage() {
 
   return (
     <div>
-      {step !== 'reset-password' && <ProgressBar current={currentStepIndex} total={totalSteps} />}
-
-      {/* Step: Set new password (from the reset-password email link) */}
-      {step === 'reset-password' && (resetDone ? (
-        <div className="pt-6 text-center">
-          <div className="mx-auto flex h-[68px] w-[68px] items-center justify-center rounded-full bg-[#e5f4ec] text-emerald-700">
-            <Check className="h-8 w-8" strokeWidth={2.4} />
-          </div>
-          <h1 className="mt-6 text-[30px] font-bold leading-tight tracking-tight text-gray-900">Password updated</h1>
-          <p className="mx-auto mt-3 max-w-[430px] text-[15px] leading-relaxed text-gray-400">
-            You&apos;re signed in — use your new password next time.
-          </p>
-          <button onClick={() => window.location.assign('/dashboard')}
-            className="mt-8 inline-flex items-center gap-2 rounded-xl bg-brand px-6 py-3.5 text-[15px] font-semibold text-white transition-opacity hover:opacity-90">
-            Continue to dashboard <ArrowRight className="h-[18px] w-[18px]" strokeWidth={2.5} />
-          </button>
-        </div>
-      ) : (
-        <div>
-          <Title>Set a new password</Title>
-          <Subtitle>Choose a new password for your account — at least 6 characters.</Subtitle>
-
-          <form onSubmit={handleResetPassword} className="mt-8 space-y-4">
-            {recoveryExpired && !resetError && (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-800">
-                That reset link is invalid or has expired.{' '}
-                <Link href="/forgot-password" className="font-semibold underline">Request a new one</Link>
-              </div>
-            )}
-            {resetError && (
-              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700">
-                {resetError}
-                {resetError.includes('expired') && (
-                  <>{' '}<Link href="/forgot-password" className="font-semibold underline">Request a new link</Link></>
-                )}
-              </div>
-            )}
-
-            <FormInput
-              id="new-password"
-              label="New password"
-              type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              placeholder="Minimum 6 characters"
-              required
-              minLength={6}
-              autoFocus
-            />
-
-            <FormInput
-              id="confirm-new-password"
-              label="Confirm new password"
-              type="password"
-              value={confirmNewPassword}
-              onChange={(e) => setConfirmNewPassword(e.target.value)}
-              placeholder="Repeat your new password"
-              required
-            />
-
-            <PrimaryButton type="submit" loading={resetLoading} disabled={!newPassword || !confirmNewPassword || recoveryExpired}>
-              {resetLoading ? 'Updating password...' : 'Update password'}
-            </PrimaryButton>
-          </form>
-
-          <p className="mt-6 text-center text-[13px] text-gray-400">
-            Remembered it?{' '}
-            <Link href="/login" className="font-medium text-emerald-600 hover:underline">Back to sign in</Link>
-          </p>
-        </div>
-      ))}
+      <ProgressBar current={currentStepIndex} total={totalSteps} />
 
       {/* Step: Name */}
       {step === 'name' && (
@@ -1325,27 +1166,8 @@ export default function OnboardingPage() {
         </div>
       )}
 
-      {/* Step: Signup — reset-link-sent confirmation */}
-      {step === 'signup' && forgotStatus === 'sent' && (
-        <div className="pt-6 text-center">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-brand/10">
-            <Mail className="h-7 w-7 text-emerald-600" strokeWidth={1.8} />
-          </div>
-          <h1 className="mt-6 text-[26px] font-bold tracking-tight text-gray-900">Check your email</h1>
-          <p className="mx-auto mt-2 max-w-[360px] text-[15px] leading-relaxed text-gray-400">
-            We sent a password reset link to <span className="font-medium text-gray-600">{email.trim()}</span>. Click it to choose a new password.
-          </p>
-          <button
-            onClick={() => setForgotStatus('idle')}
-            className="mt-8 text-[14px] font-medium text-emerald-600 hover:underline"
-          >
-            Didn&apos;t receive it? Try again
-          </button>
-        </div>
-      )}
-
       {/* Step: Signup */}
-      {step === 'signup' && forgotStatus !== 'sent' && (
+      {step === 'signup' && (
         <div>
           <BackButton onClick={goBack} />
           <StepLabel current={currentStepIndex} total={totalSteps} />
@@ -1376,28 +1198,16 @@ export default function OnboardingPage() {
               autoFocus
             />
 
-            <div>
-              <FormInput
-                id="signup-password"
-                label="Password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Minimum 6 characters"
-                required
-                minLength={6}
-              />
-              <div className="mt-1.5 flex justify-end">
-                <button
-                  type="button"
-                  onClick={handleForgotPassword}
-                  disabled={forgotStatus === 'sending'}
-                  className="text-[13px] font-medium text-emerald-600 hover:underline disabled:opacity-60"
-                >
-                  {forgotStatus === 'sending' ? 'Sending reset link...' : 'Forgot password?'}
-                </button>
-              </div>
-            </div>
+            <FormInput
+              id="signup-password"
+              label="Password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Minimum 6 characters"
+              required
+              minLength={6}
+            />
 
             <PrimaryButton type="submit" loading={signupLoading} disabled={!email || !password}>
               {signupLoading ? 'Creating account...' : 'Create account'}
