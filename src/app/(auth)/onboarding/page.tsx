@@ -50,7 +50,6 @@ type Step =
   | 'select'
   | 'rating'
   | 'invite'
-  | 'pain-points'
   | 'signup'
   | 'card'
   | 'done'
@@ -191,10 +190,6 @@ const BRAND_COPY: Record<Step, { headline: string; subtitle: string }> = {
     headline: 'Your team is already set up.',
     subtitle: "Enter the code your manager shared and you're in — checklists, tasks, everything ready.",
   },
-  'pain-points': {
-    headline: 'Built for real kitchen problems.',
-    subtitle: '89% of restaurants improve after switching to digital records.',
-  },
   signup: {
     headline: "You're almost there.",
     subtitle: 'Create your account and start your 14-day free trial.',
@@ -240,15 +235,6 @@ const CARD_ELEMENT_OPTIONS = {
     invalid: { color: '#dc2626', iconColor: '#dc2626' },
   },
 }
-
-const PAIN_POINTS: string[] = [
-  'Passing my next EHO inspection',
-  'Keeping paperwork up to date',
-  'Staff completing checks on time',
-  'Temperature logging',
-  'Allergen management',
-  'Supplier & delivery records',
-]
 
 function CardForm({ onComplete }: { onComplete?: () => void }) {
   const router = useRouter()
@@ -681,7 +667,6 @@ export default function OnboardingPage() {
   const [searching, setSearching] = useState(false)
   const [selected, setSelected] = useState<FsaEstablishment | null>(null)
   const [inviteCode, setInviteCode] = useState('')
-  const [painPoints, setPainPoints] = useState<Set<string>>(new Set())
 
   // Deep-link from an invite email (?invite=CODE): prefill the join flow.
   useEffect(() => {
@@ -736,15 +721,6 @@ export default function OnboardingPage() {
       setSearching(false)
     }
   }, [postcode])
-
-  const togglePainPoint = (point: string) => {
-    setPainPoints((prev) => {
-      const next = new Set(prev)
-      if (next.has(point)) next.delete(point)
-      else next.add(point)
-      return next
-    })
-  }
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -1344,48 +1320,6 @@ export default function OnboardingPage() {
 
             <PrimaryButton disabled={!inviteCode.trim()} onClick={() => setStep('signup')}>
               Continue
-            </PrimaryButton>
-          </div>
-        </div>
-      )}
-
-      {/* Step: Pain points */}
-      {step === 'pain-points' && (
-        <div>
-          <BackButton onClick={goBack} />
-          <StepLabel current={currentStepIndex} total={totalSteps} />
-          <Title>What are your biggest headaches?</Title>
-          <Subtitle>Select all that apply — this helps us personalise your setup.</Subtitle>
-
-          <div className="mt-8 space-y-3">
-            {PAIN_POINTS.map((point) => {
-              const active = painPoints.has(point)
-              return (
-                <button
-                  key={point}
-                  onClick={() => togglePainPoint(point)}
-                  className={cn(
-                    'flex w-full cursor-pointer items-center gap-4 rounded-xl border-[1.5px] px-5 py-4 text-left text-[14px] transition-all',
-                    active
-                      ? 'border-emerald-600 text-gray-900'
-                      : 'border-gray-200 text-gray-600 hover:border-emerald-400',
-                  )}
-                >
-                  <div className={cn(
-                    'flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md transition-colors',
-                    active ? 'bg-brand' : 'border-[1.5px] border-gray-300',
-                  )}>
-                    {active && <Check className="h-3.5 w-3.5 text-white" strokeWidth={3} />}
-                  </div>
-                  {point}
-                </button>
-              )
-            })}
-          </div>
-
-          <div className="mt-8">
-            <PrimaryButton onClick={() => setStep('signup')}>
-              Create my account
             </PrimaryButton>
           </div>
         </div>
