@@ -7,6 +7,12 @@ import { supabase } from '@/lib/supabase'
 import { Loader2, ArrowRight } from 'lucide-react'
 import { useBrand } from '../layout'
 
+// A password-recovery link may land here (older reset emails, or if Supabase
+// falls back to site_url). Detect it before the session check auto-redirects
+// into the app — the user needs the set-new-password screen, not the dashboard.
+const isRecoveryLanding = typeof window !== 'undefined' &&
+  (window.location.hash.includes('type=recovery') || /error_code=(otp_expired|access_denied)/.test(window.location.hash))
+
 export default function LoginPage() {
   const router = useRouter()
   const { setContent } = useBrand()
@@ -24,6 +30,11 @@ export default function LoginPage() {
   }, [setContent])
 
   useEffect(() => {
+    if (isRecoveryLanding) {
+      // Preserve the recovery hash so /reset-password can complete the flow.
+      window.location.replace('/reset-password' + window.location.hash)
+      return
+    }
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
         supabase
