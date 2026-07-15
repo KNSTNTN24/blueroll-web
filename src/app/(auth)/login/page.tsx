@@ -7,6 +7,15 @@ import { supabase } from '@/lib/supabase'
 import { Loader2, ArrowRight } from 'lucide-react'
 import { useBrand } from '../layout'
 
+// Older reset emails point their recovery link here; /onboarding owns the
+// set-new-password step. Captured at module load, before the Supabase client
+// consumes and strips the hash.
+const recoveryFromHash =
+  typeof window === 'undefined' ? null
+    : window.location.hash.includes('type=recovery') ? 'active'
+    : window.location.hash.includes('error_code=otp_expired') ? 'expired'
+    : null
+
 export default function LoginPage() {
   const router = useRouter()
   const { setContent } = useBrand()
@@ -24,6 +33,10 @@ export default function LoginPage() {
   }, [setContent])
 
   useEffect(() => {
+    if (recoveryFromHash) {
+      router.replace(recoveryFromHash === 'expired' ? '/onboarding?recovery=expired' : '/onboarding?recovery=1')
+      return
+    }
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
         supabase
