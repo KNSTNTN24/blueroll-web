@@ -241,6 +241,15 @@ const CARD_ELEMENT_OPTIONS = {
   },
 }
 
+const PAIN_POINTS: string[] = [
+  'Passing my next EHO inspection',
+  'Keeping paperwork up to date',
+  'Staff completing checks on time',
+  'Temperature logging',
+  'Allergen management',
+  'Supplier & delivery records',
+]
+
 function CardForm({ onComplete }: { onComplete?: () => void }) {
   const router = useRouter()
   const stripe = useStripe()
