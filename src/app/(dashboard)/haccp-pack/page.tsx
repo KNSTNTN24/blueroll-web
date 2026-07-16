@@ -904,29 +904,13 @@ export default function HaccpPackPage() {
   // \u2500\u2500 "All sites" scope: group dashboard, no pack form (pick a site to edit it) \u2500\u2500
   if (isAllSites) {
     return (
-      <div className="space-y-5">
-        <div className="flex flex-wrap items-start justify-between gap-4 border-b border-border pb-5">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">HACCP Pack</h1>
-            <p className="mt-1.5 text-[13px] text-muted-foreground">
-              One shared pack for {business?.name ?? 'your group'}{' — '}each site&apos;s manager signs it off.
-            </p>
-          </div>
-          <button
-            onClick={handleExportPDF}
-            className="inline-flex h-8 items-center gap-2 rounded-lg bg-foreground px-3.5 text-[12px] font-medium text-background transition-colors hover:bg-foreground/90"
-          >
-            <Download className="h-3.5 w-3.5" strokeWidth={1.7} />
-            Export PDF
-          </button>
-        </div>
-        <AllSitesDashboard
-          sectionProgress={sectionProgress}
-          totalProgress={totalProgress}
-          reviewLabel={reviewInfo.label}
-          reviewOverdue={reviewInfo.overdue}
-        />
-      </div>
+      <AllSitesDashboard
+        sectionProgress={sectionProgress}
+        totalProgress={totalProgress}
+        reviewLabel={reviewInfo.label}
+        reviewOverdue={reviewInfo.overdue}
+        onExportPDF={handleExportPDF}
+      />
     )
   }
 
