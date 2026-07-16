@@ -10,6 +10,7 @@ import { toast } from 'sonner'
 import { Download, ChevronDown, FileText, X, Eye, Link2 } from 'lucide-react'
 import { DocumentPickerModal, type PickedDocument } from '@/components/shared/document-picker-modal'
 import { SiteSignoff } from './site-signoff'
+import { AllSitesDashboard } from './all-sites-dashboard'
 
 // ═══════════════════════════════════════════════════════════════
 // Types
@@ -399,6 +400,10 @@ const EMPTY_DATA: HaccpPackRow = {
 
 export default function HaccpPackPage() {
   const { business, profile } = useAuthStore()
+  const sites = useAuthStore((s) => s.sites)
+  const currentSiteId = useAuthStore((s) => s.currentSiteId)
+  // Scope "All sites" on a multi-site group → group dashboard instead of the pack.
+  const isAllSites = sites.length > 1 && !currentSiteId
   const queryClient = useQueryClient()
 
   const [activeSection, setActiveSection] = useState<SectionId>('cross')
@@ -894,6 +899,35 @@ export default function HaccpPackPage() {
 
     const w = window.open('', '_blank')
     if (w) { w.document.write(html); w.document.close(); w.print() }
+  }
+
+  // \u2500\u2500 "All sites" scope: group dashboard, no pack form (pick a site to edit it) \u2500\u2500
+  if (isAllSites) {
+    return (
+      <div className="space-y-5">
+        <div className="flex flex-wrap items-start justify-between gap-4 border-b border-border pb-5">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">HACCP Pack</h1>
+            <p className="mt-1.5 text-[13px] text-muted-foreground">
+              One shared pack for {business?.name ?? 'your group'}{' — '}each site&apos;s manager signs it off.
+            </p>
+          </div>
+          <button
+            onClick={handleExportPDF}
+            className="inline-flex h-8 items-center gap-2 rounded-lg bg-foreground px-3.5 text-[12px] font-medium text-background transition-colors hover:bg-foreground/90"
+          >
+            <Download className="h-3.5 w-3.5" strokeWidth={1.7} />
+            Export PDF
+          </button>
+        </div>
+        <AllSitesDashboard
+          sectionProgress={sectionProgress}
+          totalProgress={totalProgress}
+          reviewLabel={reviewInfo.label}
+          reviewOverdue={reviewInfo.overdue}
+        />
+      </div>
+    )
   }
 
   return (
