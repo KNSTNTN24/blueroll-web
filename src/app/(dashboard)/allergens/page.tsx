@@ -13,6 +13,7 @@ import {
   ALLERGEN_LABELS,
   type EUAllergen,
 } from '@/lib/constants'
+import { resolveAllergens, sourceMeta, type Dish } from '@/lib/dishes'
 
 /** 3-letter codes, aligned to EU_ALLERGENS order. */
 const ALLERGEN_CODES: Record<EUAllergen, string> = {
@@ -22,37 +23,31 @@ const ALLERGEN_CODES: Record<EUAllergen, string> = {
   lupin: 'LUP', molluscs: 'MOL',
 }
 
-function getAllergens(recipe: any): string[] {
-  const set = new Set<string>()
-  recipe.recipe_ingredients?.forEach((ri: any) => {
-    ri.ingredient?.allergens?.forEach((a: string) => set.add(a))
-  })
-  return Array.from(set)
-}
-
 export default function AllergensPage() {
   const business = useAuthStore((s) => s.business)
   const router = useRouter()
   const [search, setSearch] = useState('')
 
+  // The matrix is dishes × 14 allergens: a drink or bought-in item has no
+  // recipe but still must show its allergens to a guest and an inspector.
   const { data: recipes = [], isLoading } = useQuery({
-    queryKey: ['allergen-recipes', business?.id],
+    queryKey: ['allergen-dishes', business?.id],
     queryFn: async () => {
       if (!business?.id) return []
       const { data, error } = await supabase
-        .from('recipes')
-        .select(`*, recipe_ingredients ( ingredient:ingredients (name, allergens) )`)
+        .from('menu_items')
+        .select('id, name, category, active, allergen_source, recipe_id, declared_allergens, may_contain, dietary, attested_by_name, attested_at, recipe:recipes(id, name, recipe_ingredients(ingredient:ingredients(name, allergens)))')
         .eq('business_id', business.id)
-        .eq('active', true)
         .order('name')
       if (error) throw error
-      return data ?? []
+      return (data ?? []) as unknown as Dish[]
     },
     enabled: !!business?.id,
   })
 
+  // Resolved at read time, so a recipe edit moves every dish built from it.
   const enriched = useMemo(
-    () => recipes.map((r: any) => ({ ...r, _allergens: getAllergens(r) })),
+    () => recipes.map((d) => ({ ...d, _allergens: resolveAllergens(d), _meta: sourceMeta(d) })),
     [recipes]
   )
   const filtered = useMemo(
@@ -69,9 +64,10 @@ export default function AllergensPage() {
   const maxCol = Math.max(1, ...Object.values(colTotals))
 
   function exportCSV() {
-    const header = ['Recipe', ...EU_ALLERGENS.map((a) => ALLERGEN_LABELS[a])]
+    const header = ['Dish', 'Allergen source', ...EU_ALLERGENS.map((a) => ALLERGEN_LABELS[a])]
     const rows = filtered.map((r: any) => [
       r.name,
+      r._meta,
       ...EU_ALLERGENS.map((a) => (r._allergens.includes(a) ? 'Y' : '')),
     ])
     const csv = [header, ...rows].map((row) => row.map((c: string) => `"${c}"`).join(',')).join('\n')
@@ -98,7 +94,7 @@ export default function AllergensPage() {
         ? `<td class="c"><span class="tile">${CHECK}</span></td>`
         : `<td class="c"><span class="dot"></span></td>`).join('')
       const total = count ? `<td class="tot"><span class="tnum">${count}</span></td>` : `<td class="tot"><span class="free">Free</span></td>`
-      return `<tr><td class="rec"><span class="lead" style="background:${count ? '#e7c79a' : '#1f9d63'}"></span>${esc(r.name)}</td>${cells}${total}</tr>`
+      return `<tr><td class="rec"><span class="lead" style="background:${count ? '#e7c79a' : '#1f9d63'}"></span>${esc(r.name)}<span class="src">${esc(r._meta)}</span></td>${cells}${total}</tr>`
     }).join('')
 
     const footCells = EU_ALLERGENS.map((a) => {
@@ -134,6 +130,7 @@ export default function AllergensPage() {
       th.th-tot { text-align: center; padding: 6px 8px; font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #8a9099; border-bottom: 1.5px solid #e9eaed; }
       td.rec { text-align: left; padding: 5px 8px; font-size: 11px; font-weight: 500; white-space: nowrap; }
       td.rec .lead { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 8px; vertical-align: middle; }
+      td.rec .src { display: block; font-size: 7.5px; font-weight: 400; color: #8a9099; margin: 1px 0 0 14px; }
       td.c { text-align: center; padding: 4px 2px; }
       td.c .tile { display: inline-flex; align-items: center; justify-content: center; width: 21px; height: 21px; border-radius: 6px; background: #f6e6cf; }
       td.c .dot { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: #e7e9ec; }
@@ -153,13 +150,13 @@ export default function AllergensPage() {
       @page { size: A4 landscape; margin: 10mm; }
     </style></head><body>
       <h1>${esc(business?.name ?? 'Allergen Matrix')}</h1>
-      <div class="sub">EU 14 allergens across ${filtered.length} active recipes · Generated ${gen}</div>
+      <div class="sub">EU 14 allergens across ${filtered.length} dishes · Generated ${gen}</div>
       <div class="keys">
         <span class="k"><span class="ktile">${CHECK}</span> contains allergen</span>
         <span class="k"><span class="kdot"></span> free from</span>
       </div>
       <table>
-        <thead><tr><th class="rh">Recipe</th>${headCells}<th class="th-tot">Total</th></tr></thead>
+        <thead><tr><th class="rh">Dish</th>${headCells}<th class="th-tot">Total</th></tr></thead>
         <tbody>${bodyRows}</tbody>
         <tfoot><tr><td class="pa-lbl">Per allergen</td>${footCells}<td></td></tr></tfoot>
       </table>
@@ -177,7 +174,7 @@ export default function AllergensPage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-[26px] font-bold leading-tight tracking-[-0.02em] text-foreground">Allergen Matrix</h1>
-          <p className="mt-1 text-[13px] text-muted-foreground">EU 14 allergens across {enriched.length} active recipes</p>
+          <p className="mt-1 text-[13px] text-muted-foreground">EU 14 allergens across {enriched.length} dishes</p>
         </div>
         {recipes.length > 0 && (
         <div className="flex items-center gap-2.5">
@@ -197,7 +194,7 @@ export default function AllergensPage() {
         <div className="relative max-w-[380px] flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
-            placeholder="Search recipes…"
+            placeholder="Search dishes…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="h-[38px] w-full rounded-[10px] border border-input bg-card pl-9 pr-3 text-[13px] text-foreground outline-none transition-shadow placeholder:text-muted-foreground focus:border-brand focus:ring-[3px] focus:ring-[rgba(31,157,99,.12)]"
@@ -220,8 +217,8 @@ export default function AllergensPage() {
       ) : recipes.length === 0 ? (
         <InspectionEmpty illustration={AllergenArt} badge="The first thing inspectors check for allergens"
           title="Your allergen matrix builds itself"
-          sentence="Add recipes and all 14 EU allergens map themselves — printable any time.">
-          <EmptyPrimary onClick={() => router.push('/recipes/new')}><Plus className="h-4 w-4" strokeWidth={2} /> Add your first recipe</EmptyPrimary>
+          sentence="Add dishes and all 14 EU allergens map themselves — printable any time.">
+          <EmptyPrimary onClick={() => router.push('/menu')}><Plus className="h-4 w-4" strokeWidth={2} /> Add your first dish</EmptyPrimary>
           <EmptySecondary onClick={() => router.push('/recipes/import')}><Sparkles className="h-4 w-4 text-brand" strokeWidth={1.8} /> Import menu with AI</EmptySecondary>
         </InspectionEmpty>
       ) : (
@@ -231,7 +228,7 @@ export default function AllergensPage() {
             <table className="w-full border-collapse text-[13px]" style={{ minWidth: 1010 }}>
               <thead>
                 <tr>
-                  <th className="sticky left-0 z-20 border-b border-border bg-card px-4 py-3 text-left font-mono text-[10.5px] font-medium uppercase tracking-[0.06em] text-muted-foreground">Recipe</th>
+                  <th className="sticky left-0 z-20 border-b border-border bg-card px-4 py-3 text-left font-mono text-[10.5px] font-medium uppercase tracking-[0.06em] text-muted-foreground">Dish</th>
                   {EU_ALLERGENS.map((a) => {
                     const hot = colTotals[a] >= maxCol * 0.55 && colTotals[a] > 0
                     return (
@@ -249,7 +246,7 @@ export default function AllergensPage() {
                 {filtered.length === 0 ? (
                   <tr>
                     <td colSpan={EU_ALLERGENS.length + 2} className="px-4 py-12 text-center text-[13px] text-muted-foreground">
-                      No recipes match &ldquo;{search}&rdquo;.
+                      No dishes match &ldquo;{search}&rdquo;.
                     </td>
                   </tr>
                 ) : filtered.map((r: any) => {
@@ -260,6 +257,11 @@ export default function AllergensPage() {
                         <span className="flex items-center gap-2.5">
                           <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', count ? 'bg-[#e7c79a]' : 'bg-brand')} />
                           <span className="truncate">{r.name}</span>
+                          {/* Where the evidence comes from: ingredient-derived vs a declaration. */}
+                          <span title={r._meta} className={cn('shrink-0 rounded-[5px] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[.04em]',
+                            r.allergen_source === 'recipe' ? 'bg-[#eaf4ee] text-[#1f7a52]' : 'bg-[#fbf1e1] text-[#b07d1e]')}>
+                            {r.allergen_source === 'recipe' ? 'Recipe' : 'Declared'}
+                          </span>
                         </span>
                       </td>
                       {EU_ALLERGENS.map((a) => (

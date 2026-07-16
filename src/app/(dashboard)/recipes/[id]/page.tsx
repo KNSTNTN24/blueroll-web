@@ -11,6 +11,7 @@ import {
   MoreHorizontal, Copy, FileDown, Check,
 } from 'lucide-react'
 import { ALLERGEN_LABELS, type EUAllergen } from '@/lib/constants'
+import { dishesForRecipe, convertDishesToManual } from '@/lib/dishes'
 import { HACCP_RECIPE_METHODS } from '@/lib/haccp-methods'
 import { effectiveDietary } from '@/lib/dietary'
 import { getRecipeTags } from '@/lib/tags'
@@ -89,10 +90,28 @@ export default function RecipeDetailPage({ params }: { params: Promise<{ id: str
 
   async function handleDelete() {
     setMoreOpen(false)
-    if (!confirm('Delete this recipe? This cannot be undone.')) return
+    // Dishes built from this recipe would lose their allergen evidence, so the
+    // FK blocks the delete. Surface them and offer to keep them on the menu as
+    // hand-declared items rather than failing with a constraint error.
+    const dishes = await dishesForRecipe(supabase, recipe!.id)
+    if (dishes.length > 0) {
+      const one = dishes.length === 1
+      const names = dishes.map((d) => `• ${d.name}`).join('\n')
+      const ok = confirm(
+        `${dishes.length} dish${one ? '' : 'es'} on the menu ${one ? 'takes its' : 'take their'} allergens from this recipe:\n\n${names}\n\n` +
+        `Deleting it will convert ${one ? 'it' : 'them'} to hand-declared dish${one ? '' : 'es'}: today's allergens are kept, but ${one ? 'it stops' : 'they stop'} being traceable to ingredients and you are recorded as attesting to them.\n\nContinue?`
+      )
+      if (!ok) return
+      try {
+        await convertDishesToManual(supabase, dishes, profile?.id ?? null, profile?.full_name ?? profile?.email ?? 'Unknown')
+      } catch {
+        return toast.error('Could not convert the affected dishes — recipe not deleted')
+      }
+    } else if (!confirm('Delete this recipe? This cannot be undone.')) return
+
     const { error } = await supabase.from('recipes').delete().eq('id', recipe!.id)
     if (error) return toast.error('Failed to delete recipe')
-    toast.success('Recipe deleted')
+    toast.success(dishes.length ? `Recipe deleted · ${dishes.length} dish${dishes.length === 1 ? '' : 'es'} now hand-declared` : 'Recipe deleted')
     router.push('/recipes')
   }
 

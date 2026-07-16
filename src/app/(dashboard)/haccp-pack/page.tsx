@@ -4,7 +4,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
-import { HACCP_SECTIONS } from '@/lib/constants'
+import { HACCP_SECTIONS, ALLERGEN_LABELS, type EUAllergen } from '@/lib/constants'
+import { resolveAllergens, sourceMeta, type Dish } from '@/lib/dishes'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { Download, ChevronDown, FileText, X, Eye, Link2 } from 'lucide-react'
@@ -97,7 +98,7 @@ const HACCP_METHODS: HaccpMethod[] = [
       { id: 'fa_aware', label: 'All staff trained on 14 EU allergens', type: 'toggle' },
       { id: 'fa_matrix', label: 'Allergen matrix / chart available and up to date', type: 'toggle' },
       { id: 'fa_communication', label: 'System for customers to declare allergies', type: 'toggle' },
-      { id: 'fa_allergens_list', label: 'List allergens present in your menu items', type: 'text', autoSource: 'Recipes: allergens from ingredients' },
+      { id: 'fa_allergens_list', label: 'List allergens present in your menu items', type: 'text', autoSource: 'Menu: allergens per dish, with attestation' },
       { id: 'fa_procedure', label: 'Describe your allergen management procedure', type: 'text' },
       { id: 'fa_matrix_file', label: 'Upload allergen matrix document', type: 'file' },
     ],
@@ -467,6 +468,24 @@ export default function HaccpPackPage() {
     refetchOnMount: 'always',
   })
 
+  // The pack must account for everything on the menu, including dishes with no
+  // recipe. For those the attestation line is the due-diligence record.
+  const { data: dishes } = useQuery({
+    queryKey: ['haccp-dishes', businessId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('menu_items')
+        .select('id, name, category, active, allergen_source, recipe_id, declared_allergens, may_contain, dietary, attested_by_name, attested_at, recipe:recipes(id, name, recipe_ingredients(ingredient:ingredients(name, allergens)))')
+        .eq('business_id', businessId)
+        .order('name')
+      if (error) console.error('[haccp-pack] dishes query error:', error)
+      return (data ?? []) as unknown as Dish[]
+    },
+    enabled: !!businessId && autoFillEnabled,
+    staleTime: 0,
+    refetchOnMount: 'always',
+  })
+
   const { data: suppliersData } = useQuery({
     queryKey: ['haccp-suppliers', businessId],
     queryFn: async () => {
@@ -649,7 +668,22 @@ export default function HaccpPackPage() {
         auto['sf_raw_products'] = Array.from(rawProducts).sort().join(', ')
       }
 
-      if (allergensPresent.size) {
+      // Allergens are declared per dish, not per recipe: a drink or bought-in
+      // item has no recipe but still belongs in the pack. Recipe-backed lines
+      // trace to ingredients; declared lines carry who attested and when.
+      const dishLines = (dishes ?? []).map((d) => {
+        const al = resolveAllergens(d)
+        const list = al.length ? al.map((a) => ALLERGEN_LABELS[a as EUAllergen] ?? a).join(', ') : 'none'
+        return `${d.name}: ${list} (${sourceMeta(d)})`
+      })
+      const dishAllergens = new Set<string>()
+      ;(dishes ?? []).forEach((d) => resolveAllergens(d).forEach((a) => dishAllergens.add(ALLERGEN_LABELS[a as EUAllergen] ?? a)))
+
+      if (dishLines.length) {
+        const header = `Allergens present: ${dishAllergens.size ? Array.from(dishAllergens).sort().join(', ') : 'none declared'}`
+        auto['fa_allergens_list'] = `${header}\n\n${dishLines.join('\n')}`
+      } else if (allergensPresent.size) {
+        // No dishes on the menu yet — fall back to the recipe library.
         const header = `Allergens present: ${Array.from(allergensPresent).sort().join(', ')}`
         const perRecipe = Array.from(recipeAllergenMap.entries())
           .map(([recipeName, set]) => `${recipeName}: ${Array.from(set).sort().join(', ')}`)
@@ -693,7 +727,7 @@ export default function HaccpPackPage() {
     }
 
     return auto
-  }, [autoFillEnabled, recipes, suppliersData, documents, teamProfiles, checklistTemplates])
+  }, [autoFillEnabled, recipes, dishes, suppliersData, documents, teamProfiles, checklistTemplates])
 
   // ── Save mutation ──
   const saveMutation = useMutation({

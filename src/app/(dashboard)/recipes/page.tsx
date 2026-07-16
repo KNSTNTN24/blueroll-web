@@ -13,6 +13,7 @@ import { cn } from '@/lib/utils'
 import { ALLERGEN_LABELS, type EUAllergen } from '@/lib/constants'
 import { effectiveDietary } from '@/lib/dietary'
 import { getRecipeTags, normalizeTag } from '@/lib/tags'
+import { dishesForRecipe, convertDishesToManual } from '@/lib/dishes'
 
 export default function RecipesPage() {
   const router = useRouter()
@@ -73,10 +74,29 @@ export default function RecipesPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('Delete this recipe? This cannot be undone.')) return
+    // Menu dishes source their allergens from this recipe; the FK blocks the
+    // delete rather than letting them silently lose their evidence base.
+    const dishes = await dishesForRecipe(supabase, id)
+    if (dishes.length > 0) {
+      const one = dishes.length === 1
+      const names = dishes.map((d) => `• ${d.name}`).join('\n')
+      const ok = confirm(
+        `${dishes.length} dish${one ? '' : 'es'} on the menu ${one ? 'takes its' : 'take their'} allergens from this recipe:\n\n${names}\n\n` +
+        `Deleting it will convert ${one ? 'it' : 'them'} to hand-declared dish${one ? '' : 'es'}: today's allergens are kept, but ${one ? 'it stops' : 'they stop'} being traceable to ingredients and you are recorded as attesting to them.\n\nContinue?`
+      )
+      if (!ok) return
+      try {
+        await convertDishesToManual(supabase, dishes, profile?.id ?? null, profile?.full_name ?? profile?.email ?? 'Unknown')
+      } catch {
+        return toast.error('Could not convert the affected dishes — recipe not deleted')
+      }
+    } else if (!confirm('Delete this recipe? This cannot be undone.')) return
+
     const { error } = await supabase.from('recipes').delete().eq('id', id)
-    if (error) { toast.error('Failed to delete recipe') }
-    else { toast.success('Recipe deleted'); qc.invalidateQueries({ queryKey: ['recipes'] }) }
+    if (error) { toast.error('Failed to delete recipe'); return }
+    toast.success(dishes.length ? `Recipe deleted · ${dishes.length} dish${dishes.length === 1 ? '' : 'es'} now hand-declared` : 'Recipe deleted')
+    qc.invalidateQueries({ queryKey: ['recipes'] })
+    qc.invalidateQueries({ queryKey: ['dishes'] })
   }
 
   function toggleTag(name: string) {
