@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { Download, ChevronDown, FileText, X, Eye, Link2 } from 'lucide-react'
 import { DocumentPickerModal, type PickedDocument } from '@/components/shared/document-picker-modal'
-import { SiteSignoff } from './site-signoff'
+import { SiteSignoffBadge } from './site-signoff'
 import { AllSitesDashboard } from './all-sites-dashboard'
 
 // ═══════════════════════════════════════════════════════════════
@@ -926,6 +926,9 @@ export default function HaccpPackPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {/* This site's sign-off status (estate-wide list lives on the All-sites dashboard) */}
+          <SiteSignoffBadge />
+
           {/* Review status pill */}
           <span
             className={cn(
@@ -993,9 +996,6 @@ export default function HaccpPackPage() {
           />
         </span>
       </div>
-
-      {/* Per-site sign-off (multi-site groups only) */}
-      <SiteSignoff />
 
       {/* Sticky tabs + sentinel for stuck detection */}
       <div className="-mt-[9px]">
