@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { toast } from 'sonner'
 import { Plus, X, Copy, CheckCircle2, ChevronRight, ChevronDown, UserPlus, Info } from 'lucide-react'
-import { USER_ROLES, ROLE_LABELS, type UserRole } from '@/lib/constants'
+import { ROLE_LABELS, type UserRole } from '@/lib/constants'
 import { CAPS, CAP_LABEL, CAP_DESC, CAP_GROUPS, PRESET_CAPS, PRESET_ORDER, roleTint, monogram, capSummary, type Cap } from '@/lib/permissions'
 
 interface Member {
@@ -140,9 +140,13 @@ export function MembersRoles() {
                   {sites.map((s) => <option key={s.id} value={s.id} style={{ direction: 'ltr' }}>{s.name}</option>)}
                 </select>
                 <span style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', flex: 'none', opacity: busy ? 0.5 : 1 }}>
-                  <select value={m.role ?? ''} disabled={busy} onChange={(e) => patch(m.id, { role: e.target.value })} title="Role"
+                  {/* Assign by role_id: that is what has_capability() reads. A trigger
+                      syncs profiles.role from the role's base_tier, so writing the
+                      text here instead would relabel without changing any access. */}
+                  <select value={r?.id ?? ''} disabled={busy} onChange={(e) => patch(m.id, { role_id: e.target.value })} title="Role"
                     style={{ appearance: 'none', WebkitAppearance: 'none', border: 'none', cursor: 'pointer', font: "600 12px 'Geist'", padding: '5px 27px 5px 11px', borderRadius: 14, minWidth: 118, textAlign: 'center', textAlignLast: 'center', color: tint.ink, background: tint.bg }}>
-                    {USER_ROLES.map((ur) => <option key={ur} value={ur} style={{ color: '#16181d', background: '#fff' }}>{ROLE_LABELS[ur]}</option>)}
+                    {!r && <option value="">No role</option>}
+                    {roleList.map((ro) => <option key={ro.id} value={ro.id} style={{ color: '#16181d', background: '#fff' }}>{ro.name}</option>)}
                   </select>
                   <ChevronDown className="h-3 w-3" strokeWidth={2} style={{ position: 'absolute', right: 10, pointerEvents: 'none', color: tint.ink }} />
                 </span>

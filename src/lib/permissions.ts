@@ -59,13 +59,22 @@ export const CAP_GROUPS: { name: string; icon: LucideIcon; caps: Cap[] }[] = [
   { name: 'People & settings', icon: Users, caps: ['manage_team', 'manage_roles', 'manage_sites', 'manage_billing'] },
 ]
 
-/** Capability set each preset ships with — mirrors the seeded `roles` rows. */
+/**
+ * Capability set each preset ships with.
+ *
+ * These MUST mirror the seed_business_roles() trigger, which is what actually
+ * seeds roles.capabilities per business — and those rows are enforced live by
+ * has_capability() across the RLS policies. Diverging here hands users a
+ * preset that silently grants or removes real access.
+ */
+const BASE_CAPS: Cap[] = ['complete_checklists', 'view_reports', 'manage_incidents', 'manage_deliveries']
+
 export const PRESET_CAPS: Record<UserRole, Cap[]> = {
   owner: [...CAPS],
-  manager: CAPS.filter((c) => c !== 'manage_sites' && c !== 'manage_billing'),
-  chef: ['complete_checklists', 'view_reports', 'manage_recipes', 'manage_incidents', 'manage_deliveries'],
-  front_of_house: ['complete_checklists', 'manage_incidents', 'view_documents'],
-  kitchen_staff: ['complete_checklists', 'view_documents'],
+  manager: [...BASE_CAPS, 'manage_checklists', 'sign_off', 'manage_recipes', 'manage_documents', 'manage_suppliers', 'manage_team'],
+  chef: [...BASE_CAPS, 'manage_recipes'],
+  front_of_house: [...BASE_CAPS],
+  kitchen_staff: [...BASE_CAPS],
 }
 
 export const PRESET_ORDER: UserRole[] = ['owner', 'manager', 'chef', 'front_of_house', 'kitchen_staff']
