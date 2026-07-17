@@ -5,13 +5,13 @@ import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { toast } from 'sonner'
-import { Download, Plus, X, ChevronDown, FileSpreadsheet, FileText, Search, ShieldCheck, PencilLine, Check } from 'lucide-react'
+import { Download, Plus, X, ChevronDown, FileSpreadsheet, FileText, Search, ShieldCheck, PencilLine, Check, Trash2, Building2 } from 'lucide-react'
 import { EU_ALLERGENS } from '@/lib/constants'
 import { DIETARY_FLAGS, effectiveDietary } from '@/lib/dietary'
 import { DISH_CATS, catLabel, catSlug, resolveAllergens, recipeAllergens, allergenLabel, sourceMeta, type Dish, type DishRecipe } from '@/lib/dishes'
 
 const RECIPE_SELECT = 'id, name, category, vegan_override, vegetarian_override, gluten_free_override, dairy_free_override, recipe_ingredients(ingredient:ingredients(name, allergens))'
-const DISH_SELECT = `id, name, category, active, allergen_source, recipe_id, declared_allergens, may_contain, dietary, attested_by_name, attested_at, recipe:recipes(${RECIPE_SELECT})`
+const DISH_SELECT = `id, name, category, active, allergen_source, recipe_id, declared_allergens, may_contain, dietary, attested_by_name, attested_at, site_ids, recipe:recipes(${RECIPE_SELECT})`
 
 type RecipeRow = DishRecipe & { category: string | null; vegan_override: boolean | null; vegetarian_override: boolean | null; gluten_free_override: boolean | null; dairy_free_override: boolean | null }
 
@@ -30,12 +30,24 @@ export default function MenuPage() {
   const qc = useQueryClient()
   const business = useAuthStore((s) => s.business)
   const bid = business?.id
+  const currentSiteId = useAuthStore((s) => s.currentSiteId)
+  const sites = useAuthStore((s) => s.sites)
+  // Per-site menu. A dish carries site_ids (the sites it's on). For a multi-site
+  // business: on a specific site the menu is that site's dishes and is editable;
+  // on "All sites" it is a read-only overview (click a dish to see its sites).
+  // A single-site business behaves as before — one editable menu.
+  const multiSite = sites.length > 1
+  const allSitesView = multiSite && !currentSiteId
+  const editable = !allSitesView
+  const activeSite = currentSiteId ?? (sites.length === 1 ? sites[0]?.id ?? null : null)
+  const siteName = (id: string) => sites.find((s) => s.id === id)?.name ?? 'Site'
 
   const [query, setQuery] = useState('')
   const [cat, setCat] = useState('All')
   const [srcFilter, setSrcFilter] = useState<'recipe' | 'manual' | null>(null)
   const [exportOpen, setExportOpen] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
+  const [expandedSites, setExpandedSites] = useState<Set<string>>(new Set())
   const exportRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -62,7 +74,14 @@ export default function MenuPage() {
     },
   })
 
-  const rows = useMemo(() => dishes.map((d) => ({
+  // On a specific site (multi-site business) the menu is that site's dishes.
+  // All-sites and single-site businesses see every dish.
+  const siteDishes = useMemo(
+    () => (multiSite && currentSiteId ? dishes.filter((d) => (d.site_ids ?? []).includes(currentSiteId)) : dishes),
+    [dishes, multiSite, currentSiteId],
+  )
+
+  const rows = useMemo(() => siteDishes.map((d) => ({
     dish: d,
     name: d.name,
     group: catLabel(d.category),
@@ -70,10 +89,10 @@ export default function MenuPage() {
     meta: sourceMeta(d),
     allergens: resolveAllergens(d),
     dietary: dishDietary(d),
-  })), [dishes])
+  })), [siteDishes])
 
-  const recipeCount = dishes.filter((d) => d.allergen_source === 'recipe').length
-  const manualCount = dishes.filter((d) => d.allergen_source === 'manual').length
+  const recipeCount = siteDishes.filter((d) => d.allergen_source === 'recipe').length
+  const manualCount = siteDishes.filter((d) => d.allergen_source === 'manual').length
 
   const shown = rows.filter((r) => {
     if (cat !== 'All' && r.group !== cat) return false
@@ -82,6 +101,20 @@ export default function MenuPage() {
     return true
   })
   const sections = DISH_CATS.map((c) => ({ name: c, rows: shown.filter((r) => r.group === c) })).filter((s) => s.rows.length)
+
+  // A1 delete: take the dish off THIS site's menu. If it's on no other site, the
+  // row is deleted outright; otherwise just drop this site from its site_ids.
+  async function removeDish(d: Dish) {
+    if (!activeSite) return
+    const next = (d.site_ids ?? []).filter((id) => id !== activeSite)
+    if (next.length === 0 && !window.confirm(`Remove "${d.name}" from the menu? It isn't on any other site, so it will be deleted.`)) return
+    const { error } = next.length === 0
+      ? await supabase.from('menu_items').delete().eq('id', d.id)
+      : await supabase.from('menu_items').update({ site_ids: next }).eq('id', d.id)
+    if (error) { toast.error(error.message); return }
+    qc.invalidateQueries({ queryKey: ['dishes', bid] })
+    toast.success(`${d.name} removed from ${siteName(activeSite)}`)
+  }
 
   function exportCSV() {
     const out = [['Dish', 'Category', 'Allergen source', 'Attested by', 'Allergens', 'Dietary']]
@@ -111,7 +144,13 @@ export default function MenuPage() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 20, flexWrap: 'wrap' }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 25, fontWeight: 700, letterSpacing: '-.02em' }}>Menu</h1>
-          <p style={{ margin: '6px 0 0', fontSize: 14, color: '#6b7280' }}>Every dish and where its allergen information comes from.</p>
+          <p style={{ margin: '6px 0 0', fontSize: 14, color: '#6b7280' }}>
+            {allSitesView
+              ? 'Every dish across the group — read-only. Pick a site from the switcher to edit its menu.'
+              : multiSite && currentSiteId
+                ? `${siteName(currentSiteId)} menu — add and remove dishes for this site.`
+                : 'Every dish and where its allergen information comes from.'}
+          </p>
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
           <div ref={exportRef} style={{ position: 'relative' }}>
@@ -125,10 +164,12 @@ export default function MenuPage() {
               </div>
             )}
           </div>
-          <button onClick={() => setAddOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#1f9d63', border: 'none', color: '#fff', font: "600 13.5px 'Geist'", padding: '10px 16px', borderRadius: 10, cursor: 'pointer', boxShadow: '0 1px 2px rgba(16,24,40,.1)' }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = '#1c8e5a')} onMouseLeave={(e) => (e.currentTarget.style.background = '#1f9d63')}>
-            <Plus className="h-[15px] w-[15px]" strokeWidth={2.4} /> New dish
-          </button>
+          {editable && (
+            <button onClick={() => setAddOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#1f9d63', border: 'none', color: '#fff', font: "600 13.5px 'Geist'", padding: '10px 16px', borderRadius: 10, cursor: 'pointer', boxShadow: '0 1px 2px rgba(16,24,40,.1)' }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = '#1c8e5a')} onMouseLeave={(e) => (e.currentTarget.style.background = '#1f9d63')}>
+              <Plus className="h-[15px] w-[15px]" strokeWidth={2.4} /> New dish
+            </button>
+          )}
         </div>
       </div>
 
@@ -160,16 +201,16 @@ export default function MenuPage() {
             )
           })}
         </div>
-        <span style={{ marginLeft: 'auto', font: "500 12.5px 'Geist'", color: '#9aa0a8', whiteSpace: 'nowrap' }}>{shown.length} of {dishes.length} dishes</span>
+        <span style={{ marginLeft: 'auto', font: "500 12.5px 'Geist'", color: '#9aa0a8', whiteSpace: 'nowrap' }}>{shown.length} of {siteDishes.length} dishes</span>
       </div>
 
       {/* table */}
       <div style={{ background: '#fff', border: '1px solid #e9eaed', borderRadius: 16, boxShadow: '0 1px 2px rgba(16,24,40,.03),0 14px 36px -30px rgba(16,24,40,.16)', overflow: 'hidden' }}>
         <div style={{ overflowX: 'auto' }}>
-          <div style={{ minWidth: 820 }}>
+          <div style={{ minWidth: 920 }}>
             <div style={{ ...GRID, padding: '12px 22px', borderBottom: '1px solid #eef0f2', background: '#fbfbfc' }}>
-              {['Dish', 'Allergen source', 'Allergens', 'Dietary'].map((h) => (
-                <div key={h} style={{ font: "600 10.5px 'Geist'", letterSpacing: '.06em', textTransform: 'uppercase', color: '#9aa0a8' }}>{h}</div>
+              {['Dish', 'Allergen source', 'Allergens', 'Dietary', allSitesView ? 'Sites' : ''].map((h, i) => (
+                <div key={i} style={{ font: "600 10.5px 'Geist'", letterSpacing: '.06em', textTransform: 'uppercase', color: '#9aa0a8', textAlign: i === 4 ? 'right' : 'left' }}>{h}</div>
               ))}
             </div>
 
@@ -183,8 +224,13 @@ export default function MenuPage() {
                   <span style={{ font: "600 10.5px 'Geist'", letterSpacing: '.07em', textTransform: 'uppercase', color: '#8a9099' }}>{sec.name}</span>
                   <span style={{ font: "600 10.5px 'Geist'", color: '#b8bdc4', background: '#eceef1', borderRadius: 10, padding: '1px 7px' }}>{sec.rows.length}</span>
                 </div>
-                {sec.rows.map((r) => (
-                  <div key={r.dish.id} style={{ ...GRID, alignItems: 'center', padding: '13px 22px', borderBottom: '1px solid #f4f5f6', transition: 'background .14s' }}
+                {sec.rows.map((r) => {
+                  const isOpen = expandedSites.has(r.dish.id)
+                  const dishSites = r.dish.site_ids ?? []
+                  return (
+                  <div key={r.dish.id}>
+                  <div style={{ ...GRID, alignItems: 'center', padding: '13px 22px', borderBottom: isOpen ? 'none' : '1px solid #f4f5f6', transition: 'background .14s', cursor: allSitesView ? 'pointer' : 'default' }}
+                    onClick={allSitesView ? () => setExpandedSites((s) => { const n = new Set(s); n.has(r.dish.id) ? n.delete(r.dish.id) : n.add(r.dish.id); return n }) : undefined}
                     onMouseEnter={(e) => (e.currentTarget.style.background = '#fafbfb')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
                     <div style={{ minWidth: 0 }}>
                       <div style={{ font: "600 14px 'Geist'", color: '#1c1f24', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</div>
@@ -220,20 +266,48 @@ export default function MenuPage() {
                         <span key={v} style={{ font: "600 11.5px 'Geist'", padding: '4px 9px', borderRadius: 7, background: '#e9f6ef', color: '#1f7a52', whiteSpace: 'nowrap' }}>{v}</span>
                       ))}
                     </div>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+                      {allSitesView ? (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, font: "600 12px 'Geist'", color: '#5c626b', background: '#f1f2f4', borderRadius: 8, padding: '5px 10px', whiteSpace: 'nowrap' }}>
+                          {dishSites.length} site{dishSites.length === 1 ? '' : 's'}
+                          <ChevronDown className="h-3.5 w-3.5" style={{ transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} strokeWidth={2} />
+                        </span>
+                      ) : (
+                        <button onClick={() => removeDish(r.dish)} title="Remove from this site's menu"
+                          style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 32, height: 32, border: '1px solid #f0dcd8', background: '#fff', color: '#c0503f', borderRadius: 9, cursor: 'pointer' }}
+                          onMouseEnter={(e) => (e.currentTarget.style.background = '#fbeae7')} onMouseLeave={(e) => (e.currentTarget.style.background = '#fff')}>
+                          <Trash2 className="h-4 w-4" strokeWidth={1.9} />
+                        </button>
+                      )}
+                    </div>
                   </div>
-                ))}
+                  {allSitesView && isOpen && (
+                    <div style={{ padding: '2px 22px 14px', borderBottom: '1px solid #f4f5f6', display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                      <span style={{ font: "600 11px 'Geist'", color: '#9aa0a8', letterSpacing: '.04em', textTransform: 'uppercase', marginRight: 4 }}>On menu at</span>
+                      {dishSites.length === 0 ? (
+                        <span style={{ font: "500 12.5px 'Geist'", color: '#a3a8b0' }}>No sites</span>
+                      ) : dishSites.map((id) => (
+                        <span key={id} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, font: "600 12px 'Geist'", color: '#3f6bc4', background: '#eef3fb', borderRadius: 7, padding: '4px 10px' }}>
+                          <Building2 className="h-3 w-3" strokeWidth={2} /> {siteName(id)}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  </div>
+                  )
+                })}
               </div>
             ))}
           </div>
         </div>
       </div>
 
-      {addOpen && <AddDishDrawer bid={bid!} recipes={recipes} onClose={() => setAddOpen(false)} onAdded={() => qc.invalidateQueries({ queryKey: ['dishes', bid] })} />}
+      {addOpen && <AddDishDrawer bid={bid!} siteId={activeSite} dishes={dishes} recipes={recipes} onClose={() => setAddOpen(false)} onAdded={() => qc.invalidateQueries({ queryKey: ['dishes', bid] })} />}
     </div>
   )
 }
 
-const GRID: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'minmax(220px,2.2fr) 150px minmax(200px,2.4fr) minmax(150px,1.4fr)', gap: 16 }
+const GRID: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'minmax(220px,2.2fr) 150px minmax(200px,2.4fr) minmax(150px,1.4fr) 108px', gap: 16 }
 
 function SourceCard({ on, onClick, icon, iconBg, iconFg, onBg, onBorder, count, label, sub }: { on: boolean; onClick: () => void; icon: React.ReactNode; iconBg: string; iconFg: string; onBg: string; onBorder: string; count: number; label: string; sub: string }) {
   return (
@@ -259,7 +333,7 @@ function ExportOpt({ icon, bg, fg, title, sub, onClick }: { icon: React.ReactNod
 }
 
 // ── New dish drawer ─────────────────────────────────────────────────
-function AddDishDrawer({ bid, recipes, onClose, onAdded }: { bid: string; recipes: RecipeRow[]; onClose: () => void; onAdded: () => void }) {
+function AddDishDrawer({ bid, siteId, dishes, recipes, onClose, onAdded }: { bid: string; siteId: string | null; dishes: Dish[]; recipes: RecipeRow[]; onClose: () => void; onAdded: () => void }) {
   const profile = useAuthStore((s) => s.profile)
   const [shown, setShown] = useState(false)
   const [mode, setMode] = useState<'recipe' | 'manual'>('recipe')
@@ -282,11 +356,21 @@ function AddDishDrawer({ bid, recipes, onClose, onAdded }: { bid: string; recipe
 
   const add = useMutation({
     mutationFn: async () => {
+      const siteArr = siteId ? [siteId] : []
       if (mode === 'recipe') {
         const r = recipes.find((x) => x.id === rSel)!
+        // Model 1: one row per dish. If this recipe is already a dish, just add
+        // the current site to it rather than creating a duplicate.
+        const existing = dishes.find((d) => d.allergen_source === 'recipe' && d.recipe_id === r.id)
+        if (existing) {
+          const next = siteId ? Array.from(new Set([...(existing.site_ids ?? []), siteId])) : (existing.site_ids ?? [])
+          const { error } = await supabase.from('menu_items').update({ site_ids: next }).eq('id', existing.id)
+          if (error) throw error
+          return r.name
+        }
         const { error } = await supabase.from('menu_items').insert({
           business_id: bid, name: r.name, category: catSlug(catLabel(r.category)),
-          recipe_id: r.id, allergen_source: 'recipe', active: true, display_order: 0,
+          recipe_id: r.id, allergen_source: 'recipe', active: true, display_order: 0, site_ids: siteArr,
         })
         if (error) throw error
         return r.name
@@ -301,7 +385,7 @@ function AddDishDrawer({ bid, recipes, onClose, onAdded }: { bid: string; recipe
         attested_by: profile?.id ?? null,
         attested_by_name: profile?.full_name ?? profile?.email ?? 'Unknown',
         attested_at: new Date().toISOString(),
-        active: true, display_order: 0,
+        active: true, display_order: 0, site_ids: siteArr,
       })
       if (error) throw error
       return qName.trim()

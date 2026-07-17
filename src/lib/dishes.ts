@@ -28,6 +28,8 @@ export interface Dish {
   dietary: string[]
   attested_by_name: string | null
   attested_at: string | null
+  /** The sites this dish is on the menu of. Empty = on no site's menu. */
+  site_ids: string[]
   recipe?: DishRecipe | null
 }
 
@@ -61,7 +63,7 @@ export function resolveAllergens(dish: Dish): string[] {
 
 export const allergenLabel = (a: string) => ALLERGEN_LABELS[a as EUAllergen] ?? a
 
-const DISH_FOR_RECIPE_SELECT = 'id, name, category, active, allergen_source, recipe_id, declared_allergens, may_contain, dietary, attested_by_name, attested_at, recipe:recipes(id, name, recipe_ingredients(ingredient:ingredients(name, allergens)))'
+const DISH_FOR_RECIPE_SELECT = 'id, name, category, active, allergen_source, recipe_id, declared_allergens, may_contain, dietary, attested_by_name, attested_at, site_ids, recipe:recipes(id, name, recipe_ingredients(ingredient:ingredients(name, allergens)))'
 
 type Db = { from: (t: string) => any } // eslint-disable-line @typescript-eslint/no-explicit-any
 
