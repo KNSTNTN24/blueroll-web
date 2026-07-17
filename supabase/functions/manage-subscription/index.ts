@@ -10,6 +10,13 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
 async function stripeGet(endpoint: string) {
   const res = await fetch(`https://api.stripe.com/v1${endpoint}`, {
     headers: { Authorization: `Bearer ${STRIPE_SECRET_KEY}` },
@@ -43,7 +50,39 @@ Deno.serve(async (req) => {
     const { action, customerId, subscriptionId, businessId, userId, returnUrl } =
       await req.json();
 
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    // ── Auth + ownership guard ──
+    const authHeader = req.headers.get("Authorization") ?? "";
+    const asUser = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_ANON_KEY")!, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const {
+      data: { user },
+    } = await asUser.auth.getUser();
+    if (!user) return json({ error: "Not authenticated" }, 401);
+
+    const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+    const { data: prof } = await admin
+      .from("profiles")
+      .select("role, business_id")
+      .eq("id", user.id)
+      .single();
+
+    let targetBiz = businessId as string | undefined;
+    if (!targetBiz && customerId) {
+      const { data: b } = await admin
+        .from("businesses")
+        .select("id")
+        .eq("stripe_customer_id", customerId)
+        .single();
+      targetBiz = b?.id;
+    }
+
+    if (!prof || prof.role !== "owner" || !targetBiz || prof.business_id !== targetBiz) {
+      return json({ error: "Not authorized for this business" }, 403);
+    }
+
+    const supabase = admin;
 
     // ── Portal: open Stripe Customer Portal ──
     if (action === "portal") {
@@ -141,97 +180,6 @@ Deno.serve(async (req) => {
 
       return new Response(
         JSON.stringify({ status: "none" }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // ── Delete Account ──
-    if (action === "delete") {
-      if (!userId || !businessId)
-        throw new Error("Missing userId or businessId");
-
-      // 1. Cancel Stripe subscription if exists
-      const { data: biz } = await supabase
-        .from("businesses")
-        .select("subscription_id, stripe_customer_id")
-        .eq("id", businessId)
-        .single();
-
-      if (biz?.subscription_id) {
-        try {
-          await stripePost(`/subscriptions/${biz.subscription_id}`, {
-            cancel_at_period_end: "false",
-          });
-          // Immediately cancel
-          await fetch(
-            `https://api.stripe.com/v1/subscriptions/${biz.subscription_id}`,
-            {
-              method: "DELETE",
-              headers: { Authorization: `Bearer ${STRIPE_SECRET_KEY}` },
-            }
-          );
-        } catch (_) {
-          // Subscription may already be canceled
-        }
-      }
-
-      // 2. Delete all business data
-      await supabase
-        .from("checklist_completions")
-        .delete()
-        .eq("business_id", businessId);
-      await supabase
-        .from("checklist_templates")
-        .delete()
-        .eq("business_id", businessId);
-      await supabase
-        .from("incidents")
-        .delete()
-        .eq("business_id", businessId);
-      await supabase
-        .from("invites")
-        .delete()
-        .eq("business_id", businessId);
-      await supabase
-        .from("notifications")
-        .delete()
-        .eq("user_id", userId);
-      await supabase
-        .from("staff_checkins")
-        .delete()
-        .eq("business_id", businessId);
-      await supabase
-        .from("recipes")
-        .delete()
-        .eq("business_id", businessId);
-      await supabase
-        .from("documents")
-        .delete()
-        .eq("business_id", businessId);
-      await supabase
-        .from("suppliers")
-        .delete()
-        .eq("business_id", businessId);
-      await supabase
-        .from("deliveries")
-        .delete()
-        .eq("business_id", businessId);
-      await supabase
-        .from("diary_entries")
-        .delete()
-        .eq("business_id", businessId);
-
-      // 3. Delete profile
-      await supabase.from("profiles").delete().eq("id", userId);
-
-      // 4. Delete business
-      await supabase.from("businesses").delete().eq("id", businessId);
-
-      // 5. Delete auth user
-      await supabase.auth.admin.deleteUser(userId);
-
-      return new Response(
-        JSON.stringify({ success: true }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }

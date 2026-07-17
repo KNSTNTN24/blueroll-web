@@ -1,0 +1,14 @@
+-- Close the INSERT self-grant hole: the BEFORE UPDATE trigger from
+-- protect_entitlement_columns.sql only guards UPDATEs. The permissive
+-- "Authenticated can create business" policy (WITH CHECK auth.uid() IS NOT
+-- NULL, no column restriction) let any authenticated user INSERT a business
+-- row with manual_status/manual_until already set to a self-granted
+-- entitlement, bypassing the UPDATE guard entirely.
+--
+-- Businesses are only ever created through the setup_business() RPC, which
+-- is SECURITY DEFINER and therefore unaffected by RLS. No client-side
+-- `.from('businesses').insert()` exists in the app. So this policy is
+-- unnecessary and dangerous — drop it. With no permissive INSERT policy
+-- left, direct client inserts are denied by default (RLS default-deny),
+-- while setup_business keeps working.
+drop policy if exists "Authenticated can create business" on public.businesses;

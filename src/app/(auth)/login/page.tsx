@@ -9,10 +9,11 @@ import { useBrand } from '../layout'
 
 // A recovery link may land here; /reset-password owns the set-new-password
 // step. Captured at module load, before the Supabase client consumes the hash.
+// Covers expired/denied links too (from origin/main #18) so they still route out.
 const recoveryFromHash =
   typeof window === 'undefined' ? null
     : window.location.hash.includes('type=recovery') ? 'active'
-    : window.location.hash.includes('error_code=otp_expired') ? 'expired'
+    : /error_code=(otp_expired|access_denied)/.test(window.location.hash) ? 'expired'
     : null
 
 export default function LoginPage() {
