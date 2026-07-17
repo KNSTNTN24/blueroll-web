@@ -1,11 +1,11 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, Fragment } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
-import { Search, Download, Printer, Check, Plus, Sparkles } from 'lucide-react'
+import { Search, Download, Printer, Check, Plus, Sparkles, ChevronDown, Building2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { InspectionEmpty, EmptyPrimary, EmptySecondary, AllergenArt } from '@/components/shared/inspection-empty'
 import {
@@ -25,8 +25,16 @@ const ALLERGEN_CODES: Record<EUAllergen, string> = {
 
 export default function AllergensPage() {
   const business = useAuthStore((s) => s.business)
+  const currentSiteId = useAuthStore((s) => s.currentSiteId)
+  const sites = useAuthStore((s) => s.sites)
   const router = useRouter()
   const [search, setSearch] = useState('')
+  const [expandedSites, setExpandedSites] = useState<Set<string>>(new Set())
+  // Per-site matrix (read-only). On a site: that site's dishes. On All sites:
+  // every dish, with a click-to-expand list of the sites it's served at.
+  const multiSite = sites.length > 1
+  const allSitesView = multiSite && !currentSiteId
+  const siteName = (id: string) => sites.find((s) => s.id === id)?.name ?? 'Site'
 
   // The matrix is dishes × 14 allergens: a drink or bought-in item has no
   // recipe but still must show its allergens to a guest and an inspector.
@@ -36,7 +44,7 @@ export default function AllergensPage() {
       if (!business?.id) return []
       const { data, error } = await supabase
         .from('menu_items')
-        .select('id, name, category, active, allergen_source, recipe_id, declared_allergens, may_contain, dietary, attested_by_name, attested_at, recipe:recipes(id, name, recipe_ingredients(ingredient:ingredients(name, allergens)))')
+        .select('id, name, category, active, allergen_source, recipe_id, declared_allergens, may_contain, dietary, attested_by_name, attested_at, site_ids, recipe:recipes(id, name, recipe_ingredients(ingredient:ingredients(name, allergens)))')
         .eq('business_id', business.id)
         .order('name')
       if (error) throw error
@@ -45,10 +53,17 @@ export default function AllergensPage() {
     enabled: !!business?.id,
   })
 
+  // On a specific site (multi-site business): that site's dishes. All-sites and
+  // single-site businesses see every dish.
+  const visibleDishes = useMemo(
+    () => (multiSite && currentSiteId ? recipes.filter((d) => (d.site_ids ?? []).includes(currentSiteId)) : recipes),
+    [recipes, multiSite, currentSiteId],
+  )
+
   // Resolved at read time, so a recipe edit moves every dish built from it.
   const enriched = useMemo(
-    () => recipes.map((d) => ({ ...d, _allergens: resolveAllergens(d), _meta: sourceMeta(d) })),
-    [recipes]
+    () => visibleDishes.map((d) => ({ ...d, _allergens: resolveAllergens(d), _meta: sourceMeta(d) })),
+    [visibleDishes]
   )
   const filtered = useMemo(
     () => enriched.filter((r: any) => !search || r.name.toLowerCase().includes(search.toLowerCase())),
@@ -174,9 +189,15 @@ export default function AllergensPage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-[26px] font-bold leading-tight tracking-[-0.02em] text-foreground">Allergen Matrix</h1>
-          <p className="mt-1 text-[13px] text-muted-foreground">EU 14 allergens across {enriched.length} dishes</p>
+          <p className="mt-1 text-[13px] text-muted-foreground">
+            {allSitesView
+              ? `All sites · EU 14 allergens across ${enriched.length} dishes`
+              : multiSite && currentSiteId
+                ? `${siteName(currentSiteId)} · EU 14 allergens across ${enriched.length} dishes`
+                : `EU 14 allergens across ${enriched.length} dishes`}
+          </p>
         </div>
-        {recipes.length > 0 && (
+        {visibleDishes.length > 0 && (
         <div className="flex items-center gap-2.5">
           <button onClick={exportCSV} className="inline-flex items-center gap-2 rounded-[11px] border border-input bg-card px-4 py-[11px] text-[14px] font-semibold text-foreground transition-colors hover:bg-accent">
             <Download className="h-4 w-4 text-brand" strokeWidth={1.8} /> CSV
@@ -189,7 +210,7 @@ export default function AllergensPage() {
       </div>
 
       {/* Toolbar: search + inline legend — hidden in the empty state */}
-      {recipes.length > 0 && (
+      {visibleDishes.length > 0 && (
       <div className="flex flex-wrap items-center gap-4">
         <div className="relative max-w-[380px] flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -214,7 +235,7 @@ export default function AllergensPage() {
 
       {isLoading ? (
         <div className="flex items-center justify-center py-16 text-[13px] text-muted-foreground">Loading allergen data…</div>
-      ) : recipes.length === 0 ? (
+      ) : visibleDishes.length === 0 ? (
         <InspectionEmpty illustration={AllergenArt} badge="The first thing inspectors check for allergens"
           title="Your allergen matrix builds itself"
           sentence="Add dishes and all 14 EU allergens map themselves — printable any time.">
@@ -251,9 +272,13 @@ export default function AllergensPage() {
                   </tr>
                 ) : filtered.map((r: any) => {
                   const count = r._allergens.length
+                  const isOpen = expandedSites.has(r.id)
+                  const dishSites: string[] = r.site_ids ?? []
                   return (
-                    <tr key={r.id} className="group">
-                      <td className="sticky left-0 z-10 border-b border-border bg-card px-4 py-2.5 font-medium text-foreground group-hover:bg-[#fafbfb]">
+                    <Fragment key={r.id}>
+                    <tr className="group">
+                      <td onClick={allSitesView ? () => setExpandedSites((s) => { const n = new Set(s); n.has(r.id) ? n.delete(r.id) : n.add(r.id); return n }) : undefined}
+                        className={cn('sticky left-0 z-10 border-b border-border bg-card px-4 py-2.5 font-medium text-foreground group-hover:bg-[#fafbfb]', allSitesView && 'cursor-pointer')}>
                         <span className="flex items-center gap-2.5">
                           <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', count ? 'bg-[#e7c79a]' : 'bg-brand')} />
                           <span className="truncate">{r.name}</span>
@@ -262,6 +287,12 @@ export default function AllergensPage() {
                             r.allergen_source === 'recipe' ? 'bg-[#eaf4ee] text-[#1f7a52]' : 'bg-[#fbf1e1] text-[#b07d1e]')}>
                             {r.allergen_source === 'recipe' ? 'Recipe' : 'Declared'}
                           </span>
+                          {allSitesView && (
+                            <span className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-[7px] bg-[#f1f2f4] px-2 py-0.5 text-[11px] font-semibold text-[#5c626b]">
+                              {dishSites.length} site{dishSites.length === 1 ? '' : 's'}
+                              <ChevronDown className={cn('h-3 w-3 transition-transform', isOpen && 'rotate-180')} strokeWidth={2} />
+                            </span>
+                          )}
                         </span>
                       </td>
                       {EU_ALLERGENS.map((a) => (
@@ -280,6 +311,23 @@ export default function AllergensPage() {
                           : <span className="text-[12px] font-semibold text-brand-deep">Free</span>}
                       </td>
                     </tr>
+                    {allSitesView && isOpen && (
+                      <tr>
+                        <td colSpan={EU_ALLERGENS.length + 2} className="border-b border-border bg-[#fbfbfc] px-4 pb-3 pt-1">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="mr-1 font-mono text-[10px] font-medium uppercase tracking-[0.05em] text-muted-foreground">On menu at</span>
+                            {dishSites.length === 0 ? (
+                              <span className="text-[12.5px] text-muted-foreground">No sites</span>
+                            ) : dishSites.map((id) => (
+                              <span key={id} className="inline-flex items-center gap-1.5 rounded-[7px] bg-[#eef3fb] px-2.5 py-1 text-[12px] font-semibold text-[#3f6bc4]">
+                                <Building2 className="h-3 w-3" strokeWidth={2} /> {siteName(id)}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   )
                 })}
               </tbody>
