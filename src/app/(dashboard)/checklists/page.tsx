@@ -12,7 +12,7 @@ import {
 } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { InspectionEmpty, EmptyPrimary, EmptySecondary, ChecklistArt } from '@/components/shared/inspection-empty'
-import { ROLE_LABELS, type UserRole } from '@/lib/constants'
+import { useRoleLabel } from '@/hooks/use-role-label'
 import { checklistStatus, compareTemplates } from '@/lib/checklist-status'
 import { startOfDay, startOfWeek, startOfMonth, format } from 'date-fns'
 
@@ -34,6 +34,7 @@ function ChecklistsPageInner() {
   const queryClient = useQueryClient()
   const profile = useAuthStore((s) => s.profile)
   const business = useAuthStore((s) => s.business)
+  const roleLabel = useRoleLabel()
   const isManager = profile?.role === 'owner' || profile?.role === 'manager'
   const [view, setView] = useState<'today' | 'library'>(searchParams.get('tab') === 'library' && isManager ? 'library' : 'today')
 
@@ -174,7 +175,7 @@ function ChecklistsPageInner() {
                 </div>
                 <div className="flex flex-1 flex-wrap gap-1.5">
                   {(t.assigned_roles ?? []).map((r: string) => (
-                    <span key={r} className="whitespace-nowrap rounded-full border border-[#e4e6ea] px-[9px] py-[3px] text-[11.5px] font-medium text-[#5c626b]">{ROLE_LABELS[r as UserRole] ?? r}</span>
+                    <span key={r} className="whitespace-nowrap rounded-full border border-[#e4e6ea] px-[9px] py-[3px] text-[11.5px] font-medium text-[#5c626b]">{roleLabel(r)}</span>
                   ))}
                 </div>
                 <Switch checked={t.active} onCheckedChange={(checked) => toggleActiveMutation.mutate({ id: t.id, active: checked })} />

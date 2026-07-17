@@ -17,7 +17,8 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
-import { CHECKLIST_FREQUENCIES, CHECKLIST_ITEM_TYPES, ITEM_TYPE_LABELS, CHECKLIST_TYPES, DEFAULT_EQUIPMENT, USER_ROLES, ROLE_LABELS, type UserRole } from '@/lib/constants'
+import { CHECKLIST_FREQUENCIES, CHECKLIST_ITEM_TYPES, ITEM_TYPE_LABELS, CHECKLIST_TYPES, DEFAULT_EQUIPMENT, USER_ROLES, type UserRole } from '@/lib/constants'
+import { useRoleLabel } from '@/hooks/use-role-label'
 
 const itemSchema = z.object({
   name: z.string().min(1, 'Item name is required'),
@@ -44,6 +45,7 @@ type FormData = z.infer<typeof templateSchema>
 
 export default function NewChecklistPage() {
   const router = useRouter()
+  const roleLabel = useRoleLabel()
   const queryClient = useQueryClient()
   const profile = useAuthStore((s) => s.profile)
   const business = useAuthStore((s) => s.business)
@@ -114,12 +116,12 @@ export default function NewChecklistPage() {
     }
 
     if (wizardData.assignedRoles.length > 0) {
-      const labels = wizardData.assignedRoles.map((r) => ROLE_LABELS[r as UserRole] ?? r)
+      const labels = wizardData.assignedRoles.map((r) => roleLabel(r))
       parts.push(`This checklist will be filled by: ${labels.join(', ')}.`)
     }
 
     if (wizardData.supervisorSignOff && wizardData.supervisorRole) {
-      parts.push(`Requires supervisor sign-off by ${ROLE_LABELS[wizardData.supervisorRole as UserRole] ?? wizardData.supervisorRole}.`)
+      parts.push(`Requires supervisor sign-off by ${roleLabel(wizardData.supervisorRole)}.`)
     }
 
     if (wizardData.additionalNotes.trim()) {
@@ -430,7 +432,7 @@ export default function NewChecklistPage() {
                         selected ? 'bg-emerald-50 text-emerald-700 border-emerald-300' : 'bg-white text-muted-foreground border-border hover:border-emerald-200',
                       )}
                     >
-                      {ROLE_LABELS[role]}
+                      {roleLabel(role)}
                     </button>
                   )
                 })}
@@ -453,7 +455,7 @@ export default function NewChecklistPage() {
                   >
                     <option value="">Select role</option>
                     {USER_ROLES.filter((r) => r === 'owner' || r === 'manager').map((r) => (
-                      <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+                      <option key={r} value={r}>{roleLabel(r)}</option>
                     ))}
                   </select>
                 )}
@@ -563,7 +565,7 @@ export default function NewChecklistPage() {
               >
                 <option value="">None</option>
                 {USER_ROLES.map((r) => (
-                  <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+                  <option key={r} value={r}>{roleLabel(r)}</option>
                 ))}
               </select>
             </div>
@@ -622,7 +624,7 @@ export default function NewChecklistPage() {
                     onChange={() => handleRoleToggle(role)}
                     className="sr-only"
                   />
-                  {ROLE_LABELS[role]}
+                  {roleLabel(role)}
                 </label>
               ))}
             </div>

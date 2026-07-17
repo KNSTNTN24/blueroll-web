@@ -17,7 +17,8 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
-import { CHECKLIST_FREQUENCIES, CHECKLIST_ITEM_TYPES, ITEM_TYPE_LABELS, USER_ROLES, ROLE_LABELS, type UserRole } from '@/lib/constants'
+import { CHECKLIST_FREQUENCIES, CHECKLIST_ITEM_TYPES, ITEM_TYPE_LABELS, USER_ROLES, type UserRole } from '@/lib/constants'
+import { useRoleLabel } from '@/hooks/use-role-label'
 
 const itemSchema = z.object({
   name: z.string().min(1, 'Item name is required'),
@@ -45,6 +46,7 @@ type FormData = z.infer<typeof templateSchema>
 export default function EditChecklistPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const router = useRouter()
+  const roleLabel = useRoleLabel()
   const queryClient = useQueryClient()
   const business = useAuthStore((s) => s.business)
   const [submitting, setSubmitting] = useState(false)
@@ -276,7 +278,7 @@ export default function EditChecklistPage({ params }: { params: Promise<{ id: st
               >
                 <option value="">None</option>
                 {USER_ROLES.map((r) => (
-                  <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+                  <option key={r} value={r}>{roleLabel(r)}</option>
                 ))}
               </select>
             </div>
@@ -335,7 +337,7 @@ export default function EditChecklistPage({ params }: { params: Promise<{ id: st
                     onChange={() => handleRoleToggle(role)}
                     className="sr-only"
                   />
-                  {ROLE_LABELS[role]}
+                  {roleLabel(role)}
                 </label>
               ))}
             </div>
