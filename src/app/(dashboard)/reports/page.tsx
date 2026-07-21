@@ -188,32 +188,16 @@ export default function ReportsPage() {
     if (rows.length === 0) { toast.error('Nothing in this range to export'); return }
     const scopeLabel = currentSiteId ? siteName(currentSiteId) : `All sites (${sites.length})`
     const esc = (s: string) => String(s).replace(/[&<>"]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]!))
-    const reading = (v: unknown) => { if (v === 'yes' || v === true) return 'Yes'; if (v === 'no' || v === false) return 'No'; if (v == null || v === '') return '—'; return String(v) }
-
-    // Flagged items — corrective action cards
-    const flaggedList: { title: string; meta: string; detail: string }[] = []
-    filtered.forEach((c) => (c.responses ?? []).forEach((r) => {
-      if (!r.flagged) return
-      const rd = reading(r.value)
-      flaggedList.push({
-        title: `${r.item?.name ?? 'Check item'}${rd !== '—' ? ` (${rd})` : ''}`,
-        meta: `${format(parseISO(c.completed_at), 'd MMM, HH:mm')} · ${siteName(c.site_id)}`,
-        detail: `${c.template?.name ?? 'Checklist'} · flagged by ${c.completed_by_profile?.full_name ?? 'staff'}. Corrective action: ${r.notes || 'recorded at time of check.'}`,
-      })
-    }))
-
-    // Per-completion detail sections (those with recorded answers)
-    const detailed = filtered.filter((c) => (c.responses ?? []).length > 0)
-    const detailSections = detailed.map((c) => {
-      const resp = c.responses ?? []
-      const flagged = resp.filter((r) => r.flagged).length
-      const itemRows = resp.map((r) => `<tr><td>${esc(r.item?.name ?? 'Item')}</td><td class="num">${esc(reading(r.value))}</td><td class="res ${r.flagged ? 'amber' : 'green'}">${r.flagged ? 'Flagged' : 'Pass'}</td></tr>`).join('')
-      return `<div class="sec"><div class="eyebrow">${esc(c.template?.name ?? 'Checklist')} · ${esc(siteName(c.site_id))} · ${format(parseISO(c.completed_at), 'd MMM yyyy, HH:mm')}</div>
-        <table class="items"><thead><tr><th>Check item</th><th class="num">Reading</th><th class="res">Result</th></tr></thead><tbody>${itemRows}</tbody></table>
-        <div class="signed"><span>Signed: ${esc(c.completed_by_profile?.full_name ?? '—')} · ${esc(siteName(c.site_id))}</span><span>Completed ${format(parseISO(c.completed_at), 'HH:mm')} · ${resp.length - flagged}/${resp.length} items</span></div></div>`
-    }).join('')
-
-    const compact = filtered.filter((c) => (c.responses ?? []).length === 0)
+    // One clean list of every check completed in the period
+    const statusText = (r: (typeof rows)[number]) => (r.total === 0 ? 'Completed' : r.flagged ? `${r.flagged} flagged` : 'Clean')
+    const statusColor = (r: (typeof rows)[number]) => (r.flagged ? '#b07d1e' : '#1f7a52')
+    const listRows = rows.map((r) => `<tr>
+      <td>${format(parseISO(r.at), 'dd MMM yyyy, HH:mm')}</td>
+      <td class="ck">${esc(r.name)}</td>
+      <td>${esc(r.site)}</td>
+      <td>${esc(r.by)}</td>
+      <td class="num">${r.total ? `${r.ok}/${r.total}` : '—'}</td>
+      <td class="res" style="color:${statusColor(r)}">${esc(statusText(r))}</td></tr>`).join('')
 
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>Compliance report — ${esc(business?.name ?? 'BlueRoll')}</title>
 <style>
@@ -246,24 +230,29 @@ export default function ReportsPage() {
   table.list td{padding:7px 8px;border-bottom:1px solid #f2f3f5;font-size:11.5px}
   .pill{font-size:11px;font-weight:600}
   .foot{margin-top:26px;padding-top:14px;border-top:1px solid #eef0f2;color:#9aa0a8;font-size:11.5px;display:flex;justify-content:space-between}
+  .period{margin:0 0 24px;padding:14px 20px;background:#f6faf8;border:1px solid #e2efe9;border-radius:12px}
+  .period span{display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:#7a9a8c;font-weight:600;margin-bottom:3px}
+  .period b{font-size:25px;font-weight:700;letter-spacing:-.01em;color:#16181d}
+  table.list td.ck{font-weight:600;color:#16181d}
+  table.list td.num{text-align:right;font-variant-numeric:tabular-nums}
+  table.list td.res{text-align:right;font-weight:600}
+  table.list th.num,table.list th.res{text-align:right}
 </style></head><body>
   <div class="hd">
     <div><div><span class="b">b</span> <b style="letter-spacing:.02em">BLUEROLL</b></div>
       <h1>Food safety compliance report</h1><div class="sub">${esc(business?.name ?? 'BlueRoll')} · ${esc(scopeLabel)}</div></div>
-    <div class="meta"><div><span>Period</span> ${esc(rangeLabel)}</div><div><span>Generated</span> ${format(new Date(), 'd MMM yyyy, HH:mm')}</div><div><span>Prepared by</span> ${esc(profile?.full_name ?? '—')}</div></div>
+    <div class="meta"><div><span>Generated</span> ${format(new Date(), 'd MMM yyyy, HH:mm')}</div><div><span>Prepared by</span> ${esc(profile?.full_name ?? '—')}</div></div>
   </div>
+  <div class="period"><span>Reporting period</span><b>${esc(rangeLabel)}</b></div>
   <div class="sum">
     <div><div class="lbl">Completions</div><div class="val">${stats.completed}</div></div>
     <div><div class="lbl">Completion rate</div><div class="val" style="color:#1f7a52">${stats.rate}%</div></div>
     <div><div class="lbl">Missed checks</div><div class="val">${stats.missed}</div></div>
     <div><div class="lbl">Flagged items</div><div class="val">${stats.flaggedItems}</div></div>
   </div>
-  ${flaggedList.length ? `<div class="block"><h2>Flagged items — corrective action</h2>${flaggedList.map((f) => `<div class="flag"><div class="t"><span>${esc(f.title)}</span><span>${esc(f.meta)}</span></div><div class="m">${esc(f.detail)}</div></div>`).join('')}</div>` : ''}
-  ${detailSections ? `<div class="block"><h2>Signed records</h2>${detailSections}</div>` : ''}
-  ${compact.length ? `<div class="block"><h2>${detailSections ? 'Other completions in period' : 'Completions in period'}</h2>
-    <table class="list"><thead><tr><th>Date</th><th>Checklist</th><th>Site</th><th>Completed by</th><th>Status</th></tr></thead><tbody>
-    ${compact.map((c) => `<tr><td>${format(parseISO(c.completed_at), 'dd MMM, HH:mm')}</td><td>${esc(c.template?.name ?? 'Checklist')}</td><td>${esc(siteName(c.site_id))}</td><td>${esc(c.completed_by_profile?.full_name ?? '—')}</td><td class="pill green">Completed</td></tr>`).join('')}
-    </tbody></table></div>` : ''}
+  <div class="block"><h2>Checks completed (${rows.length})</h2>
+    <table class="list"><thead><tr><th>Date &amp; time</th><th>Check</th><th>Site</th><th>Completed by</th><th class="num">Items</th><th class="res">Status</th></tr></thead>
+    <tbody>${listRows}</tbody></table></div>
   <div class="foot"><span>Generated by BlueRoll · records are timestamped and tamper-evident</span><span>blueroll.app</span></div>
 </body></html>`
     const w = window.open('', '_blank')
