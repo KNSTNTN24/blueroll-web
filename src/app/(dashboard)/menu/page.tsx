@@ -128,6 +128,24 @@ export default function MenuPage() {
     toast.success(`${d.name} removed from ${siteName(activeSite)}`)
   }
 
+  const setSection = useMutation({
+    mutationFn: async ({ dish, catId }: { dish: Dish; catId: string }) => {
+      if (!activeSite) return
+      const base = dish.site_categories ?? {}
+      let next: Record<string, string>
+      if (catId === '') {
+        const { [activeSite]: _drop, ...rest } = base
+        next = rest
+      } else {
+        next = { ...base, [activeSite]: catId }
+      }
+      const { error } = await supabase.from('menu_items').update({ site_categories: next }).eq('id', dish.id)
+      if (error) throw error
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['dishes', bid] }),
+    onError: (e: Error) => toast.error(e.message),
+  })
+
   function exportCSV() {
     const out = [['Dish', 'Category', 'Allergen source', 'Attested by', 'Allergens', 'Dietary']]
     rows.forEach((r) => out.push([
@@ -292,11 +310,23 @@ export default function MenuPage() {
                           <ChevronDown className="h-3.5 w-3.5" style={{ transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} strokeWidth={2} />
                         </span>
                       ) : (
-                        <button onClick={() => removeDish(r.dish)} title="Remove from this site's menu"
-                          style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 32, height: 32, border: '1px solid #f0dcd8', background: '#fff', color: '#c0503f', borderRadius: 9, cursor: 'pointer' }}
-                          onMouseEnter={(e) => (e.currentTarget.style.background = '#fbeae7')} onMouseLeave={(e) => (e.currentTarget.style.background = '#fff')}>
-                          <Trash2 className="h-4 w-4" strokeWidth={1.9} />
-                        </button>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'flex-end' }}>
+                          <select
+                            value={r.dish.site_categories?.[activeSite!] ?? ''}
+                            disabled={setSection.isPending}
+                            onChange={(e) => setSection.mutate({ dish: r.dish, catId: e.target.value })}
+                            title="Move to another menu section"
+                            style={{ border: '1px solid #e2e4e8', borderRadius: 9, padding: '6px 8px', font: "600 12px 'Geist'", color: '#5c626b', background: '#fff', cursor: 'pointer', maxWidth: 150 }}
+                          >
+                            <option value="">Uncategorised</option>
+                            {menuCategories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                          </select>
+                          <button onClick={() => removeDish(r.dish)} title="Remove from this site's menu"
+                            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 32, height: 32, border: '1px solid #f0dcd8', background: '#fff', color: '#c0503f', borderRadius: 9, cursor: 'pointer' }}
+                            onMouseEnter={(e) => (e.currentTarget.style.background = '#fbeae7')} onMouseLeave={(e) => (e.currentTarget.style.background = '#fff')}>
+                            <Trash2 className="h-4 w-4" strokeWidth={1.9} />
+                          </button>
+                        </div>
                       )}
                     </div>
                   </div>
