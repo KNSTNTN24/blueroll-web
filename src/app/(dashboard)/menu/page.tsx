@@ -145,7 +145,9 @@ export default function MenuPage() {
   function exportPDF() {
     setExportOpen(false)
     const esc = (s: string) => String(s).replace(/[&<>]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m]!))
-    const byGroup = DISH_CATS.map((g) => ({ g, items: rows.filter((r) => r.group === g) })).filter((x) => x.items.length)
+    const byGroup = activeSite
+      ? groupDishesBySection(rows, activeSite, menuCategories, (r) => r.dish).map((s) => ({ g: s.name, items: s.rows }))
+      : DISH_CATS.map((g) => ({ g, items: rows.filter((r) => r.group === g) })).filter((x) => x.items.length)
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>Allergen menu</title><style>@page{margin:16mm}body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#16181d}h1{font-size:22px}h2{font-size:14px;margin:18px 0 8px;color:#1f7a52}table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:7px 8px;border-bottom:1px solid #eee;font-size:12px}th{color:#8a9099;text-transform:uppercase;font-size:10px;letter-spacing:.05em}.a{color:#a1493f}.s{font-size:10px;color:#8a9099}</style></head><body><h1>${esc(business?.name ?? 'Menu')} · Allergen menu</h1>${byGroup.map((x) => `<h2>${x.g}</h2><table><thead><tr><th>Dish</th><th>Allergens</th><th>Source</th></tr></thead><tbody>${x.items.map((d) => `<tr><td>${esc(d.name)}</td><td class="a">${d.allergens.length ? d.allergens.map((a) => esc(allergenLabel(a))).join(', ') : 'None declared'}</td><td class="s">${esc(d.meta)}</td></tr>`).join('')}</tbody></table>`).join('')}</body></html>`
     const w = window.open('', '_blank'); if (w) { w.document.write(html); w.document.close(); setTimeout(() => w.print(), 300) }
     toast.success('Print-ready menu opened')
