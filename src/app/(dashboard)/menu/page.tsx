@@ -5,7 +5,7 @@ import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { toast } from 'sonner'
-import { Download, Plus, X, ChevronDown, FileSpreadsheet, FileText, Search, ShieldCheck, PencilLine, Check, Trash2, Building2 } from 'lucide-react'
+import { Download, Plus, X, ChevronDown, ChevronUp, FileSpreadsheet, FileText, Search, ShieldCheck, PencilLine, Check, Trash2, Building2, ListTree } from 'lucide-react'
 import { EU_ALLERGENS } from '@/lib/constants'
 import { DIETARY_FLAGS, effectiveDietary } from '@/lib/dietary'
 import { DISH_CATS, catLabel, catSlug, resolveAllergens, recipeAllergens, allergenLabel, sourceMeta, type Dish, type DishRecipe } from '@/lib/dishes'
@@ -48,6 +48,7 @@ export default function MenuPage() {
   const [srcFilter, setSrcFilter] = useState<'recipe' | 'manual' | null>(null)
   const [exportOpen, setExportOpen] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
+  const [sectionsOpen, setSectionsOpen] = useState(false)
   const [expandedSites, setExpandedSites] = useState<Set<string>>(new Set())
   const exportRef = useRef<HTMLDivElement>(null)
 
@@ -175,6 +176,11 @@ export default function MenuPage() {
               </div>
             )}
           </div>
+          {editable && activeSite && (
+            <button onClick={() => setSectionsOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#fff', border: '1px solid #e2e4e8', color: '#41464d', font: "600 13.5px 'Geist'", padding: '10px 15px', borderRadius: 10, cursor: 'pointer' }}>
+              <ListTree className="h-4 w-4" strokeWidth={1.8} /> Menu sections
+            </button>
+          )}
           {editable && (
             <button onClick={() => setAddOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#1f9d63', border: 'none', color: '#fff', font: "600 13.5px 'Geist'", padding: '10px 16px', borderRadius: 10, cursor: 'pointer', boxShadow: '0 1px 2px rgba(16,24,40,.1)' }}
               onMouseEnter={(e) => (e.currentTarget.style.background = '#1c8e5a')} onMouseLeave={(e) => (e.currentTarget.style.background = '#1f9d63')}>
@@ -314,6 +320,7 @@ export default function MenuPage() {
       </div>
 
       {addOpen && <AddDishDrawer bid={bid!} siteId={activeSite} dishes={dishes} recipes={recipes} menuCategories={menuCategories} onClose={() => setAddOpen(false)} onAdded={() => qc.invalidateQueries({ queryKey: ['dishes', bid] })} />}
+      {sectionsOpen && activeSite && <SectionsPanel bid={bid!} activeSite={activeSite} menuCategories={menuCategories} dishes={dishes} onClose={() => setSectionsOpen(false)} />}
     </div>
   )
 }
@@ -596,5 +603,132 @@ function ModeCard({ on, onClick, icon, title, sub, onBorder, onBg, onFg, onSubFg
       <span style={{ display: 'flex', alignItems: 'center', gap: 8, font: "700 13.5px 'Geist'", color: on ? onFg : '#41464d' }}>{icon}{title}</span>
       <span style={{ display: 'block', font: "500 11.5px/1.4 'Geist'", color: on ? onSubFg : '#9aa0a8', marginTop: 5 }}>{sub}</span>
     </button>
+  )
+}
+
+// ── Menu sections editor (add / rename / reorder / delete) ─────────────────
+function SectionsPanel({ bid, activeSite, menuCategories, dishes, onClose }: { bid: string; activeSite: string; menuCategories: MenuCategory[]; dishes: Dish[]; onClose: () => void }) {
+  const qc = useQueryClient()
+  const [shown, setShown] = useState(false)
+  const [newName, setNewName] = useState('')
+
+  useEffect(() => { const t = requestAnimationFrame(() => setShown(true)); return () => cancelAnimationFrame(t) }, [])
+  function close() { setShown(false); setTimeout(onClose, 240) }
+
+  const invalidateCats = () => qc.invalidateQueries({ queryKey: ['menu-categories', bid, activeSite] })
+  const dupErr = (e: Error) => toast.error(e.message.toLowerCase().includes('duplicate') ? 'That section already exists' : e.message)
+
+  const rename = useMutation({
+    mutationFn: async ({ id, name }: { id: string; name: string }) => {
+      const { error } = await supabase.from('menu_categories').update({ name }).eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: invalidateCats,
+    onError: dupErr,
+  })
+
+  const move = useMutation({
+    mutationFn: async ({ a, b }: { a: MenuCategory; b: MenuCategory }) => {
+      const { error: e1 } = await supabase.from('menu_categories').update({ sort_order: b.sort_order }).eq('id', a.id)
+      if (e1) throw e1
+      const { error: e2 } = await supabase.from('menu_categories').update({ sort_order: a.sort_order }).eq('id', b.id)
+      if (e2) throw e2
+    },
+    onSuccess: invalidateCats,
+    onError: (e: Error) => toast.error(e.message),
+  })
+
+  const remove = useMutation({
+    mutationFn: async (cat: MenuCategory) => {
+      const affected = dishes.filter((d) => d.site_categories?.[activeSite] === cat.id)
+      for (const d of affected) {
+        const { [activeSite]: _drop, ...rest } = d.site_categories
+        const { error } = await supabase.from('menu_items').update({ site_categories: rest }).eq('id', d.id)
+        if (error) throw error
+      }
+      const { error } = await supabase.from('menu_categories').delete().eq('id', cat.id)
+      if (error) throw error
+    },
+    onSuccess: () => { invalidateCats(); qc.invalidateQueries({ queryKey: ['dishes', bid] }) },
+    onError: (e: Error) => toast.error(e.message),
+  })
+
+  const add = useMutation({
+    mutationFn: async (name: string) => {
+      const { error } = await supabase.from('menu_categories')
+        .insert({ business_id: bid, site_id: activeSite, name, sort_order: menuCategories.length })
+      if (error) throw error
+    },
+    onSuccess: () => { invalidateCats(); setNewName('') },
+    onError: dupErr,
+  })
+
+  return (
+    <div onClick={close} style={{ position: 'fixed', inset: 0, background: 'rgba(20,22,27,.4)', zIndex: 60, display: 'flex', justifyContent: 'flex-end', opacity: shown ? 1 : 0, transition: 'opacity .24s ease-out' }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: 440, maxWidth: '96vw', height: '100%', background: '#fff', boxShadow: '-24px 0 64px -32px rgba(16,24,40,.45)', display: 'flex', flexDirection: 'column', overflow: 'hidden', transform: shown ? 'translateX(0)' : 'translateX(100%)', transition: 'transform .24s cubic-bezier(.22,.61,.36,1)' }}>
+        <div style={{ padding: '22px 24px 16px', borderBottom: '1px solid #eef0f2', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14 }}>
+          <div>
+            <h2 style={{ margin: 0, fontSize: 19, fontWeight: 700, letterSpacing: '-.01em' }}>Menu sections</h2>
+            <div style={{ fontSize: 13, color: '#8a9099', marginTop: 3 }}>Add, rename, reorder or delete this site&apos;s menu sections.</div>
+          </div>
+          <button onClick={close} style={{ width: 34, height: 34, borderRadius: 9, border: 'none', background: '#f1f2f4', color: '#5c626b', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = '#e7e9ec')} onMouseLeave={(e) => (e.currentTarget.style.background = '#f1f2f4')}>
+            <X className="h-[17px] w-[17px]" strokeWidth={2} />
+          </button>
+        </div>
+
+        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 24px' }}>
+          {menuCategories.length === 0 ? (
+            <div style={{ padding: '24px 0', textAlign: 'center', color: '#9aa0a8', fontSize: 13 }}>No sections yet — add one below.</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {menuCategories.map((c, i) => (
+                <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 6, border: '1px solid #e9eaed', borderRadius: 11, padding: '7px 8px 7px 12px' }}>
+                  <input
+                    key={`${c.id}-${c.name}`}
+                    defaultValue={c.name}
+                    disabled={rename.isPending}
+                    onBlur={(e) => {
+                      const v = e.target.value.trim()
+                      if (v && v !== c.name) rename.mutate({ id: c.id, name: v })
+                      else e.target.value = c.name
+                    }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+                    style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', background: 'none', font: "600 13.5px 'Geist'", color: '#1c1f24' }}
+                  />
+                  <button onClick={() => move.mutate({ a: c, b: menuCategories[i - 1] })} disabled={i === 0 || move.isPending} title="Move up"
+                    style={{ width: 28, height: 28, flex: 'none', border: '1px solid #e2e4e8', background: '#fff', color: i === 0 ? '#cfd3d9' : '#5c626b', borderRadius: 8, cursor: i === 0 ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <ChevronUp className="h-3.5 w-3.5" strokeWidth={2} />
+                  </button>
+                  <button onClick={() => move.mutate({ a: c, b: menuCategories[i + 1] })} disabled={i === menuCategories.length - 1 || move.isPending} title="Move down"
+                    style={{ width: 28, height: 28, flex: 'none', border: '1px solid #e2e4e8', background: '#fff', color: i === menuCategories.length - 1 ? '#cfd3d9' : '#5c626b', borderRadius: 8, cursor: i === menuCategories.length - 1 ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <ChevronDown className="h-3.5 w-3.5" strokeWidth={2} />
+                  </button>
+                  <button
+                    onClick={() => { if (window.confirm(`Delete "${c.name}"? Its dishes become Uncategorised.`)) remove.mutate(c) }}
+                    disabled={remove.isPending} title="Delete section"
+                    style={{ width: 28, height: 28, flex: 'none', border: '1px solid #f0dcd8', background: '#fff', color: '#c0503f', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = '#fbeae7')} onMouseLeave={(e) => (e.currentTarget.style.background = '#fff')}>
+                    <Trash2 className="h-3.5 w-3.5" strokeWidth={1.9} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div style={{ padding: '16px 24px', borderTop: '1px solid #eef0f2', display: 'flex', gap: 8 }}>
+          <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="＋ Add section"
+            onKeyDown={(e) => { if (e.key === 'Enter' && newName.trim() && !add.isPending) add.mutate(newName.trim()) }}
+            style={{ flex: 1, border: '1px solid #e2e4e8', borderRadius: 10, padding: '10px 12px', font: "500 13.5px 'Geist'", outline: 'none' }}
+            onFocus={(e) => { e.currentTarget.style.borderColor = '#1f9d63'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(31,157,99,.1)' }}
+            onBlur={(e) => { e.currentTarget.style.borderColor = '#e2e4e8'; e.currentTarget.style.boxShadow = 'none' }} />
+          <button onClick={() => newName.trim() && add.mutate(newName.trim())} disabled={!newName.trim() || add.isPending}
+            style={{ background: newName.trim() ? '#1f9d63' : '#cfe6da', border: 'none', color: newName.trim() ? '#fff' : '#8fb9a4', font: "600 13.5px 'Geist'", padding: '10px 16px', borderRadius: 10, cursor: newName.trim() ? 'pointer' : 'not-allowed' }}>
+            {add.isPending ? 'Adding…' : 'Add'}
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
