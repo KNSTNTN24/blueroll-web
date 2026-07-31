@@ -9,9 +9,10 @@ import { Download, Plus, X, ChevronDown, FileSpreadsheet, FileText, Search, Shie
 import { EU_ALLERGENS } from '@/lib/constants'
 import { DIETARY_FLAGS, effectiveDietary } from '@/lib/dietary'
 import { DISH_CATS, catLabel, catSlug, resolveAllergens, recipeAllergens, allergenLabel, sourceMeta, type Dish, type DishRecipe } from '@/lib/dishes'
+import { dishSectionName, groupDishesBySection, type MenuCategory } from '@/lib/menu-categories'
 
 const RECIPE_SELECT = 'id, name, category, vegan_override, vegetarian_override, gluten_free_override, dairy_free_override, recipe_ingredients(ingredient:ingredients(name, allergens))'
-const DISH_SELECT = `id, name, category, active, allergen_source, recipe_id, declared_allergens, may_contain, dietary, attested_by_name, attested_at, site_ids, recipe:recipes(${RECIPE_SELECT})`
+const DISH_SELECT = `id, name, category, active, allergen_source, recipe_id, declared_allergens, may_contain, dietary, attested_by_name, attested_at, site_ids, site_categories, recipe:recipes(${RECIPE_SELECT})`
 
 type RecipeRow = DishRecipe & { category: string | null; vegan_override: boolean | null; vegetarian_override: boolean | null; gluten_free_override: boolean | null; dairy_free_override: boolean | null }
 
@@ -74,6 +75,14 @@ export default function MenuPage() {
     },
   })
 
+  const { data: menuCategories = [] } = useQuery({
+    queryKey: ['menu-categories', bid, activeSite],
+    enabled: !!bid && !!activeSite,
+    queryFn: async () => (await supabase.from('menu_categories')
+      .select('id, site_id, name, sort_order').eq('business_id', bid!).eq('site_id', activeSite!)
+      .order('sort_order')).data as MenuCategory[] ?? [],
+  })
+
   // On a specific site (multi-site business) the menu is that site's dishes.
   // All-sites and single-site businesses see every dish.
   const siteDishes = useMemo(
@@ -84,12 +93,12 @@ export default function MenuPage() {
   const rows = useMemo(() => siteDishes.map((d) => ({
     dish: d,
     name: d.name,
-    group: catLabel(d.category),
+    group: activeSite ? dishSectionName(d, activeSite, menuCategories) : catLabel(d.category),
     fromRecipe: d.allergen_source === 'recipe',
     meta: sourceMeta(d),
     allergens: resolveAllergens(d),
     dietary: dishDietary(d),
-  })), [siteDishes])
+  })), [siteDishes, activeSite, menuCategories])
 
   const recipeCount = siteDishes.filter((d) => d.allergen_source === 'recipe').length
   const manualCount = siteDishes.filter((d) => d.allergen_source === 'manual').length
@@ -100,7 +109,9 @@ export default function MenuPage() {
     if (query && !r.name.toLowerCase().includes(query.toLowerCase())) return false
     return true
   })
-  const sections = DISH_CATS.map((c) => ({ name: c, rows: shown.filter((r) => r.group === c) })).filter((s) => s.rows.length)
+  const sections = activeSite
+    ? groupDishesBySection(shown, activeSite, menuCategories, (r) => r.dish)
+    : DISH_CATS.map((c) => ({ name: c, rows: shown.filter((r) => r.group === c) })).filter((s) => s.rows.length)
 
   // A1 delete: take the dish off THIS site's menu. If it's on no other site, the
   // row is deleted outright; otherwise just drop this site from its site_ids.
@@ -193,7 +204,7 @@ export default function MenuPage() {
             onBlur={(e) => { e.currentTarget.style.borderColor = '#e7e9ec'; e.currentTarget.style.boxShadow = 'none' }} />
         </div>
         <div style={{ display: 'flex', gap: 3, background: '#eceef1', padding: 4, borderRadius: 11 }}>
-          {['All', ...DISH_CATS].map((c) => {
+          {['All', ...(activeSite ? menuCategories.map((c) => c.name) : DISH_CATS)].map((c) => {
             const on = cat === c
             return (
               <button key={c} onClick={() => setCat(c)}
