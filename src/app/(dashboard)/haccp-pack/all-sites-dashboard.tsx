@@ -21,9 +21,10 @@ const pctColor = (p: number) => (p >= 80 ? '#1f7a52' : p >= 40 ? '#b07d1e' : '#c
  * (haccp_pack_data is keyed by business_id), so completion is a group figure;
  * what varies per site is whether that site's manager has signed it off.
  */
-export function AllSitesDashboard({ sectionProgress, totalProgress, reviewLabel, reviewOverdue, onExportPDF }: {
+export function AllSitesDashboard({ sectionProgress, totalProgress, siteProgress, reviewLabel, reviewOverdue, onExportPDF }: {
   sectionProgress: Record<string, Progress>
   totalProgress: Progress
+  siteProgress?: Record<string, Progress>
   reviewLabel: string
   reviewOverdue: boolean
   onExportPDF: () => void
@@ -81,7 +82,7 @@ export function AllSitesDashboard({ sectionProgress, totalProgress, reviewLabel,
         <div>
           <h1 style={{ margin: 0, fontSize: 26, fontWeight: 700, letterSpacing: '-.02em' }}>HACCP Pack</h1>
           <div style={{ color: '#6b7280', fontSize: 14, marginTop: 4 }}>
-            {business?.name ?? 'Your group'} · one shared pack across {sites.length} sites
+            {business?.name ?? 'Your group'} · a pack per site, {sites.length} sites
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -116,7 +117,7 @@ export function AllSitesDashboard({ sectionProgress, totalProgress, reviewLabel,
       <div style={{ background: '#fff', border: '1px solid #e9eaed', borderRadius: 16, padding: '18px 20px 20px', boxShadow: '0 1px 2px rgba(16,24,40,.03),0 14px 36px -28px rgba(16,24,40,.16)' }}>
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
           <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Group completion by section</h2>
-          <span style={{ font: "500 13px 'Geist'", color: '#8a9099', whiteSpace: 'nowrap' }}>shared across all {sites.length} sites</span>
+          <span style={{ font: "500 13px 'Geist'", color: '#8a9099', whiteSpace: 'nowrap' }}>group average across {sites.length} sites</span>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,minmax(0,1fr))', gap: 22, marginTop: 18 }}>
           {HACCP_SECTIONS.map((s) => {
@@ -158,8 +159,10 @@ export function AllSitesDashboard({ sectionProgress, totalProgress, reviewLabel,
                     </div>
                   </div>
                   <div style={{ textAlign: 'right', flex: 'none' }}>
-                    <div style={{ font: "700 22px/1 'Geist'", fontVariantNumeric: 'tabular-nums', color: pctColor(totalProgress.pct) }}>{totalProgress.pct}%</div>
-                    <div style={{ font: "500 11px 'Geist'", color: '#a3a8b0', marginTop: 3, whiteSpace: 'nowrap' }}>{totalProgress.filled} / {totalProgress.total}</div>
+                    {(() => { const sp = siteProgress?.[s.id] ?? { filled: 0, total: totalProgress.total, pct: 0 }; return (<>
+                      <div style={{ font: "700 22px/1 'Geist'", fontVariantNumeric: 'tabular-nums', color: pctColor(sp.pct) }}>{sp.pct}%</div>
+                      <div style={{ font: "500 11px 'Geist'", color: '#a3a8b0', marginTop: 3, whiteSpace: 'nowrap' }}>{sp.filled} / {sp.total}</div>
+                    </>) })()}
                   </div>
                 </div>
 

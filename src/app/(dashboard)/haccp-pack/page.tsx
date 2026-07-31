@@ -416,17 +416,20 @@ export default function HaccpPackPage() {
   const sentinelRef = useRef<HTMLDivElement | null>(null)
 
   const businessId = business?.id ?? ''
+  // Packs are per-site: resolve which site's pack this page edits.
+  const packSiteId = currentSiteId ?? (sites.length === 1 ? sites[0].id : null)
   const autoFillEnabled = business?.haccp_auto_fill ?? true
 
   // ── Fetch HACCP pack data ──
   const { data: packData } = useQuery({
-    queryKey: ['haccp-pack', businessId],
+    queryKey: ['haccp-pack', businessId, packSiteId],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let q = supabase
         .from('haccp_pack_data')
         .select('*')
         .eq('business_id', businessId)
-        .single()
+      q = packSiteId ? q.eq('site_id', packSiteId) : q.is('site_id', null)
+      const { data, error } = await q.single()
       if (error && error.code !== 'PGRST116') throw error
       if (!data) return { ...EMPTY_DATA, business_id: businessId }
       // DB stores {data: {toggles, texts, ...}} — unpack into flat HaccpPackRow
@@ -745,11 +748,11 @@ export default function HaccpPackPage() {
       }
       const { error } = await supabase
         .from('haccp_pack_data')
-        .upsert(payload, { onConflict: 'business_id' })
+        .upsert({ ...payload, site_id: packSiteId }, { onConflict: 'business_id,site_id' })
       if (error) throw error
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['haccp-pack', businessId] })
+      queryClient.invalidateQueries({ queryKey: ['haccp-pack', businessId, packSiteId] })
     },
     onError: () => {
       toast.error('Failed to save HACCP Pack data')
@@ -819,6 +822,37 @@ export default function HaccpPackPage() {
     () => computeTotalProgress(localData, autoData, autoFillEnabled),
     [localData, autoData, autoFillEnabled],
   )
+
+  // Per-site packs (packs are separate documents per site now) — feeds the
+  // All-sites dashboard so every site shows its own completeness.
+  const { data: allPackRows = [] } = useQuery({
+    queryKey: ['haccp-pack-all', businessId],
+    enabled: !!businessId && isAllSites,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('haccp_pack_data')
+        .select('site_id, data')
+        .eq('business_id', businessId)
+        .not('site_id', 'is', null)
+      return (data ?? []) as { site_id: string; data: Record<string, unknown> }[]
+    },
+  })
+  const siteProgress = useMemo(() => {
+    const m: Record<string, { filled: number; total: number; pct: number }> = {}
+    for (const r of allPackRows) {
+      const inner = (r.data ?? {}) as Partial<HaccpPackRow>
+      const rowData: HaccpPackRow = {
+        business_id: businessId,
+        toggles: inner.toggles ?? {}, texts: inner.texts ?? {},
+        files: inner.files ?? {}, selects: inner.selects ?? {},
+        overrides: inner.overrides ?? {},
+      }
+      const p = computeTotalProgress(rowData, autoData, autoFillEnabled)
+      m[r.site_id] = { filled: p.filled, total: p.total, pct: p.pct }
+    }
+    return m
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allPackRows, autoData, autoFillEnabled])
 
   // ── 4-week review ──
   const reviewInfo = useMemo(() => {
@@ -941,6 +975,7 @@ export default function HaccpPackPage() {
       <AllSitesDashboard
         sectionProgress={sectionProgress}
         totalProgress={totalProgress}
+        siteProgress={siteProgress}
         reviewLabel={reviewInfo.label}
         reviewOverdue={reviewInfo.overdue}
         onExportPDF={handleExportPDF}
