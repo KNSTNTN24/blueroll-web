@@ -419,6 +419,9 @@ function AddDishDrawer({ bid, siteId, dishes, recipes, menuCategories, onClose, 
   function close() { setShown(false); setTimeout(onClose, 240) }
 
   const opts = recipes.filter((r) => !rQuery || r.name.toLowerCase().includes(rQuery.toLowerCase()))
+  const alreadyIds = new Set(
+    siteId ? dishes.filter((d) => d.recipe_id && (d.site_ids ?? []).includes(siteId)).map((d) => d.recipe_id) : []
+  )
   const selected = recipes.find((r) => r.id === rSel) ?? null
   const selAllergens = selected ? recipeAllergens(selected) : []
 
@@ -528,14 +531,18 @@ function AddDishDrawer({ bid, siteId, dishes, recipes, menuCategories, onClose, 
                 {opts.map((r) => {
                   const on = rSel === r.id
                   const al = recipeAllergens(r)
+                  const already = alreadyIds.has(r.id)
                   return (
                     <button key={r.id} onClick={() => setRSel(r.id)}
                       style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left', border: `1.5px solid ${on ? '#1f9d63' : '#e9eaed'}`, background: on ? '#f5faf7' : '#fff', borderRadius: 12, padding: '12px 14px', cursor: 'pointer' }}>
                       <span style={{ width: 34, height: 34, borderRadius: 9, background: '#f1f2f4', color: '#8a9099', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M4 11h16" /><path d="M5 11a7 7 0 0 0 14 0" /><line x1="12" y1="4" x2="12" y2="7" /></svg>
                       </span>
-                      <span style={{ flex: 1, minWidth: 0 }}>
-                        <span style={{ display: 'block', font: "600 13.5px 'Geist'", color: '#1c1f24' }}>{r.name}</span>
+                      <span style={{ flex: 1, minWidth: 0, opacity: already ? .55 : 1 }}>
+                        <span style={{ display: 'block', font: "600 13.5px 'Geist'", color: '#1c1f24' }}>
+                          {r.name}
+                          {already && <span style={{ marginLeft: 8, font: "600 10.5px 'Geist'", padding: '2px 7px', borderRadius: 6, background: '#eaf4ee', color: '#1f7a52', verticalAlign: 'middle' }}>On menu</span>}
+                        </span>
                         <span style={{ display: 'block', font: "500 11.5px 'Geist'", color: '#9aa0a8', marginTop: 2 }}>{catLabel(r.category)} · {al.length ? `${al.length} allergens` : 'No allergens'}</span>
                       </span>
                       {on && <span style={{ color: '#1f9d63', display: 'flex' }}><Check className="h-[18px] w-[18px]" strokeWidth={2.4} /></span>}
