@@ -5,13 +5,14 @@ import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { toast } from 'sonner'
-import { Download, Plus, X, ChevronDown, FileSpreadsheet, FileText, Search, ShieldCheck, PencilLine, Check, Trash2, Building2 } from 'lucide-react'
+import { Download, Plus, X, ChevronDown, ChevronUp, FileSpreadsheet, FileText, Search, ShieldCheck, PencilLine, Check, Trash2, Building2, ListTree } from 'lucide-react'
 import { EU_ALLERGENS } from '@/lib/constants'
 import { DIETARY_FLAGS, effectiveDietary } from '@/lib/dietary'
 import { DISH_CATS, catLabel, catSlug, resolveAllergens, recipeAllergens, allergenLabel, sourceMeta, type Dish, type DishRecipe } from '@/lib/dishes'
+import { dishSectionName, groupDishesBySection, type MenuCategory } from '@/lib/menu-categories'
 
 const RECIPE_SELECT = 'id, name, category, vegan_override, vegetarian_override, gluten_free_override, dairy_free_override, recipe_ingredients(ingredient:ingredients(name, allergens))'
-const DISH_SELECT = `id, name, category, active, allergen_source, recipe_id, declared_allergens, may_contain, dietary, attested_by_name, attested_at, site_ids, recipe:recipes(${RECIPE_SELECT})`
+const DISH_SELECT = `id, name, category, active, allergen_source, recipe_id, declared_allergens, may_contain, dietary, attested_by_name, attested_at, site_ids, site_categories, recipe:recipes(${RECIPE_SELECT})`
 
 type RecipeRow = DishRecipe & { category: string | null; vegan_override: boolean | null; vegetarian_override: boolean | null; gluten_free_override: boolean | null; dairy_free_override: boolean | null }
 
@@ -47,6 +48,7 @@ export default function MenuPage() {
   const [srcFilter, setSrcFilter] = useState<'recipe' | 'manual' | null>(null)
   const [exportOpen, setExportOpen] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
+  const [sectionsOpen, setSectionsOpen] = useState(false)
   const [expandedSites, setExpandedSites] = useState<Set<string>>(new Set())
   const exportRef = useRef<HTMLDivElement>(null)
 
@@ -74,6 +76,14 @@ export default function MenuPage() {
     },
   })
 
+  const { data: menuCategories = [] } = useQuery({
+    queryKey: ['menu-categories', bid, activeSite],
+    enabled: !!bid && !!activeSite,
+    queryFn: async () => (await supabase.from('menu_categories')
+      .select('id, site_id, name, sort_order').eq('business_id', bid!).eq('site_id', activeSite!)
+      .order('sort_order')).data as MenuCategory[] ?? [],
+  })
+
   // On a specific site (multi-site business) the menu is that site's dishes.
   // All-sites and single-site businesses see every dish.
   const siteDishes = useMemo(
@@ -84,12 +94,12 @@ export default function MenuPage() {
   const rows = useMemo(() => siteDishes.map((d) => ({
     dish: d,
     name: d.name,
-    group: catLabel(d.category),
+    group: activeSite ? dishSectionName(d, activeSite, menuCategories) : catLabel(d.category),
     fromRecipe: d.allergen_source === 'recipe',
     meta: sourceMeta(d),
     allergens: resolveAllergens(d),
     dietary: dishDietary(d),
-  })), [siteDishes])
+  })), [siteDishes, activeSite, menuCategories])
 
   const recipeCount = siteDishes.filter((d) => d.allergen_source === 'recipe').length
   const manualCount = siteDishes.filter((d) => d.allergen_source === 'manual').length
@@ -100,7 +110,9 @@ export default function MenuPage() {
     if (query && !r.name.toLowerCase().includes(query.toLowerCase())) return false
     return true
   })
-  const sections = DISH_CATS.map((c) => ({ name: c, rows: shown.filter((r) => r.group === c) })).filter((s) => s.rows.length)
+  const sections = activeSite
+    ? groupDishesBySection(shown, activeSite, menuCategories, (r) => r.dish)
+    : DISH_CATS.map((c) => ({ name: c, rows: shown.filter((r) => r.group === c) })).filter((s) => s.rows.length)
 
   // A1 delete: take the dish off THIS site's menu. If it's on no other site, the
   // row is deleted outright; otherwise just drop this site from its site_ids.
@@ -115,6 +127,24 @@ export default function MenuPage() {
     qc.invalidateQueries({ queryKey: ['dishes', bid] })
     toast.success(`${d.name} removed from ${siteName(activeSite)}`)
   }
+
+  const setSection = useMutation({
+    mutationFn: async ({ dish, catId }: { dish: Dish; catId: string }) => {
+      if (!activeSite) return
+      const base = dish.site_categories ?? {}
+      let next: Record<string, string>
+      if (catId === '') {
+        const { [activeSite]: _drop, ...rest } = base
+        next = rest
+      } else {
+        next = { ...base, [activeSite]: catId }
+      }
+      const { error } = await supabase.from('menu_items').update({ site_categories: next }).eq('id', dish.id)
+      if (error) throw error
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['dishes', bid] }),
+    onError: (e: Error) => toast.error(e.message),
+  })
 
   function exportCSV() {
     const out = [['Dish', 'Category', 'Allergen source', 'Attested by', 'Allergens', 'Dietary']]
@@ -133,7 +163,9 @@ export default function MenuPage() {
   function exportPDF() {
     setExportOpen(false)
     const esc = (s: string) => String(s).replace(/[&<>]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m]!))
-    const byGroup = DISH_CATS.map((g) => ({ g, items: rows.filter((r) => r.group === g) })).filter((x) => x.items.length)
+    const byGroup = activeSite
+      ? groupDishesBySection(rows, activeSite, menuCategories, (r) => r.dish).map((s) => ({ g: s.name, items: s.rows }))
+      : DISH_CATS.map((g) => ({ g, items: rows.filter((r) => r.group === g) })).filter((x) => x.items.length)
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>Allergen menu</title><style>@page{margin:16mm}body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#16181d}h1{font-size:22px}h2{font-size:14px;margin:18px 0 8px;color:#1f7a52}table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:7px 8px;border-bottom:1px solid #eee;font-size:12px}th{color:#8a9099;text-transform:uppercase;font-size:10px;letter-spacing:.05em}.a{color:#a1493f}.s{font-size:10px;color:#8a9099}</style></head><body><h1>${esc(business?.name ?? 'Menu')} · Allergen menu</h1>${byGroup.map((x) => `<h2>${x.g}</h2><table><thead><tr><th>Dish</th><th>Allergens</th><th>Source</th></tr></thead><tbody>${x.items.map((d) => `<tr><td>${esc(d.name)}</td><td class="a">${d.allergens.length ? d.allergens.map((a) => esc(allergenLabel(a))).join(', ') : 'None declared'}</td><td class="s">${esc(d.meta)}</td></tr>`).join('')}</tbody></table>`).join('')}</body></html>`
     const w = window.open('', '_blank'); if (w) { w.document.write(html); w.document.close(); setTimeout(() => w.print(), 300) }
     toast.success('Print-ready menu opened')
@@ -164,6 +196,11 @@ export default function MenuPage() {
               </div>
             )}
           </div>
+          {editable && activeSite && (
+            <button onClick={() => setSectionsOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#fff', border: '1px solid #e2e4e8', color: '#41464d', font: "600 13.5px 'Geist'", padding: '10px 15px', borderRadius: 10, cursor: 'pointer' }}>
+              <ListTree className="h-4 w-4" strokeWidth={1.8} /> Menu sections
+            </button>
+          )}
           {editable && (
             <button onClick={() => setAddOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#1f9d63', border: 'none', color: '#fff', font: "600 13.5px 'Geist'", padding: '10px 16px', borderRadius: 10, cursor: 'pointer', boxShadow: '0 1px 2px rgba(16,24,40,.1)' }}
               onMouseEnter={(e) => (e.currentTarget.style.background = '#1c8e5a')} onMouseLeave={(e) => (e.currentTarget.style.background = '#1f9d63')}>
@@ -193,7 +230,7 @@ export default function MenuPage() {
             onBlur={(e) => { e.currentTarget.style.borderColor = '#e7e9ec'; e.currentTarget.style.boxShadow = 'none' }} />
         </div>
         <div style={{ display: 'flex', gap: 3, background: '#eceef1', padding: 4, borderRadius: 11 }}>
-          {['All', ...DISH_CATS].map((c) => {
+          {['All', ...(activeSite ? menuCategories.map((c) => c.name) : DISH_CATS)].map((c) => {
             const on = cat === c
             return (
               <button key={c} onClick={() => setCat(c)}
@@ -273,11 +310,23 @@ export default function MenuPage() {
                           <ChevronDown className="h-3.5 w-3.5" style={{ transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} strokeWidth={2} />
                         </span>
                       ) : (
-                        <button onClick={() => removeDish(r.dish)} title="Remove from this site's menu"
-                          style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 32, height: 32, border: '1px solid #f0dcd8', background: '#fff', color: '#c0503f', borderRadius: 9, cursor: 'pointer' }}
-                          onMouseEnter={(e) => (e.currentTarget.style.background = '#fbeae7')} onMouseLeave={(e) => (e.currentTarget.style.background = '#fff')}>
-                          <Trash2 className="h-4 w-4" strokeWidth={1.9} />
-                        </button>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'flex-end' }}>
+                          <select
+                            value={r.dish.site_categories?.[activeSite!] ?? ''}
+                            disabled={setSection.isPending}
+                            onChange={(e) => setSection.mutate({ dish: r.dish, catId: e.target.value })}
+                            title="Move to another menu section"
+                            style={{ border: '1px solid #e2e4e8', borderRadius: 9, padding: '6px 8px', font: "600 12px 'Geist'", color: '#5c626b', background: '#fff', cursor: 'pointer', maxWidth: 150 }}
+                          >
+                            <option value="">Uncategorised</option>
+                            {menuCategories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                          </select>
+                          <button onClick={() => removeDish(r.dish)} title="Remove from this site's menu"
+                            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 32, height: 32, border: '1px solid #f0dcd8', background: '#fff', color: '#c0503f', borderRadius: 9, cursor: 'pointer' }}
+                            onMouseEnter={(e) => (e.currentTarget.style.background = '#fbeae7')} onMouseLeave={(e) => (e.currentTarget.style.background = '#fff')}>
+                            <Trash2 className="h-4 w-4" strokeWidth={1.9} />
+                          </button>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -302,7 +351,8 @@ export default function MenuPage() {
         </div>
       </div>
 
-      {addOpen && <AddDishDrawer bid={bid!} siteId={activeSite} dishes={dishes} recipes={recipes} onClose={() => setAddOpen(false)} onAdded={() => qc.invalidateQueries({ queryKey: ['dishes', bid] })} />}
+      {addOpen && <AddDishDrawer bid={bid!} siteId={activeSite} dishes={dishes} recipes={recipes} menuCategories={menuCategories} onClose={() => setAddOpen(false)} onAdded={() => qc.invalidateQueries({ queryKey: ['dishes', bid] })} />}
+      {sectionsOpen && activeSite && <SectionsPanel bid={bid!} activeSite={activeSite} menuCategories={menuCategories} dishes={dishes} onClose={() => setSectionsOpen(false)} />}
     </div>
   )
 }
@@ -333,7 +383,8 @@ function ExportOpt({ icon, bg, fg, title, sub, onClick }: { icon: React.ReactNod
 }
 
 // ── New dish drawer ─────────────────────────────────────────────────
-function AddDishDrawer({ bid, siteId, dishes, recipes, onClose, onAdded }: { bid: string; siteId: string | null; dishes: Dish[]; recipes: RecipeRow[]; onClose: () => void; onAdded: () => void }) {
+function AddDishDrawer({ bid, siteId, dishes, recipes, menuCategories, onClose, onAdded }: { bid: string; siteId: string | null; dishes: Dish[]; recipes: RecipeRow[]; menuCategories: MenuCategory[]; onClose: () => void; onAdded: () => void }) {
+  const qc = useQueryClient()
   const profile = useAuthStore((s) => s.profile)
   const [shown, setShown] = useState(false)
   const [mode, setMode] = useState<'recipe' | 'manual'>('recipe')
@@ -341,14 +392,36 @@ function AddDishDrawer({ bid, siteId, dishes, recipes, onClose, onAdded }: { bid
   const [rSel, setRSel] = useState<string | null>(null)
   const [qName, setQName] = useState('')
   const [qCat, setQCat] = useState<string>('Other')
+  const [catId, setCatId] = useState<string | null>(null)
   const [qAllergens, setQAllergens] = useState<Set<string>>(new Set())
   const [qDietary, setQDietary] = useState<Set<string>>(new Set())
   const [attest, setAttest] = useState(false)
+
+  const newSection = useMutation({
+    mutationFn: async () => {
+      const name = window.prompt('New menu section')?.trim()
+      if (!name) return null
+      const { data, error } = await supabase.from('menu_categories')
+        .insert({ business_id: bid, site_id: siteId, name, sort_order: menuCategories.length })
+        .select('id').single()
+      if (error) throw error
+      return data.id as string
+    },
+    onSuccess: (id) => {
+      if (!id) return
+      setCatId(id)
+      qc.invalidateQueries({ queryKey: ['menu-categories', bid, siteId] })
+    },
+    onError: (e: Error) => toast.error(e.message.includes('duplicate') ? 'That section already exists' : e.message),
+  })
 
   useEffect(() => { const t = requestAnimationFrame(() => setShown(true)); return () => cancelAnimationFrame(t) }, [])
   function close() { setShown(false); setTimeout(onClose, 240) }
 
   const opts = recipes.filter((r) => !rQuery || r.name.toLowerCase().includes(rQuery.toLowerCase()))
+  const alreadyIds = new Set(
+    siteId ? dishes.filter((d) => d.recipe_id && (d.site_ids ?? []).includes(siteId)).map((d) => d.recipe_id) : []
+  )
   const selected = recipes.find((r) => r.id === rSel) ?? null
   const selAllergens = selected ? recipeAllergens(selected) : []
 
@@ -364,13 +437,17 @@ function AddDishDrawer({ bid, siteId, dishes, recipes, onClose, onAdded }: { bid
         const existing = dishes.find((d) => d.allergen_source === 'recipe' && d.recipe_id === r.id)
         if (existing) {
           const next = siteId ? Array.from(new Set([...(existing.site_ids ?? []), siteId])) : (existing.site_ids ?? [])
-          const { error } = await supabase.from('menu_items').update({ site_ids: next }).eq('id', existing.id)
+          const { error } = await supabase.from('menu_items').update({
+            site_ids: next,
+            site_categories: { ...((existing.site_categories) ?? {}), ...(siteId && catId ? { [siteId]: catId } : {}) },
+          }).eq('id', existing.id)
           if (error) throw error
           return r.name
         }
         const { error } = await supabase.from('menu_items').insert({
           business_id: bid, name: r.name, category: catSlug(catLabel(r.category)),
           recipe_id: r.id, allergen_source: 'recipe', active: true, display_order: 0, site_ids: siteArr,
+          site_categories: siteId && catId ? { [siteId]: catId } : {},
         })
         if (error) throw error
         return r.name
@@ -386,11 +463,12 @@ function AddDishDrawer({ bid, siteId, dishes, recipes, onClose, onAdded }: { bid
         attested_by_name: profile?.full_name ?? profile?.email ?? 'Unknown',
         attested_at: new Date().toISOString(),
         active: true, display_order: 0, site_ids: siteArr,
+        site_categories: siteId && catId ? { [siteId]: catId } : {},
       })
       if (error) throw error
       return qName.trim()
     },
-    onSuccess: (name) => { onAdded(); toast.success(`${name} added to the menu`); close() },
+    onSuccess: (name) => { onAdded(); qc.invalidateQueries({ queryKey: ['menu-categories', bid, siteId] }); toast.success(`${name} added to the menu`); close() },
     onError: (e: Error) => toast.error(e.message),
   })
 
@@ -419,6 +497,27 @@ function AddDishDrawer({ bid, siteId, dishes, recipes, onClose, onAdded }: { bid
           </div>
         </div>
 
+        {siteId && (
+          <div style={{ padding: '4px 24px 0' }}>
+            <label style={label}>Menu section</label>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+              {menuCategories.map((c) => {
+                const on = catId === c.id
+                return (
+                  <button key={c.id} onClick={() => setCatId(c.id)}
+                    style={{ border: on ? '1.5px solid #1f9d63' : '1px solid #e2e4e8', background: on ? '#f5faf7' : '#fff', color: on ? '#1a6e49' : '#5c626b', font: "600 12.5px 'Geist'", padding: '7px 13px', borderRadius: 9, cursor: 'pointer' }}>
+                    {c.name}
+                  </button>
+                )
+              })}
+              <button onClick={() => newSection.mutate()} disabled={newSection.isPending}
+                style={{ border: '1px dashed #cfd3d9', background: '#fff', color: '#5c626b', font: "600 12.5px 'Geist'", padding: '7px 13px', borderRadius: 9, cursor: newSection.isPending ? 'not-allowed' : 'pointer' }}>
+                ＋ New section
+              </button>
+            </div>
+          </div>
+        )}
+
         <div style={{ flex: 1, overflowY: 'auto', padding: '18px 24px 8px' }}>
           {mode === 'recipe' ? (
             <>
@@ -432,14 +531,18 @@ function AddDishDrawer({ bid, siteId, dishes, recipes, onClose, onAdded }: { bid
                 {opts.map((r) => {
                   const on = rSel === r.id
                   const al = recipeAllergens(r)
+                  const already = alreadyIds.has(r.id)
                   return (
                     <button key={r.id} onClick={() => setRSel(r.id)}
                       style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left', border: `1.5px solid ${on ? '#1f9d63' : '#e9eaed'}`, background: on ? '#f5faf7' : '#fff', borderRadius: 12, padding: '12px 14px', cursor: 'pointer' }}>
                       <span style={{ width: 34, height: 34, borderRadius: 9, background: '#f1f2f4', color: '#8a9099', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M4 11h16" /><path d="M5 11a7 7 0 0 0 14 0" /><line x1="12" y1="4" x2="12" y2="7" /></svg>
                       </span>
-                      <span style={{ flex: 1, minWidth: 0 }}>
-                        <span style={{ display: 'block', font: "600 13.5px 'Geist'", color: '#1c1f24' }}>{r.name}</span>
+                      <span style={{ flex: 1, minWidth: 0, opacity: already ? .55 : 1 }}>
+                        <span style={{ display: 'block', font: "600 13.5px 'Geist'", color: '#1c1f24' }}>
+                          {r.name}
+                          {already && <span style={{ marginLeft: 8, font: "600 10.5px 'Geist'", padding: '2px 7px', borderRadius: 6, background: '#eaf4ee', color: '#1f7a52', verticalAlign: 'middle' }}>On menu</span>}
+                        </span>
                         <span style={{ display: 'block', font: "500 11.5px 'Geist'", color: '#9aa0a8', marginTop: 2 }}>{catLabel(r.category)} · {al.length ? `${al.length} allergens` : 'No allergens'}</span>
                       </span>
                       {on && <span style={{ color: '#1f9d63', display: 'flex' }}><Check className="h-[18px] w-[18px]" strokeWidth={2.4} /></span>}
@@ -539,5 +642,132 @@ function ModeCard({ on, onClick, icon, title, sub, onBorder, onBg, onFg, onSubFg
       <span style={{ display: 'flex', alignItems: 'center', gap: 8, font: "700 13.5px 'Geist'", color: on ? onFg : '#41464d' }}>{icon}{title}</span>
       <span style={{ display: 'block', font: "500 11.5px/1.4 'Geist'", color: on ? onSubFg : '#9aa0a8', marginTop: 5 }}>{sub}</span>
     </button>
+  )
+}
+
+// ── Menu sections editor (add / rename / reorder / delete) ─────────────────
+function SectionsPanel({ bid, activeSite, menuCategories, dishes, onClose }: { bid: string; activeSite: string; menuCategories: MenuCategory[]; dishes: Dish[]; onClose: () => void }) {
+  const qc = useQueryClient()
+  const [shown, setShown] = useState(false)
+  const [newName, setNewName] = useState('')
+
+  useEffect(() => { const t = requestAnimationFrame(() => setShown(true)); return () => cancelAnimationFrame(t) }, [])
+  function close() { setShown(false); setTimeout(onClose, 240) }
+
+  const invalidateCats = () => qc.invalidateQueries({ queryKey: ['menu-categories', bid, activeSite] })
+  const dupErr = (e: Error) => toast.error(e.message.toLowerCase().includes('duplicate') ? 'That section already exists' : e.message)
+
+  const rename = useMutation({
+    mutationFn: async ({ id, name }: { id: string; name: string }) => {
+      const { error } = await supabase.from('menu_categories').update({ name }).eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: invalidateCats,
+    onError: dupErr,
+  })
+
+  const move = useMutation({
+    mutationFn: async ({ a, b }: { a: MenuCategory; b: MenuCategory }) => {
+      const { error: e1 } = await supabase.from('menu_categories').update({ sort_order: b.sort_order }).eq('id', a.id)
+      if (e1) throw e1
+      const { error: e2 } = await supabase.from('menu_categories').update({ sort_order: a.sort_order }).eq('id', b.id)
+      if (e2) throw e2
+    },
+    onSuccess: invalidateCats,
+    onError: (e: Error) => toast.error(e.message),
+  })
+
+  const remove = useMutation({
+    mutationFn: async (cat: MenuCategory) => {
+      const affected = dishes.filter((d) => d.site_categories?.[activeSite] === cat.id)
+      for (const d of affected) {
+        const { [activeSite]: _drop, ...rest } = d.site_categories
+        const { error } = await supabase.from('menu_items').update({ site_categories: rest }).eq('id', d.id)
+        if (error) throw error
+      }
+      const { error } = await supabase.from('menu_categories').delete().eq('id', cat.id)
+      if (error) throw error
+    },
+    onSuccess: () => { invalidateCats(); qc.invalidateQueries({ queryKey: ['dishes', bid] }) },
+    onError: (e: Error) => toast.error(e.message),
+  })
+
+  const add = useMutation({
+    mutationFn: async (name: string) => {
+      const { error } = await supabase.from('menu_categories')
+        .insert({ business_id: bid, site_id: activeSite, name, sort_order: menuCategories.length })
+      if (error) throw error
+    },
+    onSuccess: () => { invalidateCats(); setNewName('') },
+    onError: dupErr,
+  })
+
+  return (
+    <div onClick={close} style={{ position: 'fixed', inset: 0, background: 'rgba(20,22,27,.4)', zIndex: 60, display: 'flex', justifyContent: 'flex-end', opacity: shown ? 1 : 0, transition: 'opacity .24s ease-out' }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: 440, maxWidth: '96vw', height: '100%', background: '#fff', boxShadow: '-24px 0 64px -32px rgba(16,24,40,.45)', display: 'flex', flexDirection: 'column', overflow: 'hidden', transform: shown ? 'translateX(0)' : 'translateX(100%)', transition: 'transform .24s cubic-bezier(.22,.61,.36,1)' }}>
+        <div style={{ padding: '22px 24px 16px', borderBottom: '1px solid #eef0f2', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14 }}>
+          <div>
+            <h2 style={{ margin: 0, fontSize: 19, fontWeight: 700, letterSpacing: '-.01em' }}>Menu sections</h2>
+            <div style={{ fontSize: 13, color: '#8a9099', marginTop: 3 }}>Add, rename, reorder or delete this site&apos;s menu sections.</div>
+          </div>
+          <button onClick={close} style={{ width: 34, height: 34, borderRadius: 9, border: 'none', background: '#f1f2f4', color: '#5c626b', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = '#e7e9ec')} onMouseLeave={(e) => (e.currentTarget.style.background = '#f1f2f4')}>
+            <X className="h-[17px] w-[17px]" strokeWidth={2} />
+          </button>
+        </div>
+
+        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 24px' }}>
+          {menuCategories.length === 0 ? (
+            <div style={{ padding: '24px 0', textAlign: 'center', color: '#9aa0a8', fontSize: 13 }}>No sections yet — add one below.</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {menuCategories.map((c, i) => (
+                <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 6, border: '1px solid #e9eaed', borderRadius: 11, padding: '7px 8px 7px 12px' }}>
+                  <input
+                    key={`${c.id}-${c.name}`}
+                    defaultValue={c.name}
+                    disabled={rename.isPending}
+                    onBlur={(e) => {
+                      const v = e.target.value.trim()
+                      if (v && v !== c.name) rename.mutate({ id: c.id, name: v })
+                      else e.target.value = c.name
+                    }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+                    style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', background: 'none', font: "600 13.5px 'Geist'", color: '#1c1f24' }}
+                  />
+                  <button onClick={() => move.mutate({ a: c, b: menuCategories[i - 1] })} disabled={i === 0 || move.isPending} title="Move up"
+                    style={{ width: 28, height: 28, flex: 'none', border: '1px solid #e2e4e8', background: '#fff', color: i === 0 ? '#cfd3d9' : '#5c626b', borderRadius: 8, cursor: i === 0 ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <ChevronUp className="h-3.5 w-3.5" strokeWidth={2} />
+                  </button>
+                  <button onClick={() => move.mutate({ a: c, b: menuCategories[i + 1] })} disabled={i === menuCategories.length - 1 || move.isPending} title="Move down"
+                    style={{ width: 28, height: 28, flex: 'none', border: '1px solid #e2e4e8', background: '#fff', color: i === menuCategories.length - 1 ? '#cfd3d9' : '#5c626b', borderRadius: 8, cursor: i === menuCategories.length - 1 ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <ChevronDown className="h-3.5 w-3.5" strokeWidth={2} />
+                  </button>
+                  <button
+                    onClick={() => { if (window.confirm(`Delete "${c.name}"? Its dishes become Uncategorised.`)) remove.mutate(c) }}
+                    disabled={remove.isPending} title="Delete section"
+                    style={{ width: 28, height: 28, flex: 'none', border: '1px solid #f0dcd8', background: '#fff', color: '#c0503f', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = '#fbeae7')} onMouseLeave={(e) => (e.currentTarget.style.background = '#fff')}>
+                    <Trash2 className="h-3.5 w-3.5" strokeWidth={1.9} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div style={{ padding: '16px 24px', borderTop: '1px solid #eef0f2', display: 'flex', gap: 8 }}>
+          <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="＋ Add section"
+            onKeyDown={(e) => { if (e.key === 'Enter' && newName.trim() && !add.isPending) add.mutate(newName.trim()) }}
+            style={{ flex: 1, border: '1px solid #e2e4e8', borderRadius: 10, padding: '10px 12px', font: "500 13.5px 'Geist'", outline: 'none' }}
+            onFocus={(e) => { e.currentTarget.style.borderColor = '#1f9d63'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(31,157,99,.1)' }}
+            onBlur={(e) => { e.currentTarget.style.borderColor = '#e2e4e8'; e.currentTarget.style.boxShadow = 'none' }} />
+          <button onClick={() => newName.trim() && add.mutate(newName.trim())} disabled={!newName.trim() || add.isPending}
+            style={{ background: newName.trim() ? '#1f9d63' : '#cfe6da', border: 'none', color: newName.trim() ? '#fff' : '#8fb9a4', font: "600 13.5px 'Geist'", padding: '10px 16px', borderRadius: 10, cursor: newName.trim() ? 'pointer' : 'not-allowed' }}>
+            {add.isPending ? 'Adding…' : 'Add'}
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }

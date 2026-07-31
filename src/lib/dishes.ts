@@ -30,6 +30,8 @@ export interface Dish {
   attested_at: string | null
   /** The sites this dish is on the menu of. Empty = on no site's menu. */
   site_ids: string[]
+  /** Per-site menu category assignment: site_id -> menu_categories.id. */
+  site_categories: Record<string, string>
   recipe?: DishRecipe | null
 }
 

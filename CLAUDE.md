@@ -139,6 +139,29 @@ npm run dev          # порт 3001 — рабочая версия v2
 - Сборка 1.3.1+10 для Google Play: fix `selectedUsEstablishmentProvider`, Gradle config (compileSdk=36, targetSdk=35, NDK 27, AGP 8.9.3, versionCode из Flutter)
 - Internal Testing release загружена, 12219 устройств поддерживается
 
+## Что сделано (31 июля — Per-site menu categories, PR #20)
+
+Меню-категории (секции меню) стали **пер-точечными и настраиваемыми**; `category` убран из рецептов — рецепты теперь только по тэгам.
+
+### Миграция (НАКАЧЕНА в прод 31.07 через Management API)
+- Таблица `menu_categories` (id, business_id, site_id, name, sort_order, created_at); уникальный индекс `(site_id, lower(name))`, индекс `(business_id, site_id, sort_order)`; RLS: members read / managers (`has_capability('manage_recipes')`) write.
+- Колонка `menu_items.site_categories jsonb default '{}'` — карта `{ "<site_id>": "<menu_category id>" }`.
+- Backfill: по каждой (business, site) создал категории из легаси `catLabel(category)` в порядке DISH_CATS, проставил `site_categories[site]`. Прод: 45 категорий (9 точек × 5), 23/23 блюда привязаны, 0 без категории.
+- Легаси `menu_items.category` и `recipes.category` КОЛОНКИ оставлены (дефолт, не читаются UI).
+
+### Веб (`src/app/(dashboard)/menu/page.tsx` + `src/lib/menu-categories.ts` + `dishes.ts`)
+- Группировка меню точки по её `menu_categories` (+ хвост «Uncategorised»), фильтр-пилюли = секции точки. All-sites overview остался на легаси `catLabel` (coarse, read-only).
+- **AddDishDrawer**: пикер секции для точки + «＋ New section» (type-create строки `menu_categories`); пишет `site_categories[activeSite]`. Recipe-backed дедуп-мерж спредит существующую карту (без клоббера других точек).
+- **Sections editor** («Menu sections»): add / rename / reorder (`sort_order`) / delete. Delete снимает секцию только у активной точки → блюда в Uncategorised.
+- **Инлайн-смена секции** у блюда: дропдаун в строке (site-view) → переносит блюдо, пишет `site_categories[activeSite]`.
+- **«On menu» бейдж** в пикере рецептов: рецепты, уже в меню этой точки, помечены и приглушены (кликабельны — мержат).
+- CSV/PDF экспорт группируется по пер-точечным секциям.
+- **Recipes → New**: поле Category убрано (только тэги).
+
+### Осталось (Phase 2)
+- Мобилка: зеркалить пер-точечные категории (модель `MenuCategory` + `menuCategoriesProvider`, группировка меню, пикер секции, sections editor, убрать category из `recipe_new_v2.dart` + показать тэги на карточке). Едет вместе со всей Kitchen.
+- Веб фоллоу-апы (некритич.): общий `setSection.isPending` дизейблит все дропдауны разом; нет юнит-теста на merge/drop-логику; select без aria-label; setSection без success-тоста.
+
 ## Ключевые URL и сервисы
 - **Web app**: https://app.blueroll.app (Vercel, repo: KNSTNTN24/blueroll-web)
 - **CRM API**: https://web-production-54cc.up.railway.app (Railway, repo: KNSTNTN24/blueroll-crm)

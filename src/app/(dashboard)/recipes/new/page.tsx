@@ -12,7 +12,6 @@ import { HACCP_RECIPE_METHODS } from '@/lib/haccp-methods'
 
 interface Ing { id: string; name: string; qty: string; unit: string; allergens: string[] }
 
-const CATEGORIES = [{ label: 'Starters', v: 'starter' }, { label: 'Mains', v: 'main' }, { label: 'Sides', v: 'side' }, { label: 'Desserts', v: 'dessert' }]
 const COOKING = ['Oven', 'Grill', 'Pan fry', 'Deep fry', 'Boil / simmer', 'Steam', 'No cook']
 const UNITS = ['g', 'kg', 'ml', 'l', 'pcs', 'tbsp', 'tsp']
 // The 8 HACCP control cards (cooking is handled in the Method section).
@@ -38,7 +37,6 @@ export default function NewRecipePage() {
   const [saving, setSaving] = useState(false)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
-  const [category, setCategory] = useState('')
   const [ingredients, setIngredients] = useState<Ing[]>([{ id: uid(), name: '', qty: '', unit: 'g', allergens: [] }])
   const [cookingMethod, setCookingMethod] = useState('')
   const [temp, setTemp] = useState('')
@@ -61,7 +59,7 @@ export default function NewRecipePage() {
     ].filter(Boolean) as string[]
   }, [allergenUnion])
 
-  const canSave = !!name.trim() && !!category && validIngredients.length > 0
+  const canSave = !!name.trim() && validIngredients.length > 0
 
   function setIng(id: string, patch: Partial<Ing>) { setIngredients((rows) => rows.map((r) => (r.id === id ? { ...r, ...patch } : r))) }
   function toggleAllergen(id: string, a: string) {
@@ -86,7 +84,7 @@ export default function NewRecipePage() {
       const haccp = [...controls]; if (cooked) haccp.push('cooking_safely')
 
       const { data: recipe, error: rErr } = await supabase.from('recipes').insert({
-        business_id: business.id, created_by: profile.id, name: name.trim(), description: description.trim() || null, category,
+        business_id: business.id, created_by: profile.id, name: name.trim(), description: description.trim() || null,
         instructions: steps.trim() || null, cooking_method: cookingMethod || null,
         cooking_temp: temp ? Number(temp) : null, cooking_time: time ? Number(time) : null, cooking_time_unit: 'minutes',
         chilling_method: controls.has('chilling_down') ? (controlInstr.chilling_down || null) : null,
@@ -111,7 +109,6 @@ export default function NewRecipePage() {
 
   const checklist = [
     { label: 'Name the recipe', done: !!name.trim() },
-    { label: 'Pick a category', done: !!category },
     { label: 'Add an ingredient', done: validIngredients.length > 0 },
     { label: 'Select HACCP controls', done: controls.size > 0 || !!cookingMethod },
   ]
@@ -141,11 +138,6 @@ export default function NewRecipePage() {
           <div style={CARD}>
             <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Recipe name — e.g. Mushroom Risotto" style={{ width: '100%', border: 'none', outline: 'none', font: "700 21px 'Geist'", color: '#16181d', letterSpacing: '-.01em' }} />
             <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="One-line description (optional)" style={{ width: '100%', border: 'none', outline: 'none', font: "400 14px 'Geist'", color: '#5c626b', marginTop: 6 }} />
-            <div style={{ height: 1, background: '#f2f3f5', margin: '14px 0' }} />
-            <label style={{ font: "600 12.5px 'Geist'", color: '#6f7580' }}>Category</label>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
-              {CATEGORIES.map((c) => <button key={c.v} onClick={() => setCategory(c.v)} style={catChip(category === c.v)}>{c.label}</button>)}
-            </div>
           </div>
 
           {/* Ingredients */}
@@ -217,7 +209,7 @@ export default function NewRecipePage() {
           <div style={CARD}>
             <div style={{ font: "600 11px 'Geist'", letterSpacing: '.05em', textTransform: 'uppercase', color: '#8a9099' }}>Recipe card</div>
             <div style={{ font: "700 18px 'Geist'", marginTop: 8, color: name ? '#16181d' : '#b3b8bf' }}>{name || 'Untitled recipe'}</div>
-            <div style={{ fontSize: 12.5, color: '#8a9099', marginTop: 4 }}>{[category ? CATEGORIES.find((c) => c.v === category)?.label : null, `${validIngredients.length} ingredient${validIngredients.length === 1 ? '' : 's'}`, time ? `${time} min` : null, temp ? `${temp}°C` : null].filter(Boolean).join(' · ')}</div>
+            <div style={{ fontSize: 12.5, color: '#8a9099', marginTop: 4 }}>{[`${validIngredients.length} ingredient${validIngredients.length === 1 ? '' : 's'}`, time ? `${time} min` : null, temp ? `${temp}°C` : null].filter(Boolean).join(' · ')}</div>
             <div style={{ height: 1, background: '#f2f3f5', margin: '14px 0' }} />
             <div style={{ font: "600 12px 'Geist'", color: '#6f7580', marginBottom: 7 }}>Allergens</div>
             {allergenUnion.length === 0 ? (
