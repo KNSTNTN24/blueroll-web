@@ -121,28 +121,40 @@ const TEMPLATES = [
   },
 ]
 
+// Templates are site-scoped (multisite model): every site of the business
+// gets its own copy of each default template, toggled off. Idempotent per
+// site/name, so it's safe to call again after adding a site.
 export async function seedDefaultChecklists(businessId: string) {
-  const { data: existing } = await supabase
-    .from('checklist_templates')
+  const { data: sites } = await supabase
+    .from('sites')
     .select('id')
     .eq('business_id', businessId)
-    .eq('is_default', true)
-    .limit(1)
+  const siteIds: (string | null)[] = sites?.length ? sites.map((s) => s.id) : [null]
 
-  if (existing && existing.length > 0) return
-
-  for (const t of TEMPLATES) {
-    const { items, ...templateData } = t
-    const { data: tmpl } = await supabase
+  for (const siteId of siteIds) {
+    let q = supabase
       .from('checklist_templates')
-      .insert({ ...templateData, business_id: businessId, is_default: true, active: false })
-      .select('id')
-      .single()
+      .select('name')
+      .eq('business_id', businessId)
+      .eq('is_default', true)
+    q = siteId === null ? q.is('site_id', null) : q.eq('site_id', siteId)
+    const { data: existing } = await q
+    const have = new Set((existing ?? []).map((t) => t.name))
 
-    if (tmpl) {
-      await supabase.from('checklist_template_items').insert(
-        items.map((item) => ({ ...item, template_id: tmpl.id }))
-      )
+    for (const t of TEMPLATES) {
+      if (have.has(t.name)) continue
+      const { items, ...templateData } = t
+      const { data: tmpl } = await supabase
+        .from('checklist_templates')
+        .insert({ ...templateData, business_id: businessId, site_id: siteId, is_default: true, active: false })
+        .select('id')
+        .single()
+
+      if (tmpl) {
+        await supabase.from('checklist_template_items').insert(
+          items.map((item) => ({ ...item, template_id: tmpl.id }))
+        )
+      }
     }
   }
 }
