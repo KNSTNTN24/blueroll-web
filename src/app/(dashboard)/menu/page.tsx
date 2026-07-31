@@ -313,7 +313,7 @@ export default function MenuPage() {
         </div>
       </div>
 
-      {addOpen && <AddDishDrawer bid={bid!} siteId={activeSite} dishes={dishes} recipes={recipes} onClose={() => setAddOpen(false)} onAdded={() => qc.invalidateQueries({ queryKey: ['dishes', bid] })} />}
+      {addOpen && <AddDishDrawer bid={bid!} siteId={activeSite} dishes={dishes} recipes={recipes} menuCategories={menuCategories} onClose={() => setAddOpen(false)} onAdded={() => qc.invalidateQueries({ queryKey: ['dishes', bid] })} />}
     </div>
   )
 }
@@ -344,7 +344,8 @@ function ExportOpt({ icon, bg, fg, title, sub, onClick }: { icon: React.ReactNod
 }
 
 // ── New dish drawer ─────────────────────────────────────────────────
-function AddDishDrawer({ bid, siteId, dishes, recipes, onClose, onAdded }: { bid: string; siteId: string | null; dishes: Dish[]; recipes: RecipeRow[]; onClose: () => void; onAdded: () => void }) {
+function AddDishDrawer({ bid, siteId, dishes, recipes, menuCategories, onClose, onAdded }: { bid: string; siteId: string | null; dishes: Dish[]; recipes: RecipeRow[]; menuCategories: MenuCategory[]; onClose: () => void; onAdded: () => void }) {
+  const qc = useQueryClient()
   const profile = useAuthStore((s) => s.profile)
   const [shown, setShown] = useState(false)
   const [mode, setMode] = useState<'recipe' | 'manual'>('recipe')
@@ -352,9 +353,28 @@ function AddDishDrawer({ bid, siteId, dishes, recipes, onClose, onAdded }: { bid
   const [rSel, setRSel] = useState<string | null>(null)
   const [qName, setQName] = useState('')
   const [qCat, setQCat] = useState<string>('Other')
+  const [catId, setCatId] = useState<string | null>(null)
   const [qAllergens, setQAllergens] = useState<Set<string>>(new Set())
   const [qDietary, setQDietary] = useState<Set<string>>(new Set())
   const [attest, setAttest] = useState(false)
+
+  const newSection = useMutation({
+    mutationFn: async () => {
+      const name = window.prompt('New menu section')?.trim()
+      if (!name) return null
+      const { data, error } = await supabase.from('menu_categories')
+        .insert({ business_id: bid, site_id: siteId, name, sort_order: menuCategories.length })
+        .select('id').single()
+      if (error) throw error
+      return data.id as string
+    },
+    onSuccess: (id) => {
+      if (!id) return
+      setCatId(id)
+      qc.invalidateQueries({ queryKey: ['menu-categories', bid, siteId] })
+    },
+    onError: (e: Error) => toast.error(e.message.includes('duplicate') ? 'That section already exists' : e.message),
+  })
 
   useEffect(() => { const t = requestAnimationFrame(() => setShown(true)); return () => cancelAnimationFrame(t) }, [])
   function close() { setShown(false); setTimeout(onClose, 240) }
@@ -375,13 +395,17 @@ function AddDishDrawer({ bid, siteId, dishes, recipes, onClose, onAdded }: { bid
         const existing = dishes.find((d) => d.allergen_source === 'recipe' && d.recipe_id === r.id)
         if (existing) {
           const next = siteId ? Array.from(new Set([...(existing.site_ids ?? []), siteId])) : (existing.site_ids ?? [])
-          const { error } = await supabase.from('menu_items').update({ site_ids: next }).eq('id', existing.id)
+          const { error } = await supabase.from('menu_items').update({
+            site_ids: next,
+            site_categories: { ...((existing.site_categories) ?? {}), ...(siteId && catId ? { [siteId]: catId } : {}) },
+          }).eq('id', existing.id)
           if (error) throw error
           return r.name
         }
         const { error } = await supabase.from('menu_items').insert({
           business_id: bid, name: r.name, category: catSlug(catLabel(r.category)),
           recipe_id: r.id, allergen_source: 'recipe', active: true, display_order: 0, site_ids: siteArr,
+          site_categories: siteId && catId ? { [siteId]: catId } : {},
         })
         if (error) throw error
         return r.name
@@ -397,11 +421,12 @@ function AddDishDrawer({ bid, siteId, dishes, recipes, onClose, onAdded }: { bid
         attested_by_name: profile?.full_name ?? profile?.email ?? 'Unknown',
         attested_at: new Date().toISOString(),
         active: true, display_order: 0, site_ids: siteArr,
+        site_categories: siteId && catId ? { [siteId]: catId } : {},
       })
       if (error) throw error
       return qName.trim()
     },
-    onSuccess: (name) => { onAdded(); toast.success(`${name} added to the menu`); close() },
+    onSuccess: (name) => { onAdded(); qc.invalidateQueries({ queryKey: ['menu-categories', bid, siteId] }); toast.success(`${name} added to the menu`); close() },
     onError: (e: Error) => toast.error(e.message),
   })
 
@@ -429,6 +454,27 @@ function AddDishDrawer({ bid, siteId, dishes, recipes, onClose, onAdded }: { bid
               title="Quick dish" sub="Declare allergens by hand" onBorder="#d98a1a" onBg="#fbf7ee" onFg="#b07d1e" onSubFg="#a5813e" />
           </div>
         </div>
+
+        {siteId && (
+          <div style={{ padding: '4px 24px 0' }}>
+            <label style={label}>Menu section</label>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+              {menuCategories.map((c) => {
+                const on = catId === c.id
+                return (
+                  <button key={c.id} onClick={() => setCatId(c.id)}
+                    style={{ border: on ? '1.5px solid #1f9d63' : '1px solid #e2e4e8', background: on ? '#f5faf7' : '#fff', color: on ? '#1a6e49' : '#5c626b', font: "600 12.5px 'Geist'", padding: '7px 13px', borderRadius: 9, cursor: 'pointer' }}>
+                    {c.name}
+                  </button>
+                )
+              })}
+              <button onClick={() => newSection.mutate()} disabled={newSection.isPending}
+                style={{ border: '1px dashed #cfd3d9', background: '#fff', color: '#5c626b', font: "600 12.5px 'Geist'", padding: '7px 13px', borderRadius: 9, cursor: newSection.isPending ? 'not-allowed' : 'pointer' }}>
+                ＋ New section
+              </button>
+            </div>
+          </div>
+        )}
 
         <div style={{ flex: 1, overflowY: 'auto', padding: '18px 24px 8px' }}>
           {mode === 'recipe' ? (
