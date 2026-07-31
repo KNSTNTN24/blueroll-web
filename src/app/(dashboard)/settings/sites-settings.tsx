@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { seedDefaultChecklists } from '@/lib/seed-checklists'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAuth } from '@/hooks/use-auth'
 import { toast } from 'sonner'
@@ -61,13 +62,22 @@ export function SitesSettings() {
           <h1 style={{ margin: 0, fontSize: 25, fontWeight: 700, letterSpacing: '-.02em', color: '#16181d' }}>Sites</h1>
           <p style={{ margin: '6px 0 0', fontSize: 14, color: '#6b7280' }}>Each site has its own checklists, team and records. £24.99/mo per site, billed together.</p>
         </div>
-        <button onClick={() => setAddOpen(true)}
-          style={{ display: 'flex', alignItems: 'center', gap: 7, whiteSpace: 'nowrap', background: '#1f9d63', border: 'none', color: '#fff', font: "600 13.5px 'Geist'", padding: '9px 16px', borderRadius: 10, cursor: 'pointer' }}
-          onMouseEnter={(e) => (e.currentTarget.style.background = '#1a8a56')}
-          onMouseLeave={(e) => (e.currentTarget.style.background = '#1f9d63')}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-          Add site
-        </button>
+        {sites.length < 3 ? (
+          <button onClick={() => setAddOpen(true)}
+            style={{ display: 'flex', alignItems: 'center', gap: 7, whiteSpace: 'nowrap', background: '#1f9d63', border: 'none', color: '#fff', font: "600 13.5px 'Geist'", padding: '9px 16px', borderRadius: 10, cursor: 'pointer' }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = '#1a8a56')}
+            onMouseLeave={(e) => (e.currentTarget.style.background = '#1f9d63')}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+            Add site
+          </button>
+        ) : (
+          /* Self-serve plans cover up to 3 sites — bigger estates get a free
+             hand-held onboarding instead. */
+          <a href="mailto:hello@getblueroll.com?subject=More%20than%203%20sites"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap', background: '#eaf4ee', border: '1px solid #cfe7da', color: '#1a6e49', font: "600 13px 'Geist'", padding: '9px 14px', borderRadius: 10, textDecoration: 'none' }}>
+            More than 3 sites? Email us — free onboarding
+          </a>
+        )}
       </div>
 
       {/* site cards (whole card opens the view panel) */}
@@ -304,6 +314,8 @@ function AddSiteSlideOver({ onClose, onDone, businessId }: { onClose: () => void
         status: 'onboarding',
       })
       if (error) throw error
+      // The new site gets the shipped checklist library (idempotent per site).
+      try { await seedDefaultChecklists(businessId) } catch { /* non-blocking */ }
       if (email.trim()) {
         try { await supabase.rpc('create_invite', { p_email: email.trim(), p_role: 'manager' }) } catch { /* non-blocking */ }
       }
