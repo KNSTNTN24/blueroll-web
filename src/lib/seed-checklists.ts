@@ -63,6 +63,50 @@ const TEMPLATES = [
     ],
   },
   {
+    name: 'Cooking & Reheating Temperatures', description: 'Probe cooked and reheated food — core must reach 75°C',
+    frequency: 'daily', assigned_roles: ['owner','manager','chef','kitchen_staff'],
+    sfbb_section: 'cooking',
+    items: [
+      { name: 'Cooked food core temperature', item_type: 'temperature', required: true, sort_order: 0, min_value: 75, max_value: 100, unit: '°C' },
+      { name: 'Reheated food core temperature', item_type: 'temperature', required: false, sort_order: 1, min_value: 75, max_value: 100, unit: '°C' },
+      { name: 'Extra-care foods handled safely (rice, eggs, pulses, shellfish)', item_type: 'yes_no', required: true, sort_order: 2 },
+      { name: 'Cooking notes', item_type: 'text', required: false, sort_order: 3 },
+    ],
+  },
+  {
+    name: 'Hot Holding Checks', description: 'Hot-held food must stay at 63°C or above',
+    frequency: 'daily', assigned_roles: ['owner','manager','chef','kitchen_staff'],
+    sfbb_section: 'cooking',
+    items: [
+      { name: 'Hot-held food temperature', item_type: 'temperature', required: true, sort_order: 0, min_value: 63, max_value: 100, unit: '°C' },
+      { name: 'Food below 63°C used or discarded within 2 hours', item_type: 'yes_no', required: true, sort_order: 1 },
+      { name: 'Hot display equipment preheated and working', item_type: 'yes_no', required: true, sort_order: 2 },
+    ],
+  },
+  {
+    name: 'Chilling Down Hot Food', description: 'Cool hot food within 90 minutes before refrigerating',
+    frequency: 'daily', assigned_roles: ['owner','manager','chef','kitchen_staff'],
+    sfbb_section: 'chilling',
+    items: [
+      { name: 'Hot food cooled and refrigerated within 90 minutes', item_type: 'yes_no', required: true, sort_order: 0 },
+      { name: 'Temperature after chilling', item_type: 'temperature', required: false, sort_order: 1, min_value: 0, max_value: 8, unit: '°C' },
+      { name: 'Chilled food covered, labelled and dated', item_type: 'yes_no', required: true, sort_order: 2 },
+    ],
+  },
+  {
+    name: 'Cross-contamination & Hygiene', description: 'Raw and ready-to-eat separation and staff hygiene checks',
+    frequency: 'daily', assigned_roles: ['owner','manager','chef','kitchen_staff'],
+    sfbb_section: 'cross_contamination',
+    items: [
+      { name: 'Separate boards and utensils for raw and ready-to-eat', item_type: 'yes_no', required: true, sort_order: 0 },
+      { name: 'Raw food stored below ready-to-eat food', item_type: 'yes_no', required: true, sort_order: 1 },
+      { name: 'Cloths clean or single-use', item_type: 'yes_no', required: true, sort_order: 2 },
+      { name: 'All staff fit to work', item_type: 'yes_no', required: true, sort_order: 3 },
+      { name: 'Allergen prep kept separate', item_type: 'yes_no', required: true, sort_order: 4 },
+      { name: 'Hygiene notes', item_type: 'text', required: false, sort_order: 5 },
+    ],
+  },
+  {
     name: '4-Weekly HACCP Review', description: 'Review and confirm HACCP Pack is up to date',
     frequency: 'four_weekly', assigned_roles: ['owner','manager'],
     sfbb_section: 'management',
