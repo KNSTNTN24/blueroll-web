@@ -20,7 +20,7 @@ export default function RecipesPage() {
   const qc = useQueryClient()
   const profile = useAuthStore((s) => s.profile)
   const business = useAuthStore((s) => s.business)
-  const isManager = profile?.role === 'owner' || profile?.role === 'manager'
+  const canManageRecipes = profile?.role === 'owner' || profile?.role === 'manager' || profile?.role === 'chef'
 
   const [search, setSearch] = useState('')
   const [tagFilter, setTagFilter] = useState<string[]>([])
@@ -111,7 +111,7 @@ export default function RecipesPage() {
           <h1 className="text-[26px] font-bold leading-tight tracking-[-0.02em] text-foreground">Recipes</h1>
           <p className="mt-1 text-[14px] text-muted-foreground">Manage your recipe collection{recipes.length > 0 ? ` · ${recipes.length} dishes` : ''}</p>
         </div>
-        {isManager && (
+        {canManageRecipes && (
           <div className="flex items-center gap-2.5">
             <button onClick={() => router.push('/recipes/import')}
               className="inline-flex items-center gap-2 whitespace-nowrap rounded-[11px] border border-input bg-card px-4 py-[11px] text-[14px] font-semibold text-foreground transition-colors hover:bg-accent">
@@ -156,7 +156,7 @@ export default function RecipesPage() {
         <InspectionEmpty illustration={RecipesArt} badge="Powers your allergen matrix & HACCP evidence"
           title="Build your recipe library"
           sentence="Every dish you add fills in allergens and HACCP control methods automatically.">
-          {isManager && <>
+          {canManageRecipes && <>
             <EmptyPrimary onClick={() => router.push('/recipes/new')}><Plus className="h-4 w-4" strokeWidth={2} /> Add your first recipe</EmptyPrimary>
             <EmptySecondary onClick={() => router.push('/recipes/import')}><Sparkles className="h-4 w-4 text-brand" strokeWidth={1.8} /> Import with AI</EmptySecondary>
           </>}
@@ -238,7 +238,7 @@ export default function RecipesPage() {
                     className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-[9px] border border-input bg-card py-2 text-[12.5px] font-semibold text-foreground transition-colors hover:bg-accent">
                     <Eye className="h-3.5 w-3.5" strokeWidth={1.8} /> View
                   </button>
-                  {isManager && (
+                  {canManageRecipes && (
                     <>
                       <button onClick={() => router.push(`/recipes/edit/${recipe.id}`)}
                         className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-[9px] border border-input bg-card py-2 text-[12.5px] font-semibold text-foreground transition-colors hover:bg-accent">
