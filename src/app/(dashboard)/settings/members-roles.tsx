@@ -188,7 +188,7 @@ export function MembersRoles() {
         </div>
       )}
 
-      {inviteOpen && <InviteSlideOver sites={sites} onClose={() => setInviteOpen(false)} />}
+      {inviteOpen && <InviteSlideOver sites={sites} roles={roleList} onClose={() => setInviteOpen(false)} />}
       {drawer && <RoleDrawer key={drawer.mode === 'edit' ? drawer.role.id : 'new'} state={drawer} roles={roleList} onClose={() => setDrawer(null)} />}
     </div>
   )
@@ -351,21 +351,22 @@ function RoleDrawer({ state, roles, onClose }: { state: { mode: 'new' } | { mode
 }
 
 // ── Invite slide-over (mirrors the main Team page) ──────────────────
-const ROLE_OPTS = [
-  { label: 'Owner', value: 'owner' },
-  { label: 'Site manager', value: 'manager' },
-  { label: 'Kitchen staff', value: 'kitchen_staff' },
-  { label: 'Front of house', value: 'front_of_house' },
-]
-
-function InviteSlideOver({ sites, onClose }: { sites: { id: string; name: string }[]; onClose: () => void }) {
+function InviteSlideOver({ sites, roles, onClose }: { sites: { id: string; name: string }[]; roles: Role[]; onClose: () => void }) {
   const business = useAuthStore((s) => s.business)
   const profile = useAuthStore((s) => s.profile)
   const qc = useQueryClient()
   const bid = business?.id
   const [shown, setShown] = useState(false)
   const [email, setEmail] = useState('')
-  const [role, setRole] = useState<string>('kitchen_staff')
+  // Pick a role by its id (custom roles included), not a hardcoded preset —
+  // this is what `join_with_invite` reads (`invites.role_id`) to set the new
+  // member's role. Default to the Kitchen Staff preset, else the first role.
+  const [roleId, setRoleId] = useState<string>('')
+  useEffect(() => {
+    if (roleId || roles.length === 0) return
+    const kitchen = roles.find((r) => r.is_system && r.base_tier === 'kitchen_staff')
+    setRoleId(kitchen?.id ?? roles[0].id)
+  }, [roles, roleId])
   const [siteId, setSiteId] = useState<string>(sites[0]?.id ?? '')
   const [token, setToken] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
@@ -375,11 +376,16 @@ function InviteSlideOver({ sites, onClose }: { sites: { id: string; name: string
 
   const invite = useMutation({
     mutationFn: async () => {
-      const { data, error } = await supabase.rpc('create_invite', { p_email: email, p_role: role })
+      // create_invite stores the legacy base tier; role_id (below) carries the
+      // real role — custom roles included — and wins on join.
+      const baseTier = roles.find((r) => r.id === roleId)?.base_tier ?? 'kitchen_staff'
+      const { data, error } = await supabase.rpc('create_invite', { p_email: email, p_role: baseTier })
       if (error) throw error
       const row = Array.isArray(data) ? data[0] : data
       if (!row?.token) throw new Error('Invite created but no token returned')
-      if (siteId) await supabase.from('invites').update({ site_id: siteId }).eq('token', row.token)
+      const invitePatch: Record<string, unknown> = { role_id: roleId }
+      if (siteId) invitePatch.site_id = siteId
+      await supabase.from('invites').update(invitePatch).eq('token', row.token)
       try {
         await supabase.functions.invoke('send-invite', {
           body: { to: email.trim(), code: row.token, groupName: business?.name, siteName: sites.find((s) => s.id === siteId)?.name, inviterName: profile?.full_name, appUrl: window.location.origin },
@@ -428,11 +434,11 @@ function InviteSlideOver({ sites, onClose }: { sites: { id: string; name: string
               <div>
                 <label style={label}>Role</label>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                  {ROLE_OPTS.map((o) => {
-                    const on = role === o.value
+                  {roles.map((r) => {
+                    const on = roleId === r.id
                     return (
-                      <button key={o.value} onClick={() => setRole(o.value)}
-                        style={{ border: on ? '1.5px solid #1f9d63' : '1px solid #e2e4e8', background: on ? '#f5faf7' : '#fff', color: on ? '#1a6e49' : '#5c626b', fontSize: 13, fontWeight: 600, padding: 10, borderRadius: 10, cursor: 'pointer', whiteSpace: 'nowrap' }}>{o.label}</button>
+                      <button key={r.id} onClick={() => setRoleId(r.id)}
+                        style={{ border: on ? '1.5px solid #1f9d63' : '1px solid #e2e4e8', background: on ? '#f5faf7' : '#fff', color: on ? '#1a6e49' : '#5c626b', fontSize: 13, fontWeight: 600, padding: 10, borderRadius: 10, cursor: 'pointer', whiteSpace: 'nowrap' }}>{r.name}</button>
                     )
                   })}
                 </div>
@@ -462,7 +468,7 @@ function InviteSlideOver({ sites, onClose }: { sites: { id: string; name: string
           ) : (
             <>
               <button onClick={close} style={{ flex: 1, background: '#fff', border: '1px solid #e2e4e8', color: '#5c626b', fontSize: 14, fontWeight: 600, padding: 11, borderRadius: 11, cursor: 'pointer' }}>Cancel</button>
-              <button onClick={() => invite.mutate()} disabled={!email.includes('@') || invite.isPending}
+              <button onClick={() => invite.mutate()} disabled={!email.includes('@') || !roleId || invite.isPending}
                 style={{ flex: 1.4, background: email.includes('@') ? '#1f9d63' : '#cfe6da', border: 'none', color: email.includes('@') ? '#fff' : '#8fb9a4', fontSize: 14, fontWeight: 600, padding: 11, borderRadius: 11, cursor: email.includes('@') ? 'pointer' : 'not-allowed' }}>
                 {invite.isPending ? 'Sending…' : 'Send invite'}
               </button>

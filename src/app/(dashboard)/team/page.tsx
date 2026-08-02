@@ -7,7 +7,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { toast } from 'sonner'
 import { Plus, Copy, CheckCircle2, X, ShieldCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { ROLE_LABELS, ROLE_COLORS, USER_ROLES, type UserRole } from '@/lib/constants'
+import { ROLE_LABELS, type UserRole } from '@/lib/constants'
 import { format } from 'date-fns'
 
 function getInitials(name: string | null, email: string): string {
@@ -33,7 +33,7 @@ export default function TeamPage() {
   const [showInvite, setShowInvite] = useState(false)
   const [inviteShown, setInviteShown] = useState(false)
   const [inviteEmail, setInviteEmail] = useState('')
-  const [inviteRole, setInviteRole] = useState<string>('kitchen_staff')
+  const [inviteRoleId, setInviteRoleId] = useState<string>('')
   const [inviteSite, setInviteSite] = useState<string>('')
   const [generatedToken, setGeneratedToken] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
@@ -48,6 +48,18 @@ export default function TeamPage() {
       return data ?? []
     },
     enabled: !!business?.id,
+  })
+
+  // The business's RBAC roles (presets + custom) — the invite must offer these,
+  // not a hardcoded preset list, and write the chosen role's id onto the invite.
+  const { data: roles = [] } = useQuery({
+    queryKey: ['roles', business?.id],
+    enabled: !!business?.id,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('roles').select('id, name, base_tier, is_system').eq('business_id', business!.id).order('is_system', { ascending: false }).order('name')
+      if (error) throw error
+      return (data ?? []) as { id: string; name: string; base_tier: string; is_system: boolean }[]
+    },
   })
 
   const { data: checkins = [] } = useQuery({
@@ -79,12 +91,17 @@ export default function TeamPage() {
 
   const inviteMutation = useMutation({
     mutationFn: async () => {
-      const { data, error } = await supabase.rpc('create_invite', { p_email: inviteEmail, p_role: inviteRole })
+      // create_invite stores the legacy base tier; the chosen role's id (below)
+      // carries the real role — custom roles included — and wins on join.
+      const baseTier = roles.find((r) => r.id === inviteRoleId)?.base_tier ?? 'kitchen_staff'
+      const { data, error } = await supabase.rpc('create_invite', { p_email: inviteEmail, p_role: baseTier })
       if (error) throw error
       const row = Array.isArray(data) ? data[0] : data
       if (!row?.token) throw new Error('Invite created but no token returned')
-      // Scope the invite to the chosen site (owner/manager may leave it group-wide)
-      if (inviteSite) await supabase.from('invites').update({ site_id: inviteSite }).eq('token', row.token)
+      // Persist the chosen role (role_id) and, for owner/manager, the site scope.
+      const invitePatch: Record<string, unknown> = { role_id: inviteRoleId }
+      if (inviteSite) invitePatch.site_id = inviteSite
+      await supabase.from('invites').update(invitePatch).eq('token', row.token)
       // Email the invite (best-effort — the code still works if delivery fails)
       try {
         await supabase.functions.invoke('send-invite', {
@@ -104,17 +121,11 @@ export default function TeamPage() {
     onError: (err: Error) => toast.error(err.message || 'Failed to create invite'),
   })
   function openInvite() {
-    setInviteEmail(''); setInviteRole('kitchen_staff'); setInviteSite(sites[0]?.id ?? ''); setGeneratedToken(null); setCopied(false)
+    const kitchen = roles.find((r) => r.is_system && r.base_tier === 'kitchen_staff')
+    setInviteEmail(''); setInviteRoleId(kitchen?.id ?? roles[0]?.id ?? ''); setInviteSite(sites[0]?.id ?? ''); setGeneratedToken(null); setCopied(false)
     setShowInvite(true); requestAnimationFrame(() => setInviteShown(true))
   }
   function resetInvite() { setInviteShown(false); setTimeout(() => setShowInvite(false), 300) }
-
-  const ROLE_OPTS = [
-    { label: 'Owner', value: 'owner' },
-    { label: 'Site manager', value: 'manager' },
-    { label: 'Kitchen staff', value: 'kitchen_staff' },
-    { label: 'Front of house', value: 'front_of_house' },
-  ]
 
   return (
     <div className="flex flex-col gap-[18px]">
@@ -196,12 +207,12 @@ export default function TeamPage() {
                   <div>
                     <label style={{ fontSize: 13, fontWeight: 600, color: '#41464d', display: 'block', marginBottom: 8 }}>Role</label>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                      {ROLE_OPTS.map((o) => {
-                        const on = inviteRole === o.value
+                      {roles.map((r) => {
+                        const on = inviteRoleId === r.id
                         return (
-                          <button key={o.value} onClick={() => setInviteRole(o.value)}
+                          <button key={r.id} onClick={() => setInviteRoleId(r.id)}
                             style={{ border: on ? '1.5px solid #1f9d63' : '1px solid #e2e4e8', background: on ? '#f5faf7' : '#fff', color: on ? '#1a6e49' : '#5c626b', fontSize: 13, fontWeight: 600, padding: 10, borderRadius: 10, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                            {o.label}
+                            {r.name}
                           </button>
                         )
                       })}
@@ -234,7 +245,7 @@ export default function TeamPage() {
               ) : (
                 <>
                   <button onClick={resetInvite} style={{ flex: 1, background: '#fff', border: '1px solid #e2e4e8', color: '#5c626b', fontSize: 14, fontWeight: 600, padding: 11, borderRadius: 11, cursor: 'pointer' }}>Cancel</button>
-                  <button onClick={() => inviteMutation.mutate()} disabled={!inviteEmail.includes('@') || inviteMutation.isPending}
+                  <button onClick={() => inviteMutation.mutate()} disabled={!inviteEmail.includes('@') || !inviteRoleId || inviteMutation.isPending}
                     style={{ flex: 1.4, background: inviteEmail.includes('@') ? '#1f9d63' : '#cfe6da', border: 'none', color: inviteEmail.includes('@') ? '#fff' : '#8fb9a4', fontSize: 14, fontWeight: 600, padding: 11, borderRadius: 11, cursor: inviteEmail.includes('@') ? 'pointer' : 'not-allowed' }}>
                     {inviteMutation.isPending ? 'Sending…' : 'Send invite'}
                   </button>
