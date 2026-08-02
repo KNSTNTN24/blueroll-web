@@ -43,7 +43,7 @@ export default function RecipeDetailPage({ params }: { params: Promise<{ id: str
   const router = useRouter()
   const queryClient = useQueryClient()
   const profile = useAuthStore((s) => s.profile)
-  const isManager = profile?.role === 'owner' || profile?.role === 'manager'
+  const canManageRecipes = profile?.role === 'owner' || profile?.role === 'manager' || profile?.role === 'chef'
   const [moreOpen, setMoreOpen] = useState(false)
   const moreRef = useRef<HTMLDivElement>(null)
 
@@ -167,7 +167,7 @@ export default function RecipeDetailPage({ params }: { params: Promise<{ id: str
           <span style={{ width: 6, height: 6, borderRadius: '50%', background: recipe.active ? '#1f9d63' : '#9aa0a8' }} /> {recipe.active ? 'Active' : 'Inactive'}
         </span>
 
-        {isManager && (
+        {canManageRecipes && (
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
             <div ref={moreRef} style={{ position: 'relative' }}>
               <button onClick={() => setMoreOpen((v) => !v)} aria-label="More actions"
