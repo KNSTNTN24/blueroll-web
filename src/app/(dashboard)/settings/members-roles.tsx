@@ -72,8 +72,10 @@ export function MembersRoles() {
   const siteIdsFor = (memberId: string) => memberSites.filter((r) => r.profile_id === memberId).map((r) => r.site_id)
 
   // Reassigning who reaches which sites (and full-estate) is owner-only — this
-  // is where a privilege escalation would live, so managers see it read-only.
-  const isOwner = me?.role === 'owner' || !!me?.is_group_admin
+  // is where a privilege escalation would live, so everyone else sees it
+  // read-only. is_group_admin is a site-access scope, NOT an owner grant, so it
+  // does not confer this.
+  const isOwner = me?.role === 'owner'
 
   // Presets first, in canonical order; custom roles after, oldest first.
   const roleList = useMemo(() => {

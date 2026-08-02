@@ -36,9 +36,12 @@ export default function SettingsPage() {
   const business = useAuthStore((s) => s.business)
   const sites = useAuthStore((s) => s.sites)
   const reset = useAuthStore((s) => s.reset)
-  const isGroupAdmin = profile?.is_group_admin || profile?.role === 'owner' || profile?.role === 'manager'
+  // The Sites/Team admin tabs gate on ROLE, not is_group_admin. is_group_admin
+  // is a site-access scope ("sees every site"), not an admin grant — a member
+  // given full-estate access must NOT thereby gain team/role management.
+  const showAdminTabs = profile?.role === 'owner' || profile?.role === 'manager'
 
-  const tabs: Tab[] = ['Profile', ...(isGroupAdmin ? (['Sites', 'Team'] as Tab[]) : []), 'Billing', 'Notifications']
+  const tabs: Tab[] = ['Profile', ...(showAdminTabs ? (["Sites", "Team"] as Tab[]) : []), 'Billing', 'Notifications']
   const [tab, setTab] = useState<Tab>('Profile')
 
   // Profile personal fields
@@ -226,7 +229,7 @@ export default function SettingsPage() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '15px 20px 13px' }}>
                     <span style={{ font: "700 15px 'Geist'" }}>Your sites</span>
                     <span style={{ font: "600 12px 'Geist'", color: '#8a9099', background: '#f1f2f4', borderRadius: 14, padding: '1px 8px' }}>{siteCount}</span>
-                    {isGroupAdmin && <button onClick={() => setTab('Sites')} style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 4, border: 'none', background: 'none', color: '#1f7a52', font: "600 13px 'Geist'", cursor: 'pointer' }}>Manage sites <ArrowRight className="h-3.5 w-3.5" strokeWidth={2} /></button>}
+                    {showAdminTabs && <button onClick={() => setTab('Sites')} style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 4, border: 'none', background: 'none', color: '#1f7a52', font: "600 13px 'Geist'", cursor: 'pointer' }}>Manage sites <ArrowRight className="h-3.5 w-3.5" strokeWidth={2} /></button>}
                   </div>
                   {(sites.length ? sites : [{ id: 'x', name: business?.name ?? 'Your site', postcode: '' } as { id: string; name: string; postcode?: string }]).map((s) => (
                     <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '13px 20px', borderTop: '1px solid #f4f5f6' }}>
