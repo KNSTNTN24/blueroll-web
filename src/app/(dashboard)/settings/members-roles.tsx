@@ -59,6 +59,22 @@ export function MembersRoles() {
     },
   })
 
+  // Per-member site membership (member_sites M:N). A member reaches exactly the
+  // sites listed here; is_group_admin (below) is full-estate and overrides it.
+  const { data: memberSites = [] } = useQuery({
+    queryKey: ['member-sites', bid],
+    enabled: !!bid,
+    queryFn: async () => {
+      const { data } = await supabase.from('member_sites').select('profile_id, site_id')
+      return (data ?? []) as { profile_id: string; site_id: string }[]
+    },
+  })
+  const siteIdsFor = (memberId: string) => memberSites.filter((r) => r.profile_id === memberId).map((r) => r.site_id)
+
+  // Reassigning who reaches which sites (and full-estate) is owner-only — this
+  // is where a privilege escalation would live, so managers see it read-only.
+  const isOwner = me?.role === 'owner' || !!me?.is_group_admin
+
   // Presets first, in canonical order; custom roles after, oldest first.
   const roleList = useMemo(() => {
     const rank = (r: Role) => (r.is_system ? PRESET_ORDER.indexOf(r.base_tier as UserRole) : 99)
@@ -79,10 +95,45 @@ export function MembersRoles() {
     qc.invalidateQueries({ queryKey: ['sites-members', bid] })
   }
 
+  // Save a member's site access: full-estate (is_group_admin) OR a set of sites.
+  // Reconciles member_sites (add missing / remove dropped) so the member reaches
+  // exactly the chosen sites; the keep_primary_site trigger keeps profiles.site_id
+  // valid. All-sites clears the memberships and flips is_group_admin on.
+  async function saveSites(memberId: string, allSites: boolean, selected: string[]) {
+    setSavingId(memberId)
+    try {
+      if (allSites) {
+        const { error } = await supabase.from('profiles').update({ is_group_admin: true }).eq('id', memberId)
+        if (error) throw error
+      } else {
+        const current = siteIdsFor(memberId)
+        const toAdd = selected.filter((s) => !current.includes(s))
+        const toRemove = current.filter((s) => !selected.includes(s))
+        if (toRemove.length) {
+          const { error } = await supabase.from('member_sites').delete().eq('profile_id', memberId).in('site_id', toRemove)
+          if (error) throw error
+        }
+        if (toAdd.length) {
+          const { error } = await supabase.from('member_sites').insert(toAdd.map((s) => ({ profile_id: memberId, site_id: s })))
+          if (error) throw error
+        }
+        const { error } = await supabase.from('profiles').update({ is_group_admin: false, site_id: selected[0] ?? null }).eq('id', memberId)
+        if (error) throw error
+      }
+      toast.success('Site access updated')
+      qc.invalidateQueries({ queryKey: ['members-roles', bid] })
+      qc.invalidateQueries({ queryKey: ['member-sites', bid] })
+      qc.invalidateQueries({ queryKey: ['sites-members', bid] })
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not update site access')
+    } finally {
+      setSavingId(null)
+    }
+  }
+
   const onRoles = tab === 'roles'
   const segActive: React.CSSProperties = { font: "600 13px 'Geist'", color: '#1c1f24', background: '#fff', padding: '8px 16px', borderRadius: 8, boxShadow: '0 1px 2px rgba(16,24,40,.08)', border: 'none' }
   const segIdle: React.CSSProperties = { font: "600 13px 'Geist'", color: '#5c626b', background: 'none', padding: '8px 16px', borderRadius: 8, border: 'none', cursor: 'pointer' }
-  const siteSelect: React.CSSProperties = { appearance: 'none', WebkitAppearance: 'none', border: 'none', background: 'none', cursor: 'pointer', font: "500 12.5px 'Geist'", color: '#6b7280', textAlign: 'right', width: 120, direction: 'rtl' }
 
   return (
     <div>
@@ -133,12 +184,8 @@ export function MembersRoles() {
                   </span>
                   <span style={{ display: 'block', font: "400 12.5px 'Geist'", color: '#9aa0a8', marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.email}</span>
                 </span>
-                <select value={m.is_group_admin ? '__all' : (m.site_id ?? '')} disabled={busy}
-                  onChange={(e) => { const v = e.target.value; if (v === '__all') patch(m.id, { is_group_admin: true }); else patch(m.id, { is_group_admin: false, site_id: v || null }) }}
-                  style={{ ...siteSelect, opacity: busy ? 0.5 : 1 }} title="Site access">
-                  <option value="__all" style={{ direction: 'ltr' }}>All sites</option>
-                  {sites.map((s) => <option key={s.id} value={s.id} style={{ direction: 'ltr' }}>{s.name}</option>)}
-                </select>
+                <SiteAccess allSites={!!m.is_group_admin} selectedIds={siteIdsFor(m.id)} sites={sites}
+                  canEdit={isOwner} busy={busy} onSave={(all, sel) => saveSites(m.id, all, sel)} />
                 <span style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', flex: 'none', opacity: busy ? 0.5 : 1 }}>
                   {/* Assign by role_id: that is what has_capability() reads. A trigger
                       syncs profiles.role from the role's base_tier, so writing the
@@ -347,6 +394,80 @@ function RoleDrawer({ state, roles, onClose }: { state: { mode: 'new' } | { mode
         </div>
       </div>
     </div>
+  )
+}
+
+// ── Per-member site access (multi-site via member_sites) ────────────
+// A row-level control: a summary chip that (for owners) opens a popover with a
+// Full-estate toggle + a checklist of the business's sites. Non-owners see the
+// summary read-only. Saving reconciles member_sites in the parent.
+function SiteAccess({ allSites, selectedIds, sites, canEdit, busy, onSave }: {
+  allSites: boolean
+  selectedIds: string[]
+  sites: { id: string; name: string }[]
+  canEdit: boolean
+  busy: boolean
+  onSave: (allSites: boolean, selected: string[]) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [all, setAll] = useState(allSites)
+  const [sel, setSel] = useState<Set<string>>(new Set(selectedIds))
+
+  // Re-seed the draft whenever the popover opens from the saved state.
+  function openEditor() {
+    setAll(allSites)
+    setSel(new Set(selectedIds))
+    setOpen(true)
+  }
+
+  const nameOf = (id: string) => sites.find((s) => s.id === id)?.name ?? 'Site'
+  const summary = allSites
+    ? 'All sites'
+    : selectedIds.length === 0 ? 'No sites'
+      : selectedIds.length === 1 ? nameOf(selectedIds[0])
+        : `${selectedIds.length} sites`
+
+  if (!canEdit) {
+    return <span style={{ font: "500 12.5px 'Geist'", color: '#6b7280', minWidth: 120, textAlign: 'right' }}>{summary}</span>
+  }
+
+  const canSaveDraft = all || sel.size > 0
+
+  return (
+    <span style={{ position: 'relative', flex: 'none' }}>
+      <button onClick={openEditor} disabled={busy} title="Site access"
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid #e2e4e8', background: '#fff', cursor: busy ? 'default' : 'pointer', font: "500 12.5px 'Geist'", color: '#5c626b', padding: '5px 11px', borderRadius: 9, opacity: busy ? 0.5 : 1, whiteSpace: 'nowrap' }}>
+        {summary}<ChevronDown className="h-3 w-3" strokeWidth={2} style={{ color: '#9aa0a8' }} />
+      </button>
+      {open && (
+        <>
+          <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
+          <div style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 50, width: 240, background: '#fff', border: '1px solid #e7e9ec', borderRadius: 12, boxShadow: '0 12px 32px -12px rgba(16,24,40,.35)', padding: 12 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer', padding: '7px 6px', borderRadius: 8, font: "600 13px 'Geist'", color: '#16181d' }}>
+              <input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} style={{ accentColor: '#1f9d63', width: 15, height: 15 }} />
+              Full estate access
+            </label>
+            <div style={{ height: 1, background: '#eef0f2', margin: '6px 0' }} />
+            <div style={{ maxHeight: 200, overflowY: 'auto', opacity: all ? 0.4 : 1, pointerEvents: all ? 'none' : 'auto' }}>
+              {sites.map((s) => {
+                const on = sel.has(s.id)
+                return (
+                  <label key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer', padding: '7px 6px', borderRadius: 8, font: "500 13px 'Geist'", color: '#41464d' }}>
+                    <input type="checkbox" checked={on} onChange={() => setSel((prev) => { const n = new Set(prev); if (n.has(s.id)) n.delete(s.id); else n.add(s.id); return n })}
+                      style={{ accentColor: '#1f9d63', width: 15, height: 15 }} />
+                    {s.name}
+                  </label>
+                )
+              })}
+            </div>
+            <button onClick={() => { onSave(all, [...sel]); setOpen(false) }} disabled={!canSaveDraft}
+              style={{ width: '100%', marginTop: 8, background: canSaveDraft ? '#1f9d63' : '#cfe6da', border: 'none', color: canSaveDraft ? '#fff' : '#8fb9a4', font: "600 13px 'Geist'", padding: '9px 0', borderRadius: 9, cursor: canSaveDraft ? 'pointer' : 'not-allowed' }}>
+              Save
+            </button>
+          </div>
+        </>
+      )}
+    </span>
   )
 }
 
