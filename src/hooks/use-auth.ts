@@ -173,8 +173,22 @@ export function useAuth() {
   const trialExpired = !!(
     sub === 'trialing' && trialEnd && new Date(trialEnd) < new Date()
   )
+  const entitled = sub === 'active' || (sub === 'trialing' && !trialExpired)
+
+  // Entitled and subscribed are different questions. Every new business is
+  // granted a 14-day trial on insert because the RLS write policies gate on
+  // entitlement and onboarding has to save its sites before anyone could
+  // have paid. Counting that grant as "subscribed" is what stopped the
+  // paywall — and therefore any payment — from ever appearing.
+  //
+  // Rows predating the signup_trial column are false, so every existing
+  // customer keeps exactly the access they have today.
+  const live = (s: string | null | undefined) =>
+    s === 'active' || s === 'trialing' || s === 'canceling'
+  const hasPurchase =
+    live(store.business?.iap_status) || live(store.business?.stripe_status)
   const isSubscribed =
-    sub === 'active' || (sub === 'trialing' && !trialExpired)
+    entitled && (hasPurchase || !store.business?.signup_trial)
 
   return {
     ...store,

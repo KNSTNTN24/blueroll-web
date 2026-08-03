@@ -22,6 +22,11 @@ export interface Business {
   post_code: string | null
   subscription_status: string | null
   trial_ends_at: string | null
+  iap_status: string | null
+  stripe_status: string | null
+  /** True when the live entitlement is the automatic trial granted at
+   *  signup rather than a purchase or a manual grant. */
+  signup_trial: boolean | null
   stripe_customer_id: string | null
   haccp_auto_fill: boolean
   haccp_last_reviewed_at: string | null
