@@ -279,15 +279,44 @@ async function applySubscriptionUpdate(
     }
   }
 
-  // Fallback: the RPC hasn't run yet (race between the webhook and the
-  // client). Try to match via obfuscatedExternalAccountId, which the mobile
-  // client sets to the business_id when starting the purchase.
+  // Fallback: match via obfuscatedExternalAccountId.
+  //
+  // This is the path that actually carries Android, and it was matching the
+  // wrong column. The comment here used to say the client tags the purchase
+  // with the business_id; it does not — buy() passes `applicationUserName:
+  // userId`, the signed-in Supabase *user*. Comparing that to businesses.id
+  // never matched, so every Android notification fell through to the warning
+  // below and no google purchase was ever confirmed, while Apple (whose token
+  // is recorded correctly) worked fine.
+  //
+  // The lookup by token above can't cover for it either: the client records
+  // GooglePlayPurchaseDetails.purchaseID, which is the *order id*
+  // (GPA.xxxx-…), not the purchaseToken Google notifies us with.
+  //
+  // So resolve the id through profiles first, and treat it as a business id
+  // only if it isn't a user. Matching also writes the real purchaseToken from
+  // this notification into the row, so every later notification for the same
+  // subscription matches on the fast path above.
   const obfuscatedId = sub.externalAccountIdentifiers?.obfuscatedExternalAccountId;
   if (obfuscatedId) {
+    let businessId = obfuscatedId;
+
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("business_id")
+      .eq("id", obfuscatedId)
+      .maybeSingle();
+    if (profileError) {
+      throw new Error(`Supabase profile lookup failed: ${profileError.message}`);
+    }
+    if (profile?.business_id) {
+      businessId = profile.business_id;
+    }
+
     const { data, error } = await supabase
       .from("businesses")
       .update(payload)
-      .eq("id", obfuscatedId)
+      .eq("id", businessId)
       .select("id");
     if (error) {
       throw new Error(
