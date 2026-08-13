@@ -194,7 +194,7 @@ const BRAND_COPY: Record<Step, { headline: string; subtitle: string }> = {
   },
   card: {
     headline: 'Less than a pack of blue rolls.',
-    subtitle: '£14.99/month after your 14-day free trial. Cancel anytime.',
+    subtitle: '£24.99/month after your 14-day free trial. Cancel anytime.',
   },
 }
 
@@ -363,7 +363,7 @@ function CardStep({ currentStepIndex, totalSteps, onComplete }: { currentStepInd
     <div>
       <StepLabel current={currentStepIndex} total={totalSteps} />
       <Title>Start your free trial</Title>
-      <Subtitle>14 days free, then £14.99/month. Cancel anytime. You won&apos;t be charged today.</Subtitle>
+      <Subtitle>14 days free, then £24.99/month. Cancel anytime. You won&apos;t be charged today.</Subtitle>
 
       <div className="mt-8">
         <Elements stripe={stripePromise} options={options}>
