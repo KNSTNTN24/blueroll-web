@@ -397,7 +397,7 @@ function ChoiceStep({
             key={opt.key}
             onClick={() => setSelected(opt.key)}
             className={cn(
-              'group relative flex aspect-square cursor-pointer flex-col items-center justify-center rounded-2xl border-2 bg-white p-5 text-center transition-all',
+              'group relative flex h-full min-h-[150px] cursor-pointer flex-col items-center justify-center rounded-2xl border-2 bg-white p-5 text-center transition-all',
               selected === opt.key
                 ? 'border-emerald-600'
                 : 'border-gray-200 hover:border-emerald-400',
@@ -453,7 +453,7 @@ function SetupStep({
             key={opt.key}
             onClick={() => setSelected(opt.key)}
             className={cn(
-              'group relative flex aspect-square cursor-pointer flex-col items-center justify-center rounded-2xl border-2 bg-white p-5 text-center transition-all',
+              'group relative flex h-full min-h-[150px] cursor-pointer flex-col items-center justify-center rounded-2xl border-2 bg-white p-5 text-center transition-all',
               selected === opt.key
                 ? 'border-emerald-600'
                 : 'border-gray-200 hover:border-emerald-400',
@@ -527,7 +527,7 @@ function MultiSiteRow({ sel, removable, onSelect, onClear, onRemove }: {
   if (sel) {
     const r = parseInt(sel.RatingValue); const rm = Number.isNaN(r) ? null : fsaRatingMeta(r)
     return (
-      <div className="flex items-center gap-3 rounded-xl border-[1.5px] border-[#bfe0cd] bg-[#f5faf7] px-4 py-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl border-[1.5px] border-[#bfe0cd] bg-[#f5faf7] px-4 py-3">
         <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full bg-brand">
           <Check className="h-3 w-3 text-white" strokeWidth={3} />
         </span>
@@ -926,7 +926,7 @@ export default function OnboardingPage() {
 
           <div className="mt-8 flex flex-col gap-3">
             {selectedSites.map((row) => (
-              <div key={row.id} className="grid grid-cols-[150px_1fr] items-center gap-3">
+              <div key={row.id} className="grid grid-cols-1 gap-1.5 sm:grid-cols-[150px_1fr] sm:items-center sm:gap-3">
                 <div className="flex min-w-0 items-center gap-2">
                   <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-brand" />
                   <span className="truncate text-[14.5px] font-semibold text-gray-900">{row.sel?.BusinessName}</span>
