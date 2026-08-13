@@ -106,7 +106,7 @@ export default function PaywallPage() {
             <CardSubscriptionForm submitLabel="Start free trial" redirectTo="/dashboard" />
           </div>
           <p className="mt-2 text-sm text-emerald-100">
-            then &pound;14.99/mo after 14 days
+            then &pound;24.99/mo after 14 days
           </p>
 
           <div className="mt-8 space-y-2">
