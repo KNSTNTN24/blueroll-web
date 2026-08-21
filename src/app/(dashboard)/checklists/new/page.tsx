@@ -1,8 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useForm, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -33,7 +33,7 @@ const templateSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   description: z.string().optional(),
   frequency: z.string().min(1, 'Frequency is required'),
-  assigned_roles: z.array(z.string()).min(1, 'At least one role is required'),
+  assigned_role_ids: z.array(z.string()).min(1, 'At least one role is required'),
   supervisor_role: z.string().optional().nullable(),
   deadline_time: z.string().optional().nullable(),
   multi_per_day: z.boolean(),
@@ -49,6 +49,21 @@ export default function NewChecklistPage() {
   const queryClient = useQueryClient()
   const profile = useAuthStore((s) => s.profile)
   const business = useAuthStore((s) => s.business)
+
+  // Roles for this business — presets + any custom roles (used by the picker).
+  const { data: roles = [] } = useQuery({
+    queryKey: ['business-roles', business?.id],
+    enabled: !!business?.id,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('roles')
+        .select('id, name, base_tier')
+        .eq('business_id', business!.id)
+        .order('created_at')
+      return data ?? []
+    },
+  })
+
   const [submitting, setSubmitting] = useState(false)
   const [aiGenerating, setAiGenerating] = useState(false)
   const [wizardOpen, setWizardOpen] = useState(false)
@@ -76,7 +91,7 @@ export default function NewChecklistPage() {
       name: '',
       description: '',
       frequency: 'daily',
-      assigned_roles: ['owner', 'manager'],
+      assigned_role_ids: [],
       supervisor_role: null,
       deadline_time: null,
       multi_per_day: false,
@@ -93,15 +108,24 @@ export default function NewChecklistPage() {
   })
 
   const watchedItems = watch('items')
-  const watchedRoles = watch('assigned_roles')
+  const watchedRoles = watch('assigned_role_ids')
   const watchedMulti = watch('multi_per_day')
 
-  function handleRoleToggle(role: string) {
+  // Preselect Owner + Manager once roles load (matches the previous default).
+  useEffect(() => {
+    if (roles.length && (watchedRoles?.length ?? 0) === 0) {
+      const ids = roles.filter((r) => r.base_tier === 'owner' || r.base_tier === 'manager').map((r) => r.id)
+      if (ids.length) setValue('assigned_role_ids', ids)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roles])
+
+  function handleRoleToggle(roleId: string) {
     const current = watchedRoles ?? []
-    if (current.includes(role)) {
-      setValue('assigned_roles', current.filter((r) => r !== role))
+    if (current.includes(roleId)) {
+      setValue('assigned_role_ids', current.filter((r) => r !== roleId))
     } else {
-      setValue('assigned_roles', [...current, role])
+      setValue('assigned_role_ids', [...current, roleId])
     }
   }
 
@@ -174,7 +198,10 @@ export default function NewChecklistPage() {
       if (checklist.description) setValue('description', checklist.description)
       if (checklist.frequency) setValue('frequency', checklist.frequency)
       if (checklist.supervisor_role) setValue('supervisor_role', checklist.supervisor_role)
-      if (checklist.assigned_roles?.length) setValue('assigned_roles', checklist.assigned_roles)
+      if (checklist.assigned_roles?.length) {
+        const ids = roles.filter((r) => checklist.assigned_roles.includes(r.base_tier)).map((r) => r.id)
+        if (ids.length) setValue('assigned_role_ids', ids)
+      }
 
       // Replace all items at once (avoids re-render loop)
       if (checklist.items?.length) {
@@ -226,10 +253,17 @@ export default function NewChecklistPage() {
 
     try {
       const { items, ...templateData } = data
+
+      // Keep the legacy base-tier column in sync (mobile still filters on it).
+      const assignedTiers = [...new Set(
+        roles.filter((r) => data.assigned_role_ids.includes(r.id)).map((r) => r.base_tier),
+      )]
+
       const { data: tmpl, error: tErr } = await supabase
         .from('checklist_templates')
         .insert({
           ...templateData,
+          assigned_roles: assignedTiers,
           business_id: business.id,
           active: true,
           supervisor_role: data.supervisor_role || null,
@@ -608,27 +642,27 @@ export default function NewChecklistPage() {
           <div className="space-y-1.5">
             <Label>Assigned Roles</Label>
             <div className="flex flex-wrap gap-2">
-              {USER_ROLES.map((role) => (
+              {roles.map((role) => (
                 <label
-                  key={role}
+                  key={role.id}
                   className={cn(
                     'flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-[13px] cursor-pointer transition-colors',
-                    watchedRoles?.includes(role)
+                    watchedRoles?.includes(role.id)
                       ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
                       : 'border-border bg-white text-muted-foreground hover:bg-accent/50',
                   )}
                 >
                   <input
                     type="checkbox"
-                    checked={watchedRoles?.includes(role) ?? false}
-                    onChange={() => handleRoleToggle(role)}
+                    checked={watchedRoles?.includes(role.id) ?? false}
+                    onChange={() => handleRoleToggle(role.id)}
                     className="sr-only"
                   />
-                  {roleLabel(role)}
+                  {role.name}
                 </label>
               ))}
             </div>
-            {errors.assigned_roles && <p className="text-[12px] text-destructive">{errors.assigned_roles.message}</p>}
+            {errors.assigned_role_ids && <p className="text-[12px] text-destructive">{errors.assigned_role_ids.message}</p>}
           </div>
         </div>
 

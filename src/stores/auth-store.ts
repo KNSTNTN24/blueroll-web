@@ -6,6 +6,7 @@ export interface Profile {
   email: string
   full_name: string | null
   role: string
+  role_id: string | null
   business_id: string
   site_id: string | null
   is_group_admin: boolean

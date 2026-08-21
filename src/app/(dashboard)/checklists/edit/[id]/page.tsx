@@ -33,7 +33,7 @@ const templateSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   description: z.string().optional(),
   frequency: z.string().min(1, 'Frequency is required'),
-  assigned_roles: z.array(z.string()).min(1, 'At least one role is required'),
+  assigned_role_ids: z.array(z.string()).min(1, 'At least one role is required'),
   supervisor_role: z.string().optional().nullable(),
   deadline_time: z.string().optional().nullable(),
   multi_per_day: z.boolean(),
@@ -52,6 +52,20 @@ export default function EditChecklistPage({ params }: { params: Promise<{ id: st
   const [submitting, setSubmitting] = useState(false)
   const [loaded, setLoaded] = useState(false)
 
+  // Roles for this business — presets + any custom roles (used by the picker).
+  const { data: roles = [] } = useQuery({
+    queryKey: ['business-roles', business?.id],
+    enabled: !!business?.id,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('roles')
+        .select('id, name, base_tier')
+        .eq('business_id', business!.id)
+        .order('created_at')
+      return data ?? []
+    },
+  })
+
   const {
     register,
     control,
@@ -66,7 +80,7 @@ export default function EditChecklistPage({ params }: { params: Promise<{ id: st
       name: '',
       description: '',
       frequency: 'daily',
-      assigned_roles: [],
+      assigned_role_ids: [],
       supervisor_role: null,
       deadline_time: null,
       multi_per_day: false,
@@ -81,7 +95,7 @@ export default function EditChecklistPage({ params }: { params: Promise<{ id: st
   })
 
   const watchedItems = watch('items')
-  const watchedRoles = watch('assigned_roles')
+  const watchedRoles = watch('assigned_role_ids')
   const watchedMulti = watch('multi_per_day')
 
   // ── Load existing template ──
@@ -108,7 +122,7 @@ export default function EditChecklistPage({ params }: { params: Promise<{ id: st
         name: template.name ?? '',
         description: template.description ?? '',
         frequency: template.frequency ?? 'daily',
-        assigned_roles: template.assigned_roles ?? [],
+        assigned_role_ids: template.assigned_role_ids ?? [],
         supervisor_role: template.supervisor_role ?? null,
         deadline_time: template.deadline_time ?? null,
         multi_per_day: template.multi_per_day ?? false,
@@ -126,12 +140,12 @@ export default function EditChecklistPage({ params }: { params: Promise<{ id: st
     }
   }, [template, loaded, reset])
 
-  function handleRoleToggle(role: string) {
+  function handleRoleToggle(roleId: string) {
     const current = watchedRoles ?? []
-    if (current.includes(role)) {
-      setValue('assigned_roles', current.filter((r) => r !== role))
+    if (current.includes(roleId)) {
+      setValue('assigned_role_ids', current.filter((r) => r !== roleId))
     } else {
-      setValue('assigned_roles', [...current, role])
+      setValue('assigned_role_ids', [...current, roleId])
     }
   }
 
@@ -142,11 +156,17 @@ export default function EditChecklistPage({ params }: { params: Promise<{ id: st
     try {
       const { items, ...templateData } = data
 
+      // Keep the legacy base-tier column in sync (mobile still filters on it).
+      const assignedTiers = [...new Set(
+        roles.filter((r) => data.assigned_role_ids.includes(r.id)).map((r) => r.base_tier),
+      )]
+
       // Update template
       const { error: tErr } = await supabase
         .from('checklist_templates')
         .update({
           ...templateData,
+          assigned_roles: assignedTiers,
           supervisor_role: data.supervisor_role || null,
           deadline_time: data.deadline_time || null,
           multi_per_day: data.multi_per_day,
@@ -321,27 +341,27 @@ export default function EditChecklistPage({ params }: { params: Promise<{ id: st
           <div className="space-y-1.5">
             <Label>Assigned Roles</Label>
             <div className="flex flex-wrap gap-2">
-              {USER_ROLES.map((role) => (
+              {roles.map((role) => (
                 <label
-                  key={role}
+                  key={role.id}
                   className={cn(
                     'flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-[13px] cursor-pointer transition-colors',
-                    watchedRoles?.includes(role)
+                    watchedRoles?.includes(role.id)
                       ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
                       : 'border-border bg-white text-muted-foreground hover:bg-accent/50',
                   )}
                 >
                   <input
                     type="checkbox"
-                    checked={watchedRoles?.includes(role) ?? false}
-                    onChange={() => handleRoleToggle(role)}
+                    checked={watchedRoles?.includes(role.id) ?? false}
+                    onChange={() => handleRoleToggle(role.id)}
                     className="sr-only"
                   />
-                  {roleLabel(role)}
+                  {role.name}
                 </label>
               ))}
             </div>
-            {errors.assigned_roles && <p className="text-[12px] text-destructive">{errors.assigned_roles.message}</p>}
+            {errors.assigned_role_ids && <p className="text-[12px] text-destructive">{errors.assigned_role_ids.message}</p>}
           </div>
         </div>
 

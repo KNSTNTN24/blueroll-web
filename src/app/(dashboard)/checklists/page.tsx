@@ -42,7 +42,7 @@ function ChecklistsPageInner() {
 
   // ── Today's templates for user's role ──
   const { data: myTemplates = [], isLoading: loadingMy } = useQuery({
-    queryKey: ['my-checklists', business?.id, profile?.role, currentSiteId],
+    queryKey: ['my-checklists', business?.id, profile?.role_id, profile?.role, profile?.is_group_admin, currentSiteId],
     queryFn: async () => {
       if (!business?.id || !profile?.role) return []
       let q = supabase
@@ -50,7 +50,15 @@ function ChecklistsPageInner() {
         .select('*, checklist_template_items(id)')
         .eq('business_id', business.id)
         .eq('active', true)
-        .contains('assigned_roles', [profile.role])
+      // Owners (full access) and group admins see every checklist. Everyone
+      // else is filtered by their role: prefer the precise role_id match
+      // (supports custom roles), falling back to the base-tier role for any
+      // legacy profile without a role_id.
+      const seesAll = profile.role === 'owner' || profile.is_group_admin
+      if (!seesAll) {
+        if (profile.role_id) q = q.contains('assigned_role_ids', [profile.role_id])
+        else q = q.contains('assigned_roles', [profile.role])
+      }
       if (currentSiteId) q = q.eq('site_id', currentSiteId)
       const { data, error } = await q.order('name')
       if (error) throw error
