@@ -2,8 +2,9 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 
 // The showcase business ("St James's Cafe") — seeded and maintained for
-// screenshots and demos. RLS grants every authenticated user read-only
-// access to its rows (see migration 20260824120000_demo_mode_read_policies).
+// screenshots and demos, kept "today-fresh" by the demo-daily-refresh pg_cron
+// job. RLS grants every authenticated user read-only access to its rows
+// (migration 20260824120000_demo_mode_read_policies).
 export const DEMO_BUSINESS_ID = 'a8ff4795-1dee-4a89-b693-0b1b6d2ddae3'
 
 const DEMO_KEY = 'br_demo_mode'
@@ -26,16 +27,29 @@ export function dismissDemoBar() {
 export function undismissDemoBar() {
   try { sessionStorage.removeItem(BAR_KEY) } catch {}
 }
+// Once demo has been switched on this session, the bar stays visible in both
+// states (even for established businesses) until the cross closes it —
+// the toggle only switches the data, never hides the bar.
+const PIN_KEY = 'br_demo_bar_pinned'
+export function isDemoBarPinned(): boolean {
+  try { return sessionStorage.getItem(PIN_KEY) === '1' } catch { return false }
+}
+export function pinDemoBar() {
+  try { sessionStorage.setItem(PIN_KEY, '1') } catch {}
+}
+export function unpinDemoBar() {
+  try { sessionStorage.removeItem(PIN_KEY) } catch {}
+}
 
 /**
  * Point the auth store at the demo business. The user's own profile and
- * business stay untouched (realBusiness keeps driving the paywall gate);
- * every page reads business/sites/currentSiteId from the store, so the
- * whole app renders St James's Cafe. Writes are rejected by RLS — the demo
- * is read-only by construction.
+ * realBusiness stay untouched (realBusiness keeps driving the paywall gate);
+ * every page reads business/sites/currentSiteId from the store, so the whole
+ * app renders St James's Cafe. Writes are rejected by RLS — the demo is
+ * read-only by construction.
  *
- * Returns false when the demo rows are not readable (migration not applied
- * yet, or the seed business is gone) — callers should fall back to real data.
+ * Returns false when the demo rows are not readable (migration not applied,
+ * or the seed business is gone) — callers fall back to real data.
  */
 export async function applyDemoOverlay(): Promise<boolean> {
   const store = useAuthStore.getState()
@@ -65,11 +79,14 @@ export async function applyDemoOverlay(): Promise<boolean> {
 }
 
 /**
- * Toggle demo mode and reload so every page remounts against the right data.
- * Turning ON verifies the demo rows are actually readable first — a silent
- * no-op reload reads as a broken button.
+ * Switch demo mode in place — no page reload. The dashboard layout (sidebar,
+ * topbar, demo bar) stays mounted; only the content area sits under a veil
+ * while the store swaps businesses and the dashboard refetches.
  */
-export async function setDemoModeAndReload(on: boolean) {
+export async function toggleDemoMode(on: boolean, router: { push: (path: string) => void }) {
+  const store = useAuthStore.getState()
+  if (store.demoSwitching) return
+
   if (on) {
     const { data } = await supabase
       .from('businesses')
@@ -82,26 +99,26 @@ export async function setDemoModeAndReload(on: boolean) {
       return
     }
   }
+
+  store.setDemoSwitching(on ? 'enter' : 'exit')
   persistDemo(on)
   undismissDemoBar()
-  // Smooth hand-off: cover the old page with the same overlay the root
-  // layout's boot script paints on the next load, so the reload happens
-  // under one continuous surface instead of a flash.
-  try { sessionStorage.setItem('br_demo_transition', on ? 'enter' : 'exit') } catch {}
-  coverWithTransitionOverlay(on)
-  await new Promise((r) => setTimeout(r, 260))
-  window.location.assign('/dashboard')
-}
+  if (on) pinDemoBar()
+  // Leave whatever record page we're on — it belongs to the other business.
+  router.push('/dashboard')
+  const minHold = new Promise((r) => setTimeout(r, 550))
 
-function coverWithTransitionOverlay(on: boolean) {
-  if (document.getElementById('br-demo-boot')) return
-  const d = document.createElement('div')
-  d.id = 'br-demo-boot'
-  d.setAttribute('style', `position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:${on ? '#fdf9ee' : '#fafbf8'};opacity:0;transition:opacity .24s ease`)
-  d.innerHTML = `<style>@keyframes brDemoDot{0%,100%{box-shadow:0 0 0 0 rgba(199,152,26,.32)}60%{box-shadow:0 0 0 5px rgba(199,152,26,0)}}</style>` +
-    `<div style="display:flex;flex-direction:column;align-items:center;gap:14px;font-family:var(--font-geist),system-ui,sans-serif">` +
-    (on ? `<span style="display:inline-flex;align-items:center;gap:7px;background:#fff;border:1px solid #e7d5a6;border-radius:8px;padding:6px 12px 6px 9px;box-shadow:0 1px 1.5px rgba(133,103,15,.07)"><span style="width:7px;height:7px;border-radius:50%;background:#c7981a;animation:brDemoDot 1.6s ease-out infinite"></span><span style="font-size:12.5px;font-weight:650;color:#85670f">Demo</span></span>` : '') +
-    `<span style="font-size:14px;font-weight:600;color:${on ? '#6f5f36' : '#5c626b'}">${on ? 'Entering demo mode…' : 'Back to your kitchen…'}</span></div>`
-  document.documentElement.appendChild(d)
-  requestAnimationFrame(() => { d.style.opacity = '1' })
+  try {
+    if (on) {
+      await applyDemoOverlay()
+    } else {
+      useAuthStore.getState().setDemoMode(false)
+      // Dynamic import dodges the demo.ts <-> use-auth import cycle.
+      const { reloadRealBusiness } = await import('@/hooks/use-auth')
+      await reloadRealBusiness()
+    }
+  } finally {
+    await minHold
+    useAuthStore.getState().setDemoSwitching(null)
+  }
 }

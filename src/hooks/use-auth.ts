@@ -124,6 +124,12 @@ async function loadProfileAndBusiness(userId: string, retry = 0): Promise<void> 
   }
 }
 
+/** Re-fetch the signed-in user's own profile/business/sites into the store. */
+export async function reloadRealBusiness(): Promise<void> {
+  const u = useAuthStore.getState().user
+  if (u) await loadProfileAndBusiness(u.id)
+}
+
 export function useAuth() {
   const store = useAuthStore()
 

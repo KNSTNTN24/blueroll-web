@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { useMutation } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
@@ -8,7 +9,7 @@ import { toast } from 'sonner'
 import { ExternalLink, ArrowRight, CreditCard, Lock } from 'lucide-react'
 import { ROLE_LABELS, type UserRole } from '@/lib/constants'
 import { Switch } from '@/components/ui/switch'
-import { setDemoModeAndReload } from '@/lib/demo'
+import { toggleDemoMode } from '@/lib/demo'
 import { SitesSettings } from './sites-settings'
 import { MembersRoles } from './members-roles'
 import { NotificationsSettings } from './notifications-settings'
@@ -34,6 +35,7 @@ type Tab = 'Profile' | 'Sites' | 'Team' | 'Billing' | 'Notifications'
 const TAB_LABEL: Record<Tab, string> = { Profile: 'Profile', Sites: 'Sites', Team: 'Team', Billing: 'Billing & subscription', Notifications: 'Notifications' }
 
 export default function SettingsPage() {
+  const routerNav = useRouter()
   const profile = useAuthStore((s) => s.profile)
   const business = useAuthStore((s) => s.business)
   const sites = useAuthStore((s) => s.sites)
@@ -199,7 +201,7 @@ export default function SettingsPage() {
             <div style={{ ...CARD, padding: 20 }}>
               <div style={{ ...MICRO, marginBottom: 6 }}>Demo mode</div>
               <SecurityRow title="Browse sample data" desc="Explore Blueroll as a fully worked sample cafe — checks, temperatures, recipes, the lot. Read-only; your own data stays untouched." last>
-                <Switch checked={demoMode} onCheckedChange={(on) => setDemoModeAndReload(on)} />
+                <Switch checked={demoMode} onCheckedChange={(on) => { void toggleDemoMode(on, routerNav) }} />
               </SecurityRow>
             </div>
 

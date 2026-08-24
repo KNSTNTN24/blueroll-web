@@ -1,8 +1,10 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
-import { isDemoBarDismissed, dismissDemoBar, setDemoModeAndReload } from '@/lib/demo'
+import { isDemoBarDismissed, dismissDemoBar, isDemoBarPinned, unpinDemoBar, toggleDemoMode } from '@/lib/demo'
 
 /**
  * Slim cream demo-mode bar above the topbar, per the designer's makeup
@@ -17,14 +19,42 @@ import { isDemoBarDismissed, dismissDemoBar, setDemoModeAndReload } from '@/lib/
  * <360px shortens the title.
  */
 export function DemoBar() {
+  const router = useRouter()
   const demoMode = useAuthStore((s) => s.demoMode)
   const business = useAuthStore((s) => s.business)
+  const realBusiness = useAuthStore((s) => s.realBusiness)
   const sites = useAuthStore((s) => s.sites)
   const [dismissed, setDismissed] = useState(true) // start hidden to avoid a flash before sessionStorage is read
+  const [eligible, setEligible] = useState(false)
+  const [pinned, setPinned] = useState(false)
 
   useEffect(() => { setDismissed(isDemoBarDismissed()) }, [])
+  useEffect(() => { setPinned(isDemoBarPinned()) }, [demoMode])
+
+  // The OFF-state invitation is only for young businesses with no checks of
+  // their own yet — never for established accounts. Exception: a business
+  // named "totomoto" (the standing demo/test account) always sees it.
+  // The Settings toggle works for everyone regardless.
+  const own = realBusiness ?? business
+  const ownId = own?.id
+  const ownName = own?.name
+  const ownCreated = own?.created_at
+  useEffect(() => {
+    let alive = true
+    if (!ownId) { setEligible(false); return }
+    if ((ownName ?? '').toLowerCase().includes('totomoto')) { setEligible(true); return }
+    const createdAt = ownCreated ? new Date(ownCreated).getTime() : 0
+    if (!createdAt || Date.now() - createdAt > 14 * 24 * 3600 * 1000) { setEligible(false); return }
+    void supabase
+      .from('checklist_completions')
+      .select('id', { count: 'exact', head: true })
+      .eq('business_id', ownId)
+      .then(({ count }) => { if (alive) setEligible((count ?? 0) === 0) })
+    return () => { alive = false }
+  }, [ownId, ownName, ownCreated])
 
   if (dismissed) return null
+  if (!demoMode && !eligible && !pinned) return null
 
   const on = demoMode
   const siteCount = sites.length
@@ -76,7 +106,7 @@ export function DemoBar() {
             role="switch"
             aria-checked={on}
             aria-label={on ? 'Turn demo mode off' : 'Turn demo mode on'}
-            onClick={() => { void setDemoModeAndReload(!on) }}
+            onClick={() => { void toggleDemoMode(!on, router) }}
             style={{
               width: 34, height: 20, borderRadius: 999, border: 'none', cursor: 'pointer', padding: 0, position: 'relative', flexShrink: 0, display: 'block',
               background: on ? 'linear-gradient(180deg, #cfa02a, #b98a12)' : '#e8dcbe',
@@ -88,7 +118,7 @@ export function DemoBar() {
           <span style={{ width: 1, height: 16, background: on ? '#e2d0a0' : '#ece0c2', margin: '0 2px' }} />
           <button
             aria-label="Hide this bar until next sign-in"
-            onClick={() => { dismissDemoBar(); setDismissed(true) }}
+            onClick={() => { dismissDemoBar(); unpinDemoBar(); setDismissed(true) }}
             style={{ width: 26, height: 26, marginRight: -6, borderRadius: 7, border: 'none', background: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
           >
             <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke={on ? '#9a8038' : '#a89a72'} strokeWidth="1.6" strokeLinecap="round"><path d="M2.5 2.5l7 7M9.5 2.5l-7 7" /></svg>

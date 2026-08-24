@@ -58,6 +58,8 @@ interface AuthState {
   realBusiness: Business | null
   /** True while the store points at the shared demo business (read-only). */
   demoMode: boolean
+  /** Direction of an in-flight demo switch; drives the content-area veil. */
+  demoSwitching: 'enter' | 'exit' | null
   sites: Site[]
   /** null = "All sites" (group-admin estate view); otherwise the selected site. */
   currentSiteId: string | null
@@ -67,6 +69,7 @@ interface AuthState {
   setBusiness: (business: Business | null) => void
   setRealBusiness: (business: Business | null) => void
   setDemoMode: (on: boolean) => void
+  setDemoSwitching: (dir: 'enter' | 'exit' | null) => void
   setSites: (sites: Site[]) => void
   setCurrentSiteId: (id: string | null) => void
   setLoading: (loading: boolean) => void
@@ -79,6 +82,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   business: null,
   realBusiness: null,
   demoMode: false,
+  demoSwitching: null,
   sites: [],
   currentSiteId: null,
   isLoading: true,
@@ -87,8 +91,9 @@ export const useAuthStore = create<AuthState>((set) => ({
   setBusiness: (business) => set({ business }),
   setRealBusiness: (business) => set({ realBusiness: business }),
   setDemoMode: (on) => set({ demoMode: on }),
+  setDemoSwitching: (dir) => set({ demoSwitching: dir }),
   setSites: (sites) => set({ sites }),
   setCurrentSiteId: (id) => { persistSite(id); set({ currentSiteId: id }) },
   setLoading: (isLoading) => set({ isLoading }),
-  reset: () => set({ user: null, profile: null, business: null, realBusiness: null, demoMode: false, sites: [], currentSiteId: null, isLoading: false }),
+  reset: () => set({ user: null, profile: null, business: null, realBusiness: null, demoMode: false, demoSwitching: null, sites: [], currentSiteId: null, isLoading: false }),
 }))
