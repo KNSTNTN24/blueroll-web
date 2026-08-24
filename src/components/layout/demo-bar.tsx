@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
-import { isDemoBarDismissed, dismissDemoBar, isDemoBarPinned, unpinDemoBar, toggleDemoMode } from '@/lib/demo'
+import { isDemoBarDismissed, dismissDemoBar, isDemoBarPinned, pinDemoBar, unpinDemoBar, toggleDemoMode } from '@/lib/demo'
 
 /**
  * Slim cream demo-mode bar above the topbar, per the designer's makeup
@@ -29,7 +29,12 @@ export function DemoBar() {
   const [pinned, setPinned] = useState(false)
 
   useEffect(() => { setDismissed(isDemoBarDismissed()) }, [])
-  useEffect(() => { setPinned(isDemoBarPinned()) }, [demoMode])
+  // Seeing demo ON pins the bar for the whole session — however it was turned
+  // on. From then on the toggle only switches the data; only the cross closes.
+  useEffect(() => {
+    if (demoMode) { pinDemoBar(); setPinned(true) }
+    else setPinned(isDemoBarPinned())
+  }, [demoMode])
 
   // The OFF-state invitation is only for young businesses with no checks of
   // their own yet — never for established accounts. Exception: a business
