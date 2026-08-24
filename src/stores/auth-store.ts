@@ -54,6 +54,12 @@ interface AuthState {
   user: User | null
   profile: Profile | null
   business: Business | null
+  /** The user's own business row — stays set while demo mode overlays `business`. */
+  realBusiness: Business | null
+  /** True while the store points at the shared demo business (read-only). */
+  demoMode: boolean
+  /** Direction of an in-flight demo switch; drives the content-area veil. */
+  demoSwitching: 'enter' | 'exit' | null
   sites: Site[]
   /** null = "All sites" (group-admin estate view); otherwise the selected site. */
   currentSiteId: string | null
@@ -61,6 +67,9 @@ interface AuthState {
   setUser: (user: User | null) => void
   setProfile: (profile: Profile | null) => void
   setBusiness: (business: Business | null) => void
+  setRealBusiness: (business: Business | null) => void
+  setDemoMode: (on: boolean) => void
+  setDemoSwitching: (dir: 'enter' | 'exit' | null) => void
   setSites: (sites: Site[]) => void
   setCurrentSiteId: (id: string | null) => void
   setLoading: (loading: boolean) => void
@@ -71,14 +80,20 @@ export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   profile: null,
   business: null,
+  realBusiness: null,
+  demoMode: false,
+  demoSwitching: null,
   sites: [],
   currentSiteId: null,
   isLoading: true,
   setUser: (user) => set({ user }),
   setProfile: (profile) => set({ profile }),
   setBusiness: (business) => set({ business }),
+  setRealBusiness: (business) => set({ realBusiness: business }),
+  setDemoMode: (on) => set({ demoMode: on }),
+  setDemoSwitching: (dir) => set({ demoSwitching: dir }),
   setSites: (sites) => set({ sites }),
   setCurrentSiteId: (id) => { persistSite(id); set({ currentSiteId: id }) },
   setLoading: (isLoading) => set({ isLoading }),
-  reset: () => set({ user: null, profile: null, business: null, sites: [], currentSiteId: null, isLoading: false }),
+  reset: () => set({ user: null, profile: null, business: null, realBusiness: null, demoMode: false, demoSwitching: null, sites: [], currentSiteId: null, isLoading: false }),
 }))
