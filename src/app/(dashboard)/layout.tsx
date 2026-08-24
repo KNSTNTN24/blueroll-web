@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 import { Sidebar } from '@/components/layout/sidebar'
 import { Topbar } from '@/components/layout/topbar'
 import { DemoBar } from '@/components/layout/demo-bar'
+import { DemoTransition } from '@/components/layout/demo-transition'
 import { FeedbackBeacon } from '@/components/feedback-beacon'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -60,6 +61,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       )}
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <DemoTransition />
         <DemoBar />
         <Topbar onMenuClick={() => setMobileOpen(true)} />
         <main className="flex-1 overflow-y-auto">

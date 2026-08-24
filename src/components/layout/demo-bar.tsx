@@ -1,66 +1,100 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { X, Sparkles, Eye } from 'lucide-react'
 import { useAuthStore } from '@/stores/auth-store'
 import { isDemoBarDismissed, dismissDemoBar, setDemoModeAndReload } from '@/lib/demo'
 
 /**
- * Full-width strip above the topbar, on every dashboard page.
+ * Slim cream demo-mode bar above the topbar, per the designer's makeup
+ * ("Demo Mode Banner.dc.html"): a white status-dot pill, the copy line
+ * (ellipsis-guarded — the bar never wraps), a mono ON/OFF label, the gold
+ * toggle, a hairline, and a dismiss cross. Closing hides the bar for the
+ * session only; demo mode itself keeps whatever the toggle says and the
+ * Settings toggle always works.
  *
- * Two states:
- *  - demo OFF: a closable invitation to try demo mode. Once closed it only
- *    comes back via the Settings toggle.
- *  - demo ON: a persistent (not closable) reminder that the data on screen
- *    is the shared sample cafe, with the way out.
+ * Container queries drive the responsive states: <880px drops the explainer,
+ * >=1100px adds an extra practical sentence, <480px drops the mono label,
+ * <360px shortens the title.
  */
 export function DemoBar() {
   const demoMode = useAuthStore((s) => s.demoMode)
   const business = useAuthStore((s) => s.business)
-  const [dismissed, setDismissed] = useState(true) // start hidden to avoid a flash before localStorage is read
+  const sites = useAuthStore((s) => s.sites)
+  const [dismissed, setDismissed] = useState(true) // start hidden to avoid a flash before sessionStorage is read
 
   useEffect(() => { setDismissed(isDemoBarDismissed()) }, [])
 
-  if (demoMode) {
-    return (
-      <div className="flex items-center gap-3 border-b border-amber-200 bg-amber-50 px-4 py-2 text-[13px] text-amber-900 sm:px-6">
-        <Eye className="h-4 w-4 shrink-0" strokeWidth={2} />
-        <p className="min-w-0 flex-1 truncate">
-          <span className="font-semibold">Demo mode.</span>{' '}
-          You&apos;re browsing {business?.name ?? 'a sample kitchen'} — read-only sample data. Your own data is untouched.
-        </p>
-        <button
-          onClick={() => setDemoModeAndReload(false)}
-          className="shrink-0 rounded-lg border border-amber-300 bg-white px-3 py-1 font-semibold text-amber-900 hover:bg-amber-100"
-        >
-          Exit demo
-        </button>
-      </div>
-    )
-  }
-
   if (dismissed) return null
 
+  const on = demoMode
+  const siteCount = sites.length
+  const estate = siteCount > 1 ? `a sample estate of ${siteCount} sites` : 'a fully worked sample kitchen'
+
   return (
-    <div className="flex items-center gap-3 border-b border-emerald-200 bg-emerald-50 px-4 py-2 text-[13px] text-emerald-900 sm:px-6">
-      <Sparkles className="h-4 w-4 shrink-0" strokeWidth={2} />
-      <p className="min-w-0 flex-1 truncate">
-        <span className="font-semibold">New here?</span>{' '}
-        See Blueroll running a busy kitchen — checks, temperatures, allergens, the lot.
-      </p>
-      <button
-        onClick={() => setDemoModeAndReload(true)}
-        className="shrink-0 rounded-lg bg-[#1f9d63] px-3 py-1 font-semibold text-white hover:bg-[#188653]"
-      >
-        Try demo mode
-      </button>
-      <button
-        aria-label="Hide this bar"
-        onClick={() => { dismissDemoBar(); setDismissed(true) }}
-        className="shrink-0 rounded p-1 text-emerald-700 hover:bg-emerald-100"
-      >
-        <X className="h-4 w-4" strokeWidth={2} />
-      </button>
+    <div className="dm-bar" style={{ background: on ? '#f9f1da' : '#fdf9ee', borderBottom: `1px solid ${on ? '#eddfb6' : '#f2e7cb'}` }}>
+      <style>{`
+        @keyframes dmDot { 0%, 100% { box-shadow: 0 0 0 0 rgba(199,152,26,.32); } 60% { box-shadow: 0 0 0 4px rgba(199,152,26,0); } }
+        .dm-bar { container-type: inline-size; }
+        .dm-copy { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .dm-extra { display: none; }
+        .dm-title-short { display: none; }
+        @container (max-width: 880px) { .dm-detail { display: none !important; } }
+        @container (min-width: 1100px) { .dm-extra { display: inline !important; } }
+        @container (max-width: 480px) { .dm-state { display: none !important; } .dm-row { padding-left: 14px !important; padding-right: 14px !important; } }
+        @container (max-width: 360px) { .dm-title-long { display: none !important; } .dm-title-short { display: inline !important; } }
+      `}</style>
+      <div className="dm-row" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '9px 20px' }}>
+        {/* Status-dot pill */}
+        <span style={on
+          ? { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#fff', border: '1px solid #e7d5a6', borderRadius: 7, padding: '4px 9px 4px 7px', flexShrink: 0, boxShadow: '0 1px 1.5px rgba(133,103,15,.07)' }
+          : { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#fdfaf2', border: '1px solid #ece0c2', borderRadius: 7, padding: '4px 9px 4px 7px', flexShrink: 0 }}>
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: on ? '#c7981a' : '#d8c48f', animation: on ? 'dmDot 3.4s ease-out infinite' : undefined }} />
+          <span style={{ fontSize: 11, fontWeight: 650, color: on ? '#85670f' : '#9a8a5f', letterSpacing: '-0.005em' }}>Demo</span>
+        </span>
+
+        {/* Copy line — one line always */}
+        <span className="dm-copy" style={{ flex: 1, minWidth: 0 }}>
+          <span className="dm-title-long" style={{ fontSize: 13, fontWeight: 650, color: '#16181d', letterSpacing: '-0.01em' }}>{on ? 'Demo mode is on' : 'Demo mode'}</span>
+          <span className="dm-title-short" style={{ fontSize: 13, fontWeight: 650, color: '#16181d', letterSpacing: '-0.01em' }}>{on ? 'Demo on' : 'Demo mode'}</span>
+          {on ? (
+            <>
+              <span className="dm-detail" style={{ fontSize: 13, color: '#6f5f36' }}> — you&apos;re looking at {business?.name ?? 'the sample business'}, {estate}.</span>
+              <span className="dm-extra" style={{ fontSize: 13, color: '#6f5f36' }}> Try closing an incident or signing off a checklist; switch the toggle off to return to your own data.</span>
+            </>
+          ) : (
+            <>
+              <span className="dm-detail" style={{ fontSize: 13, color: '#6f5f36' }}> — explore Blueroll with a busy kitchen&apos;s data.</span>
+              <span className="dm-extra" style={{ fontSize: 13, color: '#6f5f36' }}> Checks, temperatures, allergens and incidents are pre-filled; nothing you do here touches your own records.</span>
+            </>
+          )}
+        </span>
+
+        {/* Mono state + toggle + hairline + dismiss */}
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 9, flexShrink: 0 }}>
+          <span className="dm-state" style={{ fontSize: 10.5, fontWeight: on ? 700 : 600, color: on ? '#85670f' : '#a89a72', fontFamily: "'Geist Mono', monospace", letterSpacing: '.08em' }}>{on ? 'ON' : 'OFF'}</span>
+          <button
+            role="switch"
+            aria-checked={on}
+            aria-label={on ? 'Turn demo mode off' : 'Turn demo mode on'}
+            onClick={() => { void setDemoModeAndReload(!on) }}
+            style={{
+              width: 34, height: 20, borderRadius: 999, border: 'none', cursor: 'pointer', padding: 0, position: 'relative', flexShrink: 0, display: 'block',
+              background: on ? 'linear-gradient(180deg, #cfa02a, #b98a12)' : '#e8dcbe',
+              boxShadow: on ? 'inset 0 1px 0 rgba(255,255,255,.2)' : 'inset 0 0 0 1px rgba(133,103,15,.14)',
+            }}
+          >
+            <span style={{ position: 'absolute', top: 2.5, left: on ? undefined : 2.5, right: on ? 2.5 : undefined, width: 15, height: 15, borderRadius: '50%', background: '#fff', boxShadow: `0 1px 2.5px rgba(90,70,20,${on ? '.32' : '.28'})` }} />
+          </button>
+          <span style={{ width: 1, height: 16, background: on ? '#e2d0a0' : '#ece0c2', margin: '0 2px' }} />
+          <button
+            aria-label="Hide this bar until next sign-in"
+            onClick={() => { dismissDemoBar(); setDismissed(true) }}
+            style={{ width: 26, height: 26, marginRight: -6, borderRadius: 7, border: 'none', background: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+          >
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke={on ? '#9a8038' : '#a89a72'} strokeWidth="1.6" strokeLinecap="round"><path d="M2.5 2.5l7 7M9.5 2.5l-7 7" /></svg>
+          </button>
+        </span>
+      </div>
     </div>
   )
 }
