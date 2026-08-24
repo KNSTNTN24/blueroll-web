@@ -3,6 +3,7 @@
 import { useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore, readPersistedSite } from '@/stores/auth-store'
+import { isDemoPersisted, applyDemoOverlay, persistDemo } from '@/lib/demo'
 
 // Module-level flag so the Stripe sync runs at most once per browser session.
 // Webhook is the primary source of truth for subscription state; this is just
@@ -74,6 +75,7 @@ async function loadProfileAndBusiness(userId: string, retry = 0): Promise<void> 
 
     if (business) {
       store.setBusiness(business)
+      store.setRealBusiness(business)
 
       // Load the group's sites and pick the active one.
       const { data: sites } = await supabase
@@ -93,6 +95,17 @@ async function loadProfileAndBusiness(userId: string, retry = 0): Promise<void> 
         else active = profile.site_id ?? siteList[0]?.id ?? null
       }
       store.setCurrentSiteId(active)
+
+      // Demo mode: overlay the shared showcase business on top of the real
+      // one. realBusiness keeps driving the paywall gate; if the demo rows
+      // are unreadable (migration not applied) fall back to real data.
+      if (isDemoPersisted()) {
+        const ok = await applyDemoOverlay()
+        if (!ok) {
+          persistDemo(false)
+          store.setDemoMode(false)
+        }
+      }
     } else if (retry < MAX_RETRIES) {
       // Business row might not be committed yet
       await new Promise((r) => setTimeout(r, BACKOFF_MS * (retry + 1)))
@@ -168,8 +181,11 @@ export function useAuth() {
   // sync) flips it to `active`. This prevents the migrated grace period
   // (trial_ends_at = NOW + 10 days for previously-`none` businesses) from
   // turning into permanent free access.
-  const sub = store.business?.subscription_status
-  const trialEnd = store.business?.trial_ends_at
+  // Gate on the user's OWN business even while demo mode overlays `business` —
+  // browsing the demo must never extend (or cut short) anyone's access.
+  const gatingBusiness = store.realBusiness ?? store.business
+  const sub = gatingBusiness?.subscription_status
+  const trialEnd = gatingBusiness?.trial_ends_at
   const trialExpired = !!(
     sub === 'trialing' && trialEnd && new Date(trialEnd) < new Date()
   )

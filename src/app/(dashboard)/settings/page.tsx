@@ -7,6 +7,8 @@ import { useAuthStore } from '@/stores/auth-store'
 import { toast } from 'sonner'
 import { ExternalLink, ArrowRight, CreditCard, Lock } from 'lucide-react'
 import { ROLE_LABELS, type UserRole } from '@/lib/constants'
+import { Switch } from '@/components/ui/switch'
+import { setDemoModeAndReload } from '@/lib/demo'
 import { SitesSettings } from './sites-settings'
 import { MembersRoles } from './members-roles'
 import { NotificationsSettings } from './notifications-settings'
@@ -35,6 +37,7 @@ export default function SettingsPage() {
   const profile = useAuthStore((s) => s.profile)
   const business = useAuthStore((s) => s.business)
   const sites = useAuthStore((s) => s.sites)
+  const demoMode = useAuthStore((s) => s.demoMode)
   const reset = useAuthStore((s) => s.reset)
   // The Sites/Team admin tabs gate on ROLE, not is_group_admin. is_group_admin
   // is a site-access scope ("sees every site"), not an admin grant — a member
@@ -94,6 +97,7 @@ export default function SettingsPage() {
 
   const manageSubscriptionMutation = useMutation({
     mutationFn: async () => {
+      if (demoMode) throw new Error('Exit demo mode to manage billing — you are browsing the sample business.')
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) throw new Error('Not authenticated')
       if (!business?.stripe_customer_id) throw new Error('No Stripe customer yet — subscription is managed once billing is set up.')
@@ -189,6 +193,14 @@ export default function SettingsPage() {
                   </select>
                 </Field>
               </div>
+            </div>
+
+            {/* Demo mode */}
+            <div style={{ ...CARD, padding: 20 }}>
+              <div style={{ ...MICRO, marginBottom: 6 }}>Demo mode</div>
+              <SecurityRow title="Browse sample data" desc="Explore Blueroll as a fully worked sample cafe — checks, temperatures, recipes, the lot. Read-only; your own data stays untouched." last>
+                <Switch checked={demoMode} onCheckedChange={(on) => setDemoModeAndReload(on)} />
+              </SecurityRow>
             </div>
 
             {/* Security */}
