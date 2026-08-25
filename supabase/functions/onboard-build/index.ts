@@ -33,12 +33,15 @@ async function upsertTemplate(
 ): Promise<void> {
   const { parent, itemsFor } = splitTemplateForUpsert(templateRow);
 
-  const { data: existing } = await admin
+  const { data: existing, error: existingError } = await admin
     .from("checklist_templates")
     .select("id")
     .eq("business_id", businessId)
     .eq("name", parent.name)
     .maybeSingle();
+  if (existingError) {
+    throw new Error(`Failed to look up template "${parent.name}": ${existingError.message}`);
+  }
 
   let templateId: string;
   if (existing?.id) {
@@ -78,12 +81,13 @@ async function upsertTemplate(
 
 /** Idempotently resolves-or-creates a menu_categories row keyed by (site_id, lower(name)). */
 async function resolveMenuCategoryId(admin: AdminClient, businessId: string, siteId: string, name: string): Promise<string> {
-  const { data: existing } = await admin
+  const { data: existing, error: existingError } = await admin
     .from("menu_categories")
     .select("id")
     .eq("site_id", siteId)
     .ilike("name", name)
     .maybeSingle();
+  if (existingError) throw new Error(`Failed to look up menu category "${name}": ${existingError.message}`);
   if (existing?.id) return existing.id;
 
   const { data: inserted, error } = await admin
@@ -104,12 +108,13 @@ async function upsertMenuItem(
 ): Promise<void> {
   const row = shapeMenuItemForUpsert(menuItemRow, categoryIdBySiteId);
 
-  const { data: existing } = await admin
+  const { data: existing, error: existingError } = await admin
     .from("menu_items")
     .select("id, site_categories")
     .eq("business_id", businessId)
     .eq("name", row.name)
     .maybeSingle();
+  if (existingError) throw new Error(`Failed to look up menu item "${row.name}": ${existingError.message}`);
 
   if (existing?.id) {
     const mergedSiteCategories = { ...(existing.site_categories ?? {}), ...categoryIdBySiteId };
