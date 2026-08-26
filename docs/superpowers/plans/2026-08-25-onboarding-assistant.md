@@ -22,13 +22,15 @@
 
 ## Phasing
 
-**Ship checklists first, then menu/allergens.**
-- **Phase 1 (v1 — checklists):** Tasks 1, 2, 4, 5, 6, 7, 8. Ships an end-to-end working "photos of your
-  checks → live checklists" flow. In this phase the client sends only checks; the build receives
-  `dishes: []` (the dish path in `buildPlan`/`onboard-build` is present and tested but simply unexercised).
-  Task 1 (allergens) stays in Phase 1 only because Task 2 imports it — it's tiny and inert without dishes.
-- **Phase 2 (v1.1 — menu/allergens fast-follow):** Task 3 (`onboard-extract-menu`) + extend the hook
-  (Task 7) and widget (Task 8) with the menu step. No rework of Phase 1 — the build already handles dishes.
+**Ship checklists first, then menu/allergens. Voice deferred with menu (user decision 2026-08-26 — avoids a new paid vendor + secret in the first ship).**
+- **Phase 1 (v1 — checklists, photo+text only):** Tasks 1, 2, 4, 5, 7, 8. Ships an end-to-end working
+  "photos of your checks → live checklists" flow. The client sends only checks (photo/text); the build
+  receives `dishes: []` (the dish path in `buildPlan`/`onboard-build` is present and tested but unexercised).
+  Task 1 (allergens) stays in Phase 1 only because Task 2 imports it — tiny and inert without dishes.
+  **No voice in Phase 1:** the hook (Task 7) and widget (Task 8) expose photo + text only, no voice button.
+- **Phase 2 (v1.1 — menu/allergens + voice fast-follow):** Task 3 (`onboard-extract-menu`) + Task 6
+  (`onboard-transcribe`, Whisper/OPENAI_API_KEY) + extend the hook (Task 7) and widget (Task 8) with the
+  menu step and the voice button. No rework of Phase 1 — the build already handles dishes.
 
 ---
 
@@ -279,7 +281,12 @@ Deno.test("splits template row into parent + child item rows keyed by template i
 
 ---
 
-### Task 6: `onboard-transcribe` edge function — voice → text
+### Task 6: `onboard-transcribe` edge function — voice → text  — *(Phase 2 / v1.1 — DEFERRED, do NOT build in Phase 1)*
+
+> Deferred to the fast-follow (user decision 2026-08-26): introduces a new paid vendor (OpenAI Whisper) and
+> a new secret (`OPENAI_API_KEY`) for a voice input that is marginal to the photo-based checklist MVP.
+> Build alongside Task 3 in Phase 2, then wire the voice button into the hook (Task 7) and widget (Task 8).
+
 
 Browser voice note (audio) → text, so voice answers become text the extractors/flow can use.
 
@@ -299,9 +306,11 @@ Browser voice note (audio) → text, so voice answers become text the extractors
 
 ### Task 7: `useOnboarding` client hook — session + edge calls  — *(Phase 1; menu call added in Phase 2)*
 
-> **Phase 1:** `runBuild()` invokes only `onboard-extract-checks`, then `onboard-build` with `dishes: []`.
-> The test below includes the `onboard-extract-menu` mock (first `mockResolvedValueOnce`) — for Phase 1,
-> drop that first mock and the `dishes` assertion; add them back in Phase 2 when `addMenuMedia` is wired.
+> **Phase 1 (checks + text only, NO voice):** `runBuild()` invokes only `onboard-extract-checks`, then
+> `onboard-build` with `dishes: []`. The Phase-1 surface is `{ step, addChecksMedia(files), addChecksText(text),
+> runBuild(), result, status }` — NO `addMenuMedia`, NO `addVoice`. The test below includes the
+> `onboard-extract-menu` mock (first `mockResolvedValueOnce`) — for Phase 1, drop that first mock and the
+> `dishes` assertion. `addMenuMedia` + `addVoice` (→ `onboard-transcribe`) are added back in Phase 2.
 
 Client-side orchestration: hold collected artefacts, call the extractor + build edge functions, expose state to the widget. Vitest-testable with mocked `supabase.functions.invoke`.
 
@@ -341,9 +350,11 @@ test("runBuild aggregates extractor outputs into onboard-build", async () => {
 
 ### Task 8: `OnboardingAssistant` widget  — *(Phase 1: checks step only; menu step + "Review allergens" handoff added in Phase 2)*
 
-> **Phase 1** ships one step: "Send photos of the checks you use now" → build → "N checklists are live"
-> handoff. The "Send your menu" step and the "Review allergens" success CTA below are **Phase 2** — build
-> them when Task 3 lands. For Phase 1, omit the menu step and the allergen line from the success view.
+> **Phase 1 (photo + text only, NO voice)** ships one step: "Send photos of the checks you use now"
+> (`<input type="file">` + an optional free-text box) → "Set up my site" → build → "N checklists are live"
+> handoff. **No voice/MediaRecorder button in Phase 1.** The "Send your menu" step, the "Review allergens"
+> success CTA, and the voice button below are **Phase 2** — build them when Tasks 3 + 6 land. For Phase 1,
+> omit the menu step, the voice button, and the allergen line from the success view.
 
 The in-app UI: guided steps, photo upload, voice record, progress, result + "Review allergens" handoff. Modelled on `feedback-beacon.tsx`.
 

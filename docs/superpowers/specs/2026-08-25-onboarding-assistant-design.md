@@ -18,14 +18,16 @@ allergen matrix in ~10 minutes**, built into their live site.
 
 ## 2. Scope
 
-**v1 — checklists first** (ship the biggest, safest win alone; menu/allergens follows):
-1. **Paper checks → checklists.** Client sends photos of their current SFBB pack / temperature sheets /
-   cleaning schedules → AI builds `checklist_templates` + items, live in the site.
+**v1 — checklists first, photo + text only** (ship the biggest, safest win alone; menu/allergens + voice follow):
+1. **Paper checks → checklists.** Client sends photos (or typed text) of their current SFBB pack /
+   temperature sheets / cleaning schedules → AI builds `checklist_templates` + items, live in the site.
 
-**v1.1 (fast-follow) — menu → allergen matrix.** Client sends menu (photos / PDF / link) → AI builds
-`menu_items` with `declared_allergens[]` + `menu_categories`, pending owner attestation (the Tootoomoo
-115-dish job, automated). Deliberately split out of v1: it is the safety-critical, attestation-heavy
-piece, so it ships once the checklists path is proven end-to-end.
+**v1.1 (fast-follow) — menu → allergen matrix + voice input.** Client sends menu (photos / PDF / link) →
+AI builds `menu_items` with `declared_allergens[]` + `menu_categories`, pending owner attestation (the
+Tootoomoo 115-dish job, automated). Voice notes (STT via Whisper) also land here. Both deliberately split
+out of v1: menu/allergens is the safety-critical, attestation-heavy piece, and voice adds a new paid vendor
+(OpenAI) + secret — neither is needed to prove the photo-based checklists path end-to-end (user decision
+2026-08-26).
 
 **Out of scope (later / YAGNI):** Telegram/WhatsApp channels (in-app only), auto-creating team accounts,
 multi-department role split (Wanstead-style), fridge/sink list extraction, payment/Stripe (separate
