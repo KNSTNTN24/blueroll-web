@@ -133,13 +133,13 @@ export function OnboardingPanel() {
                 >
                   {files.length > 0
                     ? `${files.length} file${files.length === 1 ? '' : 's'} selected`
-                    : 'Upload photos or PDFs'}
+                    : 'Upload photos'}
                 </label>
                 <input
                   id="onboarding-checks-upload"
                   type="file"
                   multiple
-                  accept="image/*,application/pdf"
+                  accept="image/*"
                   aria-label="Upload photos of your checks"
                   onChange={handleFileChange}
                   className="sr-only"

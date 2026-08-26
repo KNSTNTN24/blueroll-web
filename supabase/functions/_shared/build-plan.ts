@@ -65,13 +65,14 @@ export function buildPlan(input: BuildInput, nowIso: string): {
 
   const templates: TemplateRow[] = input.checklists.map((c) => {
     const roles = c.assigned_roles?.length ? c.assigned_roles : ROLE_FALLBACK;
+    const roleIds = idsByTier(roles);
     return {
       business_id: input.businessId,
       site_id: input.siteId,
       name: c.name.trim(),
       frequency: FREQ.has(c.frequency ?? "") ? c.frequency! : "daily",
       assigned_roles: roles,
-      assigned_role_ids: idsByTier(roles),
+      assigned_role_ids: roleIds.length ? roleIds : input.roles.map((r) => r.id),
       items: c.items.map((it, i) => ({
         name: it.name.trim(),
         item_type: ITEM_TYPES.has(it.item_type) ? it.item_type : "text",

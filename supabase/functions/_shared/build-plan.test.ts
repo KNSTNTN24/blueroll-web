@@ -18,6 +18,17 @@ Deno.test("item_type: unknown coerced to 'text'", () => {
     checklists:[{ name:"X", assigned_roles:["manager"], items:[{name:"note", item_type:"dropdown"}] }] }, "2026-01-01T00:00:00Z");
   assertEquals(out.templates[0].items[0].item_type, "text");
 });
+Deno.test("template: no role matches fallback base_tiers → assigned_role_ids falls back to ALL business role ids (never empty)", () => {
+  const customRoles = [
+    { id: "r-custom1", base_tier: "custom_x" },
+    { id: "r-custom2", base_tier: "custom_y" },
+  ];
+  const out = buildPlan({ businessId:"b1", siteId:"s1", roles: customRoles, dishes:[],
+    checklists:[{ name:"Opening", assigned_roles:[], items:[{name:"Fridge 1", item_type:"temperature", max_value:5, unit:"°C"}] }] }, "2026-01-01T00:00:00Z");
+  const t = out.templates[0];
+  assertEquals(t.assigned_role_ids.length > 0, true);
+  assertEquals(new Set(t.assigned_role_ids), new Set(["r-custom1", "r-custom2"]));
+});
 Deno.test("menu item: allergens normalized + pending attestation", () => {
   const out = buildPlan({ businessId:"b1", siteId:"s1", roles, checklists:[],
     dishes:[{ name:"Prawn Crackers", category:"Small Plates", allergens:["Crustaceans","Soya"] }] }, "2026-01-01T00:00:00Z");
