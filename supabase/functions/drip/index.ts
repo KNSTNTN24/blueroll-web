@@ -69,6 +69,10 @@ async function sendLetter(email: string, letter: number): Promise<{ ok: boolean;
 
 async function runSend(testTo?: string, testLetter?: number) {
   if (testTo) {
+    // Re-sending a test must not trip the one-letter-per-email unique index.
+    await db(`template_email_log?email=eq.${encodeURIComponent(testTo)}&letter=eq.${testLetter ?? 1}`, {
+      method: 'DELETE', headers: { Prefer: 'return=minimal' },
+    }).catch(() => {})
     const r = await sendLetter(testTo, testLetter ?? 1)
     return { test: testTo, letter: testLetter ?? 1, ...r }
   }
