@@ -9,6 +9,7 @@ import { Topbar } from '@/components/layout/topbar'
 import { DemoBar } from '@/components/layout/demo-bar'
 import { DemoVeil } from '@/components/layout/demo-veil'
 import { FeedbackBeacon } from '@/components/feedback-beacon'
+import { OnboardingAssistant } from '@/components/onboarding-assistant'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
@@ -69,6 +70,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </main>
       </div>
       <FeedbackBeacon />
+      <OnboardingAssistant />
     </div>
   )
 }
