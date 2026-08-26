@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { CircleCheck, LoaderCircle, Sparkles, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
@@ -55,7 +55,6 @@ export function OnboardingPanel() {
   const [open, setOpen] = useState(false)
   const [files, setFiles] = useState<File[]>([])
   const [notes, setNotes] = useState('')
-  const fileInputRef = useRef<HTMLInputElement>(null)
 
   function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
     const selected = Array.from(event.target.files ?? [])
@@ -67,9 +66,14 @@ export function OnboardingPanel() {
   function handleSubmit() {
     // Commit the free-text notes once, in full, right before building —
     // addChecksText appends to the hook's running text on every call, so
-    // calling it on every keystroke would duplicate content.
+    // calling it per-keystroke (or re-committing on a retry-after-error)
+    // would duplicate content. Clear notes right after committing so a bare
+    // retry sends nothing extra; the hook already holds the first attempt's text.
     const trimmed = notes.trim()
-    if (trimmed) addChecksText(trimmed)
+    if (trimmed) {
+      addChecksText(trimmed)
+      setNotes('')
+    }
     void runBuild()
   }
 
@@ -132,7 +136,6 @@ export function OnboardingPanel() {
                     : 'Upload photos or PDFs'}
                 </label>
                 <input
-                  ref={fileInputRef}
                   id="onboarding-checks-upload"
                   type="file"
                   multiple
