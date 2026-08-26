@@ -58,7 +58,9 @@ export function DemoBar() {
     return () => { alive = false }
   }, [ownId, ownName, ownCreated])
 
-  if (dismissed) return null
+  // While demo is ON the bar is the only visible exit — it must not be
+  // dismissible (a real user closed it and got stranded in the demo).
+  if (dismissed && !demoMode) return null
   if (!demoMode && !eligible && !pinned) return null
 
   const on = demoMode
@@ -120,14 +122,18 @@ export function DemoBar() {
           >
             <span style={{ position: 'absolute', top: 2.5, left: on ? undefined : 2.5, right: on ? 2.5 : undefined, width: 15, height: 15, borderRadius: '50%', background: '#fff', boxShadow: `0 1px 2.5px rgba(90,70,20,${on ? '.32' : '.28'})` }} />
           </button>
-          <span style={{ width: 1, height: 16, background: on ? '#e2d0a0' : '#ece0c2', margin: '0 2px' }} />
-          <button
-            aria-label="Hide this bar until next sign-in"
-            onClick={() => { dismissDemoBar(); unpinDemoBar(); setDismissed(true) }}
-            style={{ width: 26, height: 26, marginRight: -6, borderRadius: 7, border: 'none', background: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
-          >
-            <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke={on ? '#9a8038' : '#a89a72'} strokeWidth="1.6" strokeLinecap="round"><path d="M2.5 2.5l7 7M9.5 2.5l-7 7" /></svg>
-          </button>
+          {!on && (
+            <>
+              <span style={{ width: 1, height: 16, background: '#ece0c2', margin: '0 2px' }} />
+              <button
+                aria-label="Hide this bar until next sign-in"
+                onClick={() => { dismissDemoBar(); unpinDemoBar(); setDismissed(true) }}
+                style={{ width: 26, height: 26, marginRight: -6, borderRadius: 7, border: 'none', background: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+              >
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="#a89a72" strokeWidth="1.6" strokeLinecap="round"><path d="M2.5 2.5l7 7M9.5 2.5l-7 7" /></svg>
+              </button>
+            </>
+          )}
         </span>
       </div>
     </div>
