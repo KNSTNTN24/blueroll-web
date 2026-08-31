@@ -1,7 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const STRIPE_SECRET_KEY = Deno.env.get("STRIPE_SECRET_KEY")!;
-const STRIPE_PRICE_ID = Deno.env.get("STRIPE_PRICE_ID") || "price_1TQOyvAJ1gsWpnv6SlnbGWVu";
+const STRIPE_PRICE_ID = Deno.env.get("STRIPE_PRICE_ID") || "price_1TryVwAJ1gsWpnv6ZnUYlPDJ";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
