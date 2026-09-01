@@ -139,6 +139,19 @@ export function OnboardingQuestionnaire({ onBack }: { onBack: () => void }) {
     )
   }
 
+  // 'building' = confirmBuild's network call is in flight. Show only the
+  // loading state — falling through to the step machine here would briefly
+  // re-show the stale mini-questionnaire and let a stray click fire a second
+  // concurrent generate() that races the build.
+  if (status === 'building') {
+    return (
+      <div className="flex flex-col items-center px-3 py-10 text-center">
+        <LoaderCircle className="h-6 w-6 animate-spin text-brand" />
+        <p className="mt-3 text-[13px] text-muted-foreground">Building your site…</p>
+      </div>
+    )
+  }
+
   if (status === 'error') {
     return (
       <div className="px-1 py-2">
@@ -292,7 +305,7 @@ function PreviewStep({
   generated: GeneratedChecklist[]
   kept: Set<number>
   setKept: (next: Set<number>) => void
-  confirmBuild: (checklists: GeneratedChecklist[]) => void
+  confirmBuild: (checklists: GeneratedChecklist[]) => void | Promise<void>
 }) {
   function isKept(index: number) {
     return !kept.has(index)

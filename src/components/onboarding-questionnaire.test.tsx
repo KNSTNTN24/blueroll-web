@@ -33,3 +33,29 @@ test('preview lists generated checklists and Build calls confirmBuild with kept 
   expect(confirmBuild).toHaveBeenCalled()
   expect(confirmBuild.mock.calls[0][0]).toHaveLength(2)
 })
+
+test('preview drop path: unchecking a row builds only the kept checklists', async () => {
+  confirmBuild.mockClear()
+  hook = { generate, confirmBuild, status: 'preview', result: null, errorMessage: null,
+    generated: [ { name: 'Fridge & Freezer Temperature Record', items: [{},{}] },
+                 { name: 'Kitchen Opening Checks', items: [{}] } ] }
+  render(<OnboardingQuestionnaire onBack={() => {}} />)
+  const checkboxes = screen.getAllByRole('checkbox') as HTMLInputElement[]
+  // Drop the first checklist by unticking its keep-checkbox.
+  fireEvent.click(checkboxes[0])
+  fireEvent.click(screen.getByRole('button', { name: /build/i }))
+  await act(async () => {})
+  expect(confirmBuild).toHaveBeenCalled()
+  const kept = confirmBuild.mock.calls[0][0]
+  expect(kept).toHaveLength(1)
+  expect(kept[0].name).toBe('Kitchen Opening Checks')
+})
+
+test('building state shows a loader and no interactive form', () => {
+  hook = { generate, confirmBuild, status: 'building', result: null, errorMessage: null, generated: null }
+  const { container } = render(<OnboardingQuestionnaire onBack={() => {}} />)
+  // A spinner is present (LoaderCircle renders with the animate-spin class).
+  expect(container.querySelector('.animate-spin')).toBeTruthy()
+  // The stale mini-questionnaire must NOT render during the build request.
+  expect(screen.queryByRole('button', { name: /create my checklists/i })).toBeNull()
+})
