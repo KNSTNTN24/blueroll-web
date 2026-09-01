@@ -51,7 +51,7 @@ export function OnboardingAssistant() {
  * directly so it can be unit-tested without the auth/db gate above.
  */
 export function OnboardingPanel() {
-  const { addChecksMedia, addChecksText, runBuild, status, result } = useOnboarding()
+  const { addChecksMedia, addChecksText, runBuild, status, result, errorMessage } = useOnboarding()
   const [open, setOpen] = useState(false)
   const [files, setFiles] = useState<File[]>([])
   const [notes, setNotes] = useState('')
@@ -158,7 +158,7 @@ export function OnboardingPanel() {
 
                 {status === 'error' && (
                   <p className="mt-2 text-[11.5px] text-warn" role="alert">
-                    We could not set up your site right now. Please try again.
+                    {errorMessage ?? 'We could not set up your site right now. Please try again.'}
                   </p>
                 )}
 
