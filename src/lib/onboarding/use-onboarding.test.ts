@@ -61,3 +61,30 @@ test('runBuild sets status to error when extract-checks invoke fails', async () 
   expect(result.current.result).toBeNull()
   expect(supabase.functions.invoke).toHaveBeenCalledTimes(1)
 })
+
+test('generate → preview holds engine checklists; confirmBuild sends kept ones to onboard-build', async () => {
+  (supabase.functions.invoke as any).mockReset()
+  ;(supabase.functions.invoke as any)
+    .mockResolvedValueOnce({ data: { checklists: [
+      { name: 'Fridge & Freezer Temperature Record', frequency: 'daily', assigned_roles: ['manager'], items: [{}] },
+      { name: 'Kitchen Opening Checks', frequency: 'daily', assigned_roles: ['manager'], items: [{}, {}] },
+    ] } })                                                    // onboard-generate
+    .mockResolvedValueOnce({ data: { templates: 1, dishes: 0 } }) // onboard-build
+  const { result } = renderHook(() => useOnboarding())
+  await act(async () => {
+    await result.current.generate({ areas: ['kitchen'], kitchen: {
+      fridges: [{ name: 'Fridge 1', kind: 'fridge' }], probeCount: 0, sinkCount: 1, cooking: [],
+      routines: { opening: true, closing: false, cleaning: false, allergen: false } } })
+  })
+  expect(result.current.status).toBe('preview')
+  expect(result.current.generated).toHaveLength(2)
+  const genCall = (supabase.functions.invoke as any).mock.calls[0]
+  expect(genCall[0]).toBe('onboard-generate')
+  expect(genCall[1].body.briefs.length).toBeGreaterThan(0)
+  await act(async () => { await result.current.confirmBuild([result.current.generated![0]]) })
+  const buildCall = (supabase.functions.invoke as any).mock.calls.at(-1)
+  expect(buildCall[0]).toBe('onboard-build')
+  expect(buildCall[1].body.checklists).toHaveLength(1)
+  expect(buildCall[1].body.dishes).toEqual([])
+  expect(result.current.status).toBe('done')
+})

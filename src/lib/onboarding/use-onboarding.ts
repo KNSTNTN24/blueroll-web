@@ -2,12 +2,20 @@
 
 import { useCallback, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { buildBriefs, type Answers } from './questionnaire'
 
-export type OnboardingStatus = 'idle' | 'building' | 'done' | 'error'
+export type OnboardingStatus = 'idle' | 'generating' | 'preview' | 'building' | 'done' | 'error'
 
 export interface OnboardingResult {
   templates: number
   dishes: number
+}
+
+export interface GeneratedChecklist {
+  name: string
+  frequency?: string
+  assigned_roles?: string[]
+  items: unknown[]
 }
 
 /** Reads a File as a base64 data URL, unmodified. */
@@ -94,6 +102,7 @@ export function useOnboarding() {
   const [result, setResult] = useState<OnboardingResult | null>(null)
   const [status, setStatus] = useState<OnboardingStatus>('idle')
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [generated, setGenerated] = useState<GeneratedChecklist[] | null>(null)
 
   const addChecksMedia = useCallback((files: File[]) => {
     setChecksMedia((prev) => [...prev, ...files])
@@ -148,6 +157,62 @@ export function useOnboarding() {
     }
   }, [checksMedia, checksText])
 
+  const generate = useCallback(async (answers: Answers) => {
+    setStatus('generating')
+    setErrorMessage(null)
+    setGenerated(null)
+
+    try {
+      const briefs = buildBriefs(answers)
+      if (briefs.length === 0) {
+        setErrorMessage('Pick at least one checklist to create.')
+        setStatus('error')
+        return
+      }
+
+      const { data, error } = await supabase.functions.invoke('onboard-generate', { body: { briefs } })
+      if (error) {
+        setErrorMessage(`Generating checklists failed: ${await describeInvokeError(error)}`)
+        setStatus('error')
+        return
+      }
+
+      const checklists = (data?.checklists ?? []) as GeneratedChecklist[]
+      if (checklists.length === 0) {
+        setErrorMessage('We could not generate checklists from those answers.')
+        setStatus('error')
+        return
+      }
+
+      setGenerated(checklists)
+      setStatus('preview')
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Something went wrong.')
+      setStatus('error')
+    }
+  }, [])
+
+  const confirmBuild = useCallback(async (checklists: GeneratedChecklist[]) => {
+    setStatus('building')
+    setResult(null)
+    setErrorMessage(null)
+
+    try {
+      const { data, error } = await supabase.functions.invoke('onboard-build', { body: { checklists, dishes: [] } })
+      if (error) {
+        setErrorMessage(`Building your site failed: ${await describeInvokeError(error)}`)
+        setStatus('error')
+        return
+      }
+
+      setResult({ templates: data?.templates ?? 0, dishes: data?.dishes ?? 0 })
+      setStatus('done')
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Something went wrong.')
+      setStatus('error')
+    }
+  }, [])
+
   return {
     step: 'checks' as const,
     addChecksMedia,
@@ -156,5 +221,8 @@ export function useOnboarding() {
     result,
     status,
     errorMessage,
+    generate,
+    generated,
+    confirmBuild,
   }
 }
