@@ -34,7 +34,12 @@ function downscaleToJpegDataUrl(file: File, maxDim: number, quality: number): Pr
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file)
     const img = new Image()
+    const timer = setTimeout(() => {
+      URL.revokeObjectURL(url)
+      reject(new Error('Image decode timed out'))
+    }, 8000)
     img.onload = () => {
+      clearTimeout(timer)
       URL.revokeObjectURL(url)
       const longest = Math.max(img.width, img.height) || 1
       const scale = Math.min(1, maxDim / longest)
@@ -52,6 +57,7 @@ function downscaleToJpegDataUrl(file: File, maxDim: number, quality: number): Pr
       resolve(canvas.toDataURL('image/jpeg', quality))
     }
     img.onerror = () => {
+      clearTimeout(timer)
       URL.revokeObjectURL(url)
       reject(new Error('Could not read that image'))
     }
