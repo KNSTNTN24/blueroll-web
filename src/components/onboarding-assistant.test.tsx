@@ -44,6 +44,7 @@ function openPanel() {
 test('shows checks step, gates Set up my site until a file is chosen, then triggers build', () => {
   render(<OnboardingPanel />)
   openPanel()
+  fireEvent.click(screen.getByRole('button', { name: /already have/i }))
 
   // Throws if not found — asserts the "photos of the checks" heading is present.
   screen.getByText(/photos of the checks/i)
@@ -74,6 +75,7 @@ test('commits notes text exactly once across a retry-after-error (no duplication
   }
   render(<OnboardingPanel />)
   openPanel()
+  fireEvent.click(screen.getByRole('button', { name: /already have/i }))
 
   const notes = screen.getByLabelText(/anything else/i) as HTMLTextAreaElement
   fireEvent.change(notes, { target: { value: '  note1  ' } })
@@ -106,8 +108,23 @@ test('success view shows checklist count with no dishes/allergens text', () => {
   }
   render(<OnboardingPanel />)
   openPanel()
+  fireEvent.click(screen.getByRole('button', { name: /already have/i }))
 
   screen.getByText(/3 checklists/i)
   expect(screen.queryByText(/dishes/i)).toBeNull()
   expect(screen.queryByText(/allergen/i)).toBeNull()
+})
+
+test('entry fork: choosing "build from scratch" shows the questionnaire', () => {
+  render(<OnboardingPanel />)
+  openPanel()
+  fireEvent.click(screen.getByRole('button', { name: /build from scratch/i }))
+  expect(screen.getByRole('button', { name: /kitchen/i })).toBeTruthy()
+})
+
+test('entry fork: choosing "I already have checklists" shows the upload step', () => {
+  render(<OnboardingPanel />)
+  openPanel()
+  fireEvent.click(screen.getByRole('button', { name: /already have/i }))
+  expect(screen.getByText(/photos of the checks/i)).toBeTruthy()
 })

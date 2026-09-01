@@ -9,6 +9,7 @@ import { useOnboarding } from '@/lib/onboarding/use-onboarding'
 import { cn } from '@/lib/utils'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
+import { OnboardingQuestionnaire } from '@/components/onboarding-questionnaire'
 
 /**
  * Gate: only render the assistant for entitled accounts that have not yet
@@ -51,33 +52,8 @@ export function OnboardingAssistant() {
  * directly so it can be unit-tested without the auth/db gate above.
  */
 export function OnboardingPanel() {
-  const { addChecksMedia, addChecksText, runBuild, status, result, errorMessage } = useOnboarding()
   const [open, setOpen] = useState(false)
-  const [files, setFiles] = useState<File[]>([])
-  const [notes, setNotes] = useState('')
-
-  function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
-    const selected = Array.from(event.target.files ?? [])
-    if (selected.length === 0) return
-    setFiles((prev) => [...prev, ...selected])
-    addChecksMedia(selected)
-  }
-
-  function handleSubmit() {
-    // Commit the free-text notes once, in full, right before building —
-    // addChecksText appends to the hook's running text on every call, so
-    // calling it per-keystroke (or re-committing on a retry-after-error)
-    // would duplicate content. Clear notes right after committing so a bare
-    // retry sends nothing extra; the hook already holds the first attempt's text.
-    const trimmed = notes.trim()
-    if (trimmed) {
-      addChecksText(trimmed)
-      setNotes('')
-    }
-    void runBuild()
-  }
-
-  const canSubmit = files.length > 0 && status !== 'building'
+  const [branch, setBranch] = useState<'fork' | 'upload' | 'scratch'>('fork')
 
   return (
     <>
@@ -105,74 +81,9 @@ export function OnboardingPanel() {
           </div>
 
           <div className="min-h-0 overflow-y-auto p-4">
-            {status === 'done' && result ? (
-              <div className="flex flex-col items-center px-3 py-6 text-center">
-                <span className="flex h-14 w-14 items-center justify-center rounded-full bg-brand-tint text-brand-deep">
-                  <CircleCheck className="h-7 w-7" strokeWidth={2} />
-                </span>
-                <div className="mt-4 text-[17px] font-semibold text-foreground">
-                  {result.templates} checklists are live
-                </div>
-                <p className="mt-1.5 max-w-[280px] text-[12.5px] leading-5 text-muted-foreground">
-                  We built these from the photos you sent. You can fine-tune them any time.
-                </p>
-                <Link href="/checklists" className={cn(buttonVariants(), 'mt-5 w-full transition-none')}>
-                  Go to checklists
-                </Link>
-              </div>
-            ) : (
-              <>
-                <p className="text-[13px] font-semibold text-foreground">
-                  Send photos of the checks you use now — temperature sheets, cleaning schedules,
-                  opening/closing. Phone photos are fine.
-                </p>
-
-                <label
-                  htmlFor="onboarding-checks-upload"
-                  className="mt-3 flex cursor-pointer items-center justify-center rounded-xl border border-dashed border-border px-4 py-6 text-center text-[12.5px] text-muted-foreground hover:border-brand hover:bg-accent"
-                >
-                  {files.length > 0
-                    ? `${files.length} file${files.length === 1 ? '' : 's'} selected`
-                    : 'Upload photos'}
-                </label>
-                <input
-                  id="onboarding-checks-upload"
-                  type="file"
-                  multiple
-                  accept="image/*"
-                  aria-label="Upload photos of your checks"
-                  onChange={handleFileChange}
-                  className="sr-only"
-                />
-
-                <label htmlFor="onboarding-checks-notes" className="mt-4 block text-[11.5px] font-medium text-[#535963]">
-                  Anything else worth mentioning? (optional)
-                </label>
-                <Textarea
-                  id="onboarding-checks-notes"
-                  value={notes}
-                  onChange={(event) => setNotes(event.target.value)}
-                  placeholder="E.g. we also check delivery temperatures every morning."
-                  className="mt-1.5 min-h-[90px] resize-none text-[13px] leading-5"
-                />
-
-                {status === 'error' && (
-                  <p className="mt-2 text-[11.5px] text-warn" role="alert">
-                    {errorMessage ?? 'We could not set up your site right now. Please try again.'}
-                  </p>
-                )}
-
-                <Button
-                  type="button"
-                  className="mt-4 w-full transition-none"
-                  disabled={!canSubmit}
-                  onClick={handleSubmit}
-                >
-                  {status === 'building' ? <LoaderCircle className="animate-spin" /> : <Sparkles />}
-                  {status === 'building' ? 'Setting up your site…' : 'Set up my site'}
-                </Button>
-              </>
-            )}
+            {branch === 'fork' && <EntryFork onUpload={() => setBranch('upload')} onScratch={() => setBranch('scratch')} />}
+            {branch === 'upload' && <UploadPanel onBack={() => setBranch('fork')} />}
+            {branch === 'scratch' && <OnboardingQuestionnaire onBack={() => setBranch('fork')} />}
           </div>
         </div>
       )}
@@ -189,6 +100,137 @@ export function OnboardingPanel() {
         <Sparkles className="h-[18px] w-[18px]" />
         <span className="hidden sm:inline">Set up my checklists</span>
       </button>
+    </>
+  )
+}
+
+/**
+ * Q0: the entry fork between the two onboarding paths — upload existing
+ * checks, or build a fresh set from a short questionnaire.
+ */
+function EntryFork({ onUpload, onScratch }: { onUpload: () => void; onScratch: () => void }) {
+  return (
+    <div className="px-1 py-2">
+      <p className="text-[13px] font-semibold text-foreground">Where do you want to start?</p>
+      <div className="mt-3 flex flex-col gap-2">
+        <Button type="button" variant="outline" className="w-full justify-center transition-none" onClick={onUpload}>
+          I already have checklists
+        </Button>
+        <Button type="button" className="w-full transition-none" onClick={onScratch}>
+          Build from scratch
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * The checks-only (Phase 1) upload flow. Extracted verbatim from the panel
+ * body so it can be one branch of the entry fork (Task 5); behavior is
+ * unchanged from before the fork was introduced.
+ */
+function UploadPanel({ onBack }: { onBack: () => void }) {
+  const { addChecksMedia, addChecksText, runBuild, status, result, errorMessage } = useOnboarding()
+  const [files, setFiles] = useState<File[]>([])
+  const [notes, setNotes] = useState('')
+
+  function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const selected = Array.from(event.target.files ?? [])
+    if (selected.length === 0) return
+    setFiles((prev) => [...prev, ...selected])
+    addChecksMedia(selected)
+  }
+
+  function handleSubmit() {
+    // Commit the free-text notes once, in full, right before building —
+    // addChecksText appends to the hook's running text on every call, so
+    // calling it per-keystroke (or re-committing on a retry-after-error)
+    // would duplicate content. Clear notes right after committing so a bare
+    // retry sends nothing extra; the hook already holds the first attempt's text.
+    const trimmed = notes.trim()
+    if (trimmed) {
+      addChecksText(trimmed)
+      setNotes('')
+    }
+    void runBuild()
+  }
+
+  const canSubmit = files.length > 0 && status !== 'building'
+
+  if (status === 'done' && result) {
+    return (
+      <div className="flex flex-col items-center px-3 py-6 text-center">
+        <span className="flex h-14 w-14 items-center justify-center rounded-full bg-brand-tint text-brand-deep">
+          <CircleCheck className="h-7 w-7" strokeWidth={2} />
+        </span>
+        <div className="mt-4 text-[17px] font-semibold text-foreground">
+          {result.templates} checklists are live
+        </div>
+        <p className="mt-1.5 max-w-[280px] text-[12.5px] leading-5 text-muted-foreground">
+          We built these from the photos you sent. You can fine-tune them any time.
+        </p>
+        <Link href="/checklists" className={cn(buttonVariants(), 'mt-5 w-full transition-none')}>
+          Go to checklists
+        </Link>
+      </div>
+    )
+  }
+
+  return (
+    <>
+      <Button type="button" variant="outline" className="mb-3 transition-none" onClick={onBack}>
+        Back
+      </Button>
+
+      <p className="text-[13px] font-semibold text-foreground">
+        Send photos of the checks you use now — temperature sheets, cleaning schedules,
+        opening/closing. Phone photos are fine.
+      </p>
+
+      <label
+        htmlFor="onboarding-checks-upload"
+        className="mt-3 flex cursor-pointer items-center justify-center rounded-xl border border-dashed border-border px-4 py-6 text-center text-[12.5px] text-muted-foreground hover:border-brand hover:bg-accent"
+      >
+        {files.length > 0
+          ? `${files.length} file${files.length === 1 ? '' : 's'} selected`
+          : 'Upload photos'}
+      </label>
+      <input
+        id="onboarding-checks-upload"
+        type="file"
+        multiple
+        accept="image/*"
+        aria-label="Upload photos of your checks"
+        onChange={handleFileChange}
+        className="sr-only"
+      />
+
+      <label htmlFor="onboarding-checks-notes" className="mt-4 block text-[11.5px] font-medium text-[#535963]">
+        Anything else worth mentioning? (optional)
+      </label>
+      <Textarea
+        id="onboarding-checks-notes"
+        value={notes}
+        onChange={(event) => setNotes(event.target.value)}
+        placeholder="E.g. we also check delivery temperatures every morning."
+        className="mt-1.5 min-h-[90px] resize-none text-[13px] leading-5"
+      />
+
+      {status === 'error' && (
+        <p className="mt-2 text-[11.5px] text-warn" role="alert">
+          {errorMessage ?? 'We could not set up your site right now. Please try again.'}
+        </p>
+      )}
+
+      <Button
+        type="button"
+        className="mt-4 w-full transition-none"
+        disabled={!canSubmit}
+        onClick={handleSubmit}
+      >
+        {status === 'building' ? <LoaderCircle className="animate-spin" /> : <Sparkles />}
+        {status === 'building' ? 'Setting up your site…' : 'Set up my site'}
+      </Button>
     </>
   )
 }
