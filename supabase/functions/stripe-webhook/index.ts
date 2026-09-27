@@ -89,26 +89,10 @@ async function verifyStripeSignature(
 
 // ─── Stripe subscription → businesses row ──────────────────────────────────────
 
-interface StripeSubscription {
-  id: string;
-  customer: string;
-  status: string; // trialing | active | past_due | canceled | unpaid | incomplete | incomplete_expired
-  cancel_at_period_end: boolean;
-  trial_end: number | null;
-}
-
-function subscriptionUpdatePayload(sub: StripeSubscription) {
-  return {
-    subscription_id: sub.id,
-    // Stripe's view only. The DB arbiter (trg_zz_subscription_arbiter) computes
-    // subscription_status/trial_ends_at from all sources; it publishes a live
-    // 'canceling' as 'active' so paid users keep access until period end.
-    stripe_status: sub.cancel_at_period_end ? "canceling" : sub.status,
-    stripe_until: sub.trial_end
-      ? new Date(sub.trial_end * 1000).toISOString()
-      : null,
-  };
-}
+import {
+  type StripeSubscription,
+  subscriptionUpdatePayload,
+} from "./payload.ts";
 
 async function applySubscriptionEvent(
   sub: StripeSubscription,
