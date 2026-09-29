@@ -54,14 +54,14 @@ BEGIN
   ELSIF v_new = 'active' AND COALESCE(NEW.stripe_status, '') = 'canceling' THEN
     -- The arbiter publishes a queued cancellation as 'active' (access runs
     -- to period end), so read the source column to tell the truth here.
-    v_title := 'Cancellation queued'; v_tags := 'warning,wave'; v_prio := 4;
+    v_title := 'Subscription CANCELLED'; v_tags := 'broken_heart'; v_prio := 4;
     IF NEW.stripe_until IS NOT NULL THEN
-      v_extra := E'\naccess ends ' || to_char(NEW.stripe_until, 'DD Mon');
+      v_extra := E'\ncancelled, access ends ' || to_char(NEW.stripe_until, 'DD Mon');
     END IF;
   ELSIF v_new = 'active' THEN
     v_title := 'Subscription ACTIVE'; v_tags := 'moneybag,tada'; v_prio := 5;
   ELSIF v_new = 'canceling' THEN
-    v_title := 'Cancellation queued'; v_tags := 'warning,wave'; v_prio := 4;
+    v_title := 'Subscription CANCELLED'; v_tags := 'broken_heart'; v_prio := 4;
   ELSIF v_new IN ('canceled','cancelled') THEN
     v_title := 'Subscription cancelled'; v_tags := 'broken_heart'; v_prio := 4;
   ELSIF v_new IN ('past_due','unpaid') THEN
