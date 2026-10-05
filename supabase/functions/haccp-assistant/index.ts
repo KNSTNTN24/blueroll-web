@@ -34,14 +34,10 @@ Deno.serve(async (req: Request) => {
 
   let body: { action?: string; text?: string; question?: string; venue_type?: string };
   try { body = await req.json(); } catch { return json(400, { error: "body" }); }
+  if (!body || typeof body !== "object") return json(400, { error: "body" });
   if (body.action === "parse_equipment" && !(typeof body.text === "string" && body.text.trim())) return json(400, { error: "text" });
   if (body.action === "answer" && !(typeof body.question === "string" && body.question.trim())) return json(400, { error: "question" });
   if (body.action !== "parse_equipment" && body.action !== "answer") return json(400, { error: "action" });
-
-  const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
-  const { count } = await admin.from("ai_usage_log").select("id", { count: "exact", head: true })
-    .eq("business_id", profile.business_id).gte("created_at", since);
-  if ((count ?? 0) >= DAILY_LIMIT) return json(429, { error: "limit" });
 
   // An answer with no matching knowledge never reaches the model (and costs nothing).
   let chunks = [] as ReturnType<typeof searchKnowledge>;
@@ -51,9 +47,26 @@ Deno.serve(async (req: Request) => {
   }
   if (!ANTHROPIC_KEY) return json(502, { error: "model" });
 
+  // Reserve a usage slot first (fail closed), so parallel requests and failed paid calls still count.
+  const { data: reservation, error: resErr } = await admin.from("ai_usage_log")
+    .insert({ business_id: profile.business_id, fn: body.action, input_tokens: 0, output_tokens: 0 })
+    .select("id").single();
+  if (resErr || !reservation) return json(503, { error: "limit_check" });
+  const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+  const { count, error: countErr } = await admin.from("ai_usage_log").select("id", { count: "exact", head: true })
+    .eq("business_id", profile.business_id).gte("created_at", since);
+  if (countErr || count === null) {
+    await admin.from("ai_usage_log").delete().eq("id", reservation.id);
+    return json(503, { error: "limit_check" });
+  }
+  if (count > DAILY_LIMIT) {
+    await admin.from("ai_usage_log").delete().eq("id", reservation.id);
+    return json(429, { error: "limit" });
+  }
+
   const request = body.action === "parse_equipment"
     ? buildEquipmentRequest(body.text!)
-    : buildAnswerRequest(body.question!, chunks, body.venue_type);
+    : buildAnswerRequest(body.question!, chunks, typeof body.venue_type === "string" ? body.venue_type.slice(0, 40) : undefined);
 
   let resp: unknown;
   try {
@@ -74,9 +87,9 @@ Deno.serve(async (req: Request) => {
   }
 
   const usage = usageOf(resp);
-  await admin.from("ai_usage_log").insert({
-    business_id: profile.business_id, fn: body.action, input_tokens: usage.input, output_tokens: usage.output,
-  });
+  const { error: updErr } = await admin.from("ai_usage_log")
+    .update({ input_tokens: usage.input, output_tokens: usage.output }).eq("id", reservation.id);
+  if (updErr) console.error("usage update failed", updErr.code);
 
   return body.action === "parse_equipment"
     ? json(200, { equipment: parseEquipmentResponse(resp) })
