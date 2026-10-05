@@ -8,6 +8,8 @@ import { HACCP_SECTIONS, ALLERGEN_LABELS, type EUAllergen } from '@/lib/constant
 import { resolveAllergens, sourceMeta, type Dish } from '@/lib/dishes'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
+import Link from 'next/link'
+import { useAuth } from '@/hooks/use-auth'
 import { Download, ChevronDown, FileText, X, Eye, Link2 } from 'lucide-react'
 import { DocumentPickerModal, type PickedDocument } from '@/components/shared/document-picker-modal'
 import { SiteSignoffBadge } from './site-signoff'
@@ -125,6 +127,7 @@ const EMPTY_DATA: HaccpPackRow = {
 
 export default function HaccpPackPage() {
   const { business, profile } = useAuthStore()
+  const { isManager } = useAuth()
   const sites = useAuthStore((s) => s.sites)
   const currentSiteId = useAuthStore((s) => s.currentSiteId)
   // Scope "All sites" on a multi-site group → group dashboard instead of the pack.
@@ -732,6 +735,10 @@ export default function HaccpPackPage() {
               />
             </span>
           </button>
+
+          {isManager && (
+            <Link href="/haccp-setup" className="rounded-md border px-3 py-1.5 text-[13px] font-medium">Set up with questions</Link>
+          )}
 
           {/* Export PDF */}
           <button
