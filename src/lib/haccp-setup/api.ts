@@ -53,7 +53,8 @@ export async function loadExisting(businessId: string, siteId: string): Promise<
       .select('id, name')
       .eq('business_id', businessId).is('library_key', null)
       .or(`site_id.eq.${siteId},site_id.is.null`),
-    supabase.from('haccp_pack_data').select('data, updated_at').eq('business_id', businessId).maybeSingle(),
+    // The pack is per site (UNIQUE business_id + site_id).
+    supabase.from('haccp_pack_data').select('data, updated_at').eq('business_id', businessId).eq('site_id', siteId).maybeSingle(),
   ])
   if (tpl.error) throw tpl.error
   if (others.error) throw others.error

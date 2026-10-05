@@ -93,7 +93,7 @@ begin
   end if;
 
   -- Concurrency guard: the draft was built against this version of the pack.
-  select id, updated_at into v_pack_id, v_pack_upd from public.haccp_pack_data where business_id = s.business_id for update;
+  select id, updated_at into v_pack_id, v_pack_upd from public.haccp_pack_data where business_id = s.business_id and site_id = s.site_id for update;
   if (p_payload->>'pack_expected_updated_at')::timestamptz is distinct from v_pack_upd then
     raise exception 'pack_changed';
   end if;
@@ -144,9 +144,10 @@ begin
 
   -- ApplyPayload.pack is `PackData | null`; JSON null arrives as jsonb 'null' (not SQL NULL), so test the type.
   if jsonb_typeof(p_payload->'pack') = 'object' then
-    insert into public.haccp_pack_data (business_id, data, updated_at)
-    values (s.business_id, p_payload->'pack', now())
-    on conflict (business_id) do update set data = excluded.data, updated_at = now();
+    -- The pack is per site: prod has UNIQUE (business_id, site_id) (uq_haccp_pack_business_site).
+    insert into public.haccp_pack_data (business_id, site_id, data, updated_at)
+    values (s.business_id, s.site_id, p_payload->'pack', now())
+    on conflict (business_id, site_id) do update set data = excluded.data, updated_at = now();
   end if;
 
   update public.haccp_setup_sessions

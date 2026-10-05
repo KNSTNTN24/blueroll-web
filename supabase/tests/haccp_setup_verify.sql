@@ -11,7 +11,7 @@ set local role authenticated;
 insert into haccp_setup_sessions (business_id, site_id, questionnaire_version) values (:'biz', :'site', 1) returning id \gset sess_
 -- 2. apply with one checklist and a pack
 select apply_haccp_setup(:'sess_id', jsonb_build_object(
-  'pack_expected_updated_at', (select updated_at from haccp_pack_data where business_id = :'biz'),
+  'pack_expected_updated_at', (select updated_at from haccp_pack_data where business_id = :'biz' and site_id = :'site'),
   'checklists', jsonb_build_array(jsonb_build_object('key', 'verify_tmp', 'name', 'Verify tmp', 'description', 'x',
      'frequency', 'daily', 'sfbb_section', 'cleaning', 'deadline_time', null, 'assigned_roles', jsonb_build_array('owner'),
      'items', jsonb_build_array(jsonb_build_object('name', 'T', 'item_type', 'temperature', 'required', true, 'min_value', 0, 'max_value', 5, 'unit', '°C'))))
