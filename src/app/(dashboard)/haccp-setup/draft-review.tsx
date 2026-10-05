@@ -15,33 +15,55 @@ import type { Answers, Draft, ExistingState } from '@/lib/haccp-setup/types'
 
 const FREQ: Record<string, string> = { daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly', four_weekly: 'Every 4 weeks', custom: 'As needed' }
 
+type Done = { created: number; fields: number; items: number }
+
 export function DraftReview({ businessId, siteId, sessionId, answers, postcode, onApplied }: {
   businessId: string; siteId: string; sessionId: string; answers: Answers; postcode: string | null; onApplied: () => void
 }) {
-  const existing = useQuery({ queryKey: ['haccp-setup-existing', businessId, siteId], queryFn: () => loadExisting(businessId, siteId) })
-  if (existing.isLoading) return <p className="text-[14px] text-muted-foreground">Preparing your draft…</p>
-  if (existing.error || !existing.data) return <p className="text-[14px] text-destructive">Could not load your current setup.</p>
-  return <Review key={existing.dataUpdatedAt} {...{ businessId, siteId, sessionId, answers, postcode, onApplied }}
-    existing={existing.data} refetch={() => existing.refetch()} />
+  const existing = useQuery({
+    queryKey: ['haccp-setup-existing', businessId, siteId],
+    queryFn: () => loadExisting(businessId, siteId),
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+  })
+  const [done, setDone] = useState<Done | null>(null)
+  if (done) {
+    return (
+      <section className="flex flex-col gap-3 rounded-xl border p-5">
+        <h2 className="text-[17px] font-semibold">Done</h2>
+        <p className="text-[14px]">Created {done.created} checklists (switched off). Filled {done.fields} HACCP pack fields.</p>
+        {done.items > 0 && <p className="text-[14px]">Added {done.items} items to existing checklists.</p>}
+        <Link className="text-[14px] underline" href="/checklists?tab=library">Review and switch on your checklists</Link>
+        <Link className="text-[14px] underline" href="/haccp-pack">Check and sign your HACCP pack</Link>
+        <Button variant="outline" className="self-start" onClick={onApplied}>Finish</Button>
+      </section>
+    )
+  }
+  if (!existing.data) {
+    if (existing.isLoading) return <p className="text-[14px] text-muted-foreground">Preparing your draft…</p>
+    return <p className="text-[14px] text-destructive">Could not load your current setup.</p>
+  }
+  return <Review key={`${existing.dataUpdatedAt}:${JSON.stringify(answers)}`} {...{ businessId, sessionId, answers, postcode, onApplied }}
+    existing={existing.data} refetch={() => existing.refetch()} onDone={setDone} />
 }
 
-function Review({ businessId, sessionId, answers, postcode, existing, refetch, onApplied }: {
-  businessId: string; siteId: string; sessionId: string; answers: Answers; postcode: string | null
-  existing: ExistingState; refetch: () => void; onApplied: () => void
+function Review({ businessId, sessionId, answers, postcode, existing, refetch, onApplied, onDone }: {
+  businessId: string; sessionId: string; answers: Answers; postcode: string | null
+  existing: ExistingState; refetch: () => void; onApplied: () => void; onDone: (d: Done) => void
 }) {
   const qc = useQueryClient()
   const draft: Draft = useMemo(
     () => buildDraft({ answers, scotland: isScottishPostcode(postcode), existing }), [answers, postcode, existing])
   const [sel, setSel] = useState<Selection>(() => defaultSelection(draft))
-  const [done, setDone] = useState<{ created: number; fields: number } | null>(null)
+  const payload = toApplyPayload(draft, sel, existing)
   const toggle = (list: keyof Selection, id: string) =>
     setSel((s) => ({ ...s, [list]: s[list].includes(id) ? s[list].filter((x) => x !== id) : [...s[list], id] }))
 
   const apply = useMutation({
-    mutationFn: () => applySetup(sessionId, toApplyPayload(draft, sel, existing)),
+    mutationFn: () => applySetup(sessionId, payload),
     onSuccess: (r) => {
-      setDone({ created: r.created, fields: sel.fieldIds.length })
       for (const k of [['all-checklists'], ['my-checklists'], ['haccp-pack', businessId]]) qc.invalidateQueries({ queryKey: k })
+      onDone({ created: r.created, fields: payload.summary.fields.length, items: r.items_added })
     },
     onError: (e: Error) => {
       if (e.message.includes('pack_changed')) { toast.error("Your HACCP pack changed while you were reviewing. We've refreshed the draft."); refetch() }
@@ -51,21 +73,9 @@ function Review({ businessId, sessionId, answers, postcode, existing, refetch, o
     },
   })
 
-  if (done) {
-    return (
-      <section className="flex flex-col gap-3 rounded-xl border p-5">
-        <h2 className="text-[17px] font-semibold">Done</h2>
-        <p className="text-[14px]">Created {done.created} checklists (switched off). Filled {done.fields} HACCP pack fields.</p>
-        <Link className="text-[14px] underline" href="/checklists?tab=library">Review and switch on your checklists</Link>
-        <Link className="text-[14px] underline" href="/haccp-pack">Check and sign your HACCP pack</Link>
-        <Button variant="outline" className="self-start" onClick={onApplied}>Finish</Button>
-      </section>
-    )
-  }
-
   const methodName = (id: string) => HACCP_METHODS.find((m) => m.id === id)?.name ?? id
   const byMethod = draft.fields.reduce<Record<string, Draft['fields']>>((acc, f) => { (acc[f.methodId] ??= []).push(f); return acc }, {})
-  const nothing = !sel.checklistKeys.length && !sel.itemAddIds.length && !sel.fieldIds.length
+  const nothing = !payload.checklists.length && !payload.item_adds.length && !payload.summary.fields.length
 
   return (
     <section className="flex flex-col gap-5 rounded-xl border p-5">
