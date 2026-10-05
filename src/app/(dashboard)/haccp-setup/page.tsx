@@ -12,6 +12,7 @@ import { abandonSession, loadOrCreateSession, saveAnswers } from '@/lib/haccp-se
 import type { AnswerValue, Answers } from '@/lib/haccp-setup/types'
 import { Chat } from './chat'
 import { AssistantPanel } from './assistant-panel'
+import { DraftReview } from './draft-review'
 
 export default function HaccpSetupPage() {
   const { business, sites, currentSiteId, isManager, demoMode } = useAuth()
@@ -103,7 +104,11 @@ function SetupInner({ session, businessId, siteId }: {
       </aside>
       <main className="flex flex-col gap-6">
         <Chat answers={answers} previous={previous} onAnswer={onAnswer} onClear={onClear} />
-        {finished && <div data-testid="draft-pending" />}
+        {finished && (
+          <DraftReview businessId={businessId} siteId={siteId} sessionId={session.id} answers={answers}
+            postcode={site?.postcode ?? null}
+            onApplied={() => qc.invalidateQueries({ queryKey: ['haccp-setup-session', businessId, siteId] })} />
+        )}
         <AssistantPanel venueType={answers.venue_type as string | undefined} />
       </main>
     </div>
