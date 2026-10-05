@@ -76,6 +76,8 @@ export interface DraftChecklist {
   key: string; name: string; description: string; sfbb_section: ChecklistSection
   frequency: Frequency; deadline_time: string | null; assigned_roles: Tier[]
   items: LibItem[]; reason: string
+  /** Name of an existing non-library checklist that already covers this; such checklists start unselected. */
+  similarTo?: string
 }
 export interface DraftItemAdd { templateId: string; key: string; templateName: string; item: LibItem }
 export type FieldStatus = 'new' | 'kept' | 'manual'
@@ -84,7 +86,12 @@ export interface DraftField {
   value: PackValue; status: FieldStatus; current?: PackValue
 }
 export interface ExistingTemplate { id: string; library_key: string; name: string; itemNames: string[] }
-export interface ExistingState { templates: ExistingTemplate[]; pack: PackData | null; packUpdatedAt: string | null }
+/** A checklist without a library_key (e.g. the onboarding defaults). */
+export interface OtherTemplate { id: string; name: string }
+export interface ExistingState {
+  templates: ExistingTemplate[]; pack: PackData | null; packUpdatedAt: string | null
+  others?: OtherTemplate[]
+}
 export interface Draft {
   checklists: DraftChecklist[]
   existing: { key: string; name: string }[]

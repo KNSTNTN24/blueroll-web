@@ -57,7 +57,7 @@ function SetupInner({ session, businessId, siteId }: {
   session: { id: string; answers: Answers | null }; businessId: string; siteId: string
 }) {
   const qc = useQueryClient()
-  const { sites } = useAuth()
+  const { sites, business } = useAuth()
   const site = sites.find((s) => s.id === siteId)
   const [answers, setAnswers] = useState<Answers>(() => session.answers ?? {})
   const [previous, setPrevious] = useState<Answers>({})
@@ -106,7 +106,8 @@ function SetupInner({ session, businessId, siteId }: {
         <Chat answers={answers} previous={previous} onAnswer={onAnswer} onClear={onClear} />
         {finished && (
           <DraftReview businessId={businessId} siteId={siteId} sessionId={session.id} answers={answers}
-            postcode={site?.postcode ?? null}
+            postcode={site?.postcode ?? business?.post_code ?? null}
+            flushSaves={() => saveChain.current}
             onApplied={() => qc.invalidateQueries({ queryKey: ['haccp-setup-session', businessId, siteId] })} />
         )}
         <AssistantPanel venueType={answers.venue_type as string | undefined} />

@@ -15,9 +15,17 @@ export async function loadOrCreateSession(businessId: string, siteId: string): P
     .order('created_at', { ascending: false }).limit(1)
   if (error) throw error
   if (found?.length) return found[0] as SetupSession
+  // Re-run: start from the answers of the last applied setup for this site, so the owner only edits what changed.
+  const { data: last, error: lastErr } = await supabase
+    .from('haccp_setup_sessions')
+    .select('answers')
+    .eq('business_id', businessId).eq('site_id', siteId).eq('status', 'applied')
+    .order('applied_at', { ascending: false }).limit(1)
+  if (lastErr) throw lastErr
+  const seed = (last?.[0]?.answers ?? {}) as Answers
   const { data, error: insErr } = await supabase
     .from('haccp_setup_sessions')
-    .insert({ business_id: businessId, site_id: siteId, questionnaire_version: QUESTIONNAIRE_VERSION })
+    .insert({ business_id: businessId, site_id: siteId, questionnaire_version: QUESTIONNAIRE_VERSION, answers: seed })
     .select('id, business_id, site_id, questionnaire_version, answers, status')
     .single()
   if (insErr) throw insErr
@@ -36,13 +44,19 @@ export async function abandonSession(sessionId: string): Promise<void> {
 }
 
 export async function loadExisting(businessId: string, siteId: string): Promise<ExistingState> {
-  const [tpl, pack] = await Promise.all([
+  const [tpl, others, pack] = await Promise.all([
     supabase.from('checklist_templates')
       .select('id, library_key, name, checklist_template_items(name)')
       .eq('business_id', businessId).eq('site_id', siteId).not('library_key', 'is', null),
+    // Non-library checklists of this site or business-wide (onboarding defaults are inserted without site_id).
+    supabase.from('checklist_templates')
+      .select('id, name')
+      .eq('business_id', businessId).is('library_key', null)
+      .or(`site_id.eq.${siteId},site_id.is.null`),
     supabase.from('haccp_pack_data').select('data, updated_at').eq('business_id', businessId).maybeSingle(),
   ])
   if (tpl.error) throw tpl.error
+  if (others.error) throw others.error
   if (pack.error) throw pack.error
   const inner = (pack.data?.data ?? null) as Partial<PackData> | null
   return {
@@ -56,6 +70,7 @@ export async function loadExisting(businessId: string, siteId: string): Promise<
     } : null,
     // Pass back EXACTLY the string PostgREST returned (never via Date: microseconds would be lost).
     packUpdatedAt: pack.data?.updated_at ?? null,
+    others: (others.data ?? []).map((t: { id: string; name: string }) => ({ id: t.id, name: t.name })),
   }
 }
 
@@ -86,7 +101,11 @@ async function callAssistant<T>(body: unknown): Promise<T> {
   if (resp.status === 429) throw new AssistantError('limit', "You've reached today's limit of 30 assistant questions. Try again tomorrow.")
   if (resp.status === 401 || resp.status === 403) throw new AssistantError('forbidden', 'Only owners and managers can use the assistant.')
   if (!resp.ok) throw new AssistantError('unavailable', 'The assistant is not available right now.')
-  return (await resp.json()) as T
+  try {
+    return (await resp.json()) as T
+  } catch {
+    throw new AssistantError('unavailable', 'The assistant is not available right now.')
+  }
 }
 
 export async function assistantParseEquipment(text: string): Promise<Equipment[]> {

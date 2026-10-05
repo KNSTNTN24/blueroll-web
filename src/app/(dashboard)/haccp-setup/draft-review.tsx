@@ -17,8 +17,11 @@ const FREQ: Record<string, string> = { daily: 'Daily', weekly: 'Weekly', monthly
 
 type Done = { created: number; fields: number; items: number }
 
-export function DraftReview({ businessId, siteId, sessionId, answers, postcode, onApplied }: {
-  businessId: string; siteId: string; sessionId: string; answers: Answers; postcode: string | null; onApplied: () => void
+export function DraftReview({ businessId, siteId, sessionId, answers, postcode, flushSaves, onApplied }: {
+  businessId: string; siteId: string; sessionId: string; answers: Answers; postcode: string | null
+  /** Resolves once every pending answer save has finished. */
+  flushSaves: () => Promise<unknown>
+  onApplied: () => void
 }) {
   const existing = useQuery({
     queryKey: ['haccp-setup-existing', businessId, siteId],
@@ -43,26 +46,32 @@ export function DraftReview({ businessId, siteId, sessionId, answers, postcode, 
     if (existing.isLoading) return <p className="text-[14px] text-muted-foreground">Preparing your draft…</p>
     return <p className="text-[14px] text-destructive">Could not load your current setup.</p>
   }
-  return <Review key={`${existing.dataUpdatedAt}:${JSON.stringify(answers)}`} {...{ businessId, sessionId, answers, postcode, onApplied }}
+  return <Review key={`${existing.dataUpdatedAt}:${JSON.stringify(answers)}`} {...{ businessId, siteId, sessionId, answers, postcode, flushSaves, onApplied }}
     existing={existing.data} refetch={() => existing.refetch()} onDone={setDone} />
 }
 
-function Review({ businessId, sessionId, answers, postcode, existing, refetch, onApplied, onDone }: {
-  businessId: string; sessionId: string; answers: Answers; postcode: string | null
+function Review({ businessId, siteId, sessionId, answers, postcode, flushSaves, existing, refetch, onApplied, onDone }: {
+  businessId: string; siteId: string; sessionId: string; answers: Answers; postcode: string | null
+  flushSaves: () => Promise<unknown>
   existing: ExistingState; refetch: () => void; onApplied: () => void; onDone: (d: Done) => void
 }) {
   const qc = useQueryClient()
+  const scotland = isScottishPostcode(postcode)
   const draft: Draft = useMemo(
-    () => buildDraft({ answers, scotland: isScottishPostcode(postcode), existing }), [answers, postcode, existing])
+    () => buildDraft({ answers, scotland, existing }), [answers, scotland, existing])
   const [sel, setSel] = useState<Selection>(() => defaultSelection(draft))
   const payload = toApplyPayload(draft, sel, existing)
   const toggle = (list: keyof Selection, id: string) =>
     setSel((s) => ({ ...s, [list]: s[list].includes(id) ? s[list].filter((x) => x !== id) : [...s[list], id] }))
 
   const apply = useMutation({
-    mutationFn: () => applySetup(sessionId, payload),
+    mutationFn: async () => {
+      await flushSaves() // stored answers pre-fill a re-run, so the last ones must be saved before the session is applied
+      return applySetup(sessionId, payload)
+    },
     onSuccess: (r) => {
-      for (const k of [['all-checklists'], ['my-checklists'], ['haccp-pack', businessId]]) qc.invalidateQueries({ queryKey: k })
+      for (const k of [['all-checklists'], ['my-checklists'], ['haccp-pack', businessId], ['haccp-setup-existing', businessId, siteId]])
+        qc.invalidateQueries({ queryKey: k })
       onDone({ created: r.created, fields: payload.summary.fields.length, items: r.items_added })
     },
     onError: (e: Error) => {
@@ -79,7 +88,12 @@ function Review({ businessId, sessionId, answers, postcode, existing, refetch, o
 
   return (
     <section className="flex flex-col gap-5 rounded-xl border p-5">
-      <h2 className="text-[17px] font-semibold">Your draft</h2>
+      <div>
+        <h2 className="text-[17px] font-semibold">Your draft</h2>
+        <p className="text-[12px] text-muted-foreground">
+          Rules applied: {scotland ? 'Scotland' : 'England, Wales and Northern Ireland'}
+        </p>
+      </div>
       {draft.notes.length > 0 && (
         <ul className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-[13px] text-amber-900">
           {draft.notes.map((n) => <li key={n}>• {n}</li>)}
@@ -94,7 +108,8 @@ function Review({ businessId, sessionId, answers, postcode, existing, refetch, o
               <label className="flex items-start gap-2 text-[14px]">
                 <input type="checkbox" className="mt-1" checked={sel.checklistKeys.includes(c.key)} onChange={() => toggle('checklistKeys', c.key)} />
                 <span><b>{c.name}</b> · {FREQ[c.frequency]} · {c.items.length} items<br />
-                  <span className="text-[12px] text-muted-foreground">{c.reason}</span></span>
+                  <span className="text-[12px] text-muted-foreground">{c.reason}</span>
+                  {c.similarTo && <><br /><span className="text-[12px] text-amber-700">You already have something similar: {c.similarTo}</span></>}</span>
               </label>
             </li>
           ))}
@@ -123,7 +138,10 @@ function Review({ businessId, sessionId, answers, postcode, existing, refetch, o
                   {f.status === 'new' ? (
                     <label className="flex items-start gap-2">
                       <input type="checkbox" className="mt-0.5" checked={sel.fieldIds.includes(f.fieldId)} onChange={() => toggle('fieldIds', f.fieldId)} />
-                      <span>{f.label}{f.type === 'toggle' ? ' — yes' : <>: <i>{String(f.value)}</i></>}</span>
+                      <span>{f.label}{f.type === 'toggle' ? ' — yes' : <>: <i>{String(f.value)}</i></>}
+                        {f.current !== undefined && (
+                          <span className="text-muted-foreground"> (replaces: {f.current === true ? 'yes' : f.current === false ? 'no' : String(f.current)})</span>
+                        )}</span>
                     </label>
                   ) : (
                     <span className="text-muted-foreground">

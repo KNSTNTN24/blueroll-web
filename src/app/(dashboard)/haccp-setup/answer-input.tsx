@@ -10,6 +10,7 @@ import { X } from 'lucide-react'
 import type { AnswerValue, Equipment, EquipmentKind, Question } from '@/lib/haccp-setup/types'
 import { EQUIPMENT_KINDS } from '@/lib/haccp-setup/types'
 import { assistantParseEquipment, AssistantError } from '@/lib/haccp-setup/api'
+import { dedupeEquipment } from '@/lib/haccp-setup/equipment-labels'
 
 const KIND_LABEL: Record<EquipmentKind, string> = {
   fridge: 'Fridge', freezer: 'Freezer', display_chiller: 'Display chiller', blast_chiller: 'Blast chiller',
@@ -87,7 +88,7 @@ function EquipmentInput({ value, onChange, onConfirm }: {
   const add = () => {
     const l = label.trim()
     if (!l) return
-    onChange([...value, { kind, label: l.slice(0, 60) }])
+    onChange(dedupeEquipment(value, [{ kind, label: l }]))
     setLabel('')
   }
   const parse = async () => {
@@ -95,7 +96,7 @@ function EquipmentInput({ value, onChange, onConfirm }: {
     try {
       const items = await assistantParseEquipment(free)
       if (!items.length) toast.message("We couldn't find any equipment in that text — add items one by one.")
-      onChange([...value, ...items])
+      onChange(dedupeEquipment(value, items))
       setFree('')
     } catch (e) {
       if (e instanceof AssistantError) { toast.error(e.message); if (e.code !== 'limit') setAssistantOff(true) }

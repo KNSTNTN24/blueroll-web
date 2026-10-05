@@ -1,6 +1,7 @@
 // src/lib/haccp-setup/__tests__/golden.test.ts
 import { describe, it, expect } from 'vitest'
 import { buildDraft } from '../draft'
+import { defaultSelection } from '../apply'
 import type { Answers, ExistingState } from '../types'
 
 const none: ExistingState = { templates: [], pack: null, packUpdatedAt: null }
@@ -47,6 +48,17 @@ describe('golden profiles — checklist sets', () => {
   it('bakery', () => expect(keys(PROFILES.bakery)).toEqual(
     ['opening_checks', 'closing_checks', 'fridge_temps', 'delivery_check', 'defrosting', 'weekly_deep_clean', 'allergen_check',
       'pest_contractor_visit', 'bakery_display', 'haccp_review']))
+})
+
+describe('golden profiles — onboarding defaults', () => {
+  it('library checklists matching the seeded defaults are listed but not pre-selected', () => {
+    const others = ['Fridge & Freezer Temperatures', 'Daily Opening Checks', 'Delivery Acceptance', 'End of Day Closing',
+      'Weekly Deep Clean & Calibration', '4-Weekly HACCP Review'].map((name, i) => ({ id: `s${i}`, name }))
+    const d = buildDraft({ answers: PROFILES.coffee_shop, scotland: false, existing: { ...none, others } })
+    expect(d.checklists.filter((c) => c.similarTo).map((c) => c.key)).toEqual(
+      ['opening_checks', 'closing_checks', 'fridge_temps', 'delivery_check', 'weekly_deep_clean', 'haccp_review'])
+    expect(defaultSelection(d).checklistKeys).toEqual(['allergen_check', 'pest_contractor_visit'])
+  })
 })
 
 describe('golden profiles — pack fields', () => {

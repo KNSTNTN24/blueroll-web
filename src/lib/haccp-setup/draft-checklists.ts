@@ -1,9 +1,11 @@
 // src/lib/haccp-setup/draft-checklists.ts
-import type { Ctx, DraftChecklist, DraftItemAdd, ExistingTemplate } from './types'
-import { CHECKLIST_LIBRARY } from './content/checklists'
+import type { Ctx, DraftChecklist, DraftItemAdd, ExistingTemplate, OtherTemplate } from './types'
+import { CHECKLIST_LIBRARY, SIMILAR_DEFAULTS } from './content/checklists'
 import { evalCond } from './conditions'
 
-export function buildChecklistDraft(ctx: Ctx, existing: ExistingTemplate[]) {
+const norm = (s: string) => s.trim().toLowerCase()
+
+export function buildChecklistDraft(ctx: Ctx, existing: ExistingTemplate[], others: OtherTemplate[] = []) {
   const byKey = new Map(existing.map((t) => [t.library_key, t]))
   const checklists: DraftChecklist[] = []
   const already: { key: string; name: string }[] = []
@@ -21,10 +23,12 @@ export function buildChecklistDraft(ctx: Ctx, existing: ExistingTemplate[]) {
       }
       continue
     }
+    const similarNames = (SIMILAR_DEFAULTS[lib.key] ?? []).map(norm)
+    const similar = others.find((o) => similarNames.includes(norm(o.name)))
     checklists.push({
       key: lib.key, name: lib.name, description: lib.description, sfbb_section: lib.sfbb_section,
       frequency: lib.frequency, deadline_time: lib.deadline_time ?? null, assigned_roles: lib.assigned_roles,
-      items, reason: lib.reason,
+      items, reason: lib.reason, ...(similar ? { similarTo: similar.name } : {}),
     })
   }
   return { checklists, existing: already, itemAdds }

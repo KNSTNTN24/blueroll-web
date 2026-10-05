@@ -22,7 +22,7 @@ function notesFor(a: Answers): string[] {
 export function buildDraft(input: { answers: Answers; scotland: boolean; existing: ExistingState }): Draft {
   const answers = effectiveAnswers(QUESTIONS, input.answers)
   const ctx = { answers, scotland: input.scotland }
-  const cl = buildChecklistDraft(ctx, input.existing.templates)
+  const cl = buildChecklistDraft(ctx, input.existing.templates, input.existing.others ?? [])
   return {
     checklists: cl.checklists,
     existing: cl.existing,

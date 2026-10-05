@@ -1,7 +1,7 @@
 // src/lib/haccp-setup/__tests__/draft-checklists.test.ts
 import { describe, it, expect } from 'vitest'
 import { buildChecklistDraft } from '../draft-checklists'
-import { CHECKLIST_LIBRARY } from '../content/checklists'
+import { CHECKLIST_LIBRARY, SIMILAR_DEFAULTS } from '../content/checklists'
 import type { Ctx } from '../types'
 
 const restaurant: Ctx = {
@@ -47,6 +47,18 @@ describe('buildChecklistDraft', () => {
     const withOut = buildChecklistDraft({ ...restaurant, answers: { ...restaurant.answers, processes: ['delivery_out'] } }, [])
     expect(withOut.checklists.find((c) => c.key === 'opening_checks')!.items.map((i) => i.name))
       .toContain('Delivery bags clean and insulated')
+  })
+  it('a default (non-library) template with a similar name marks the library checklist, still listed', () => {
+    const others = [{ id: 's1', name: 'Fridge & Freezer Temperatures' }, { id: 's2', name: 'daily opening checks ' }, { id: 's3', name: 'My own list' }]
+    const d = buildChecklistDraft(restaurant, [], others)
+    expect(d.checklists.find((c) => c.key === 'fridge_temps')!.similarTo).toBe('Fridge & Freezer Temperatures')
+    expect(d.checklists.find((c) => c.key === 'opening_checks')!.similarTo).toBe('daily opening checks ')
+    expect(d.checklists.find((c) => c.key === 'cooking_temps')!.similarTo).toBeUndefined()
+    expect('similarTo' in d.checklists.find((c) => c.key === 'closing_checks')!).toBe(false)
+  })
+  it('SIMILAR_DEFAULTS only references real library keys', () => {
+    const keys = new Set(CHECKLIST_LIBRARY.map((c) => c.key))
+    for (const k of Object.keys(SIMILAR_DEFAULTS)) expect(keys.has(k)).toBe(true)
   })
   it('every library entry has non-empty roles and unique keys', () => {
     expect(new Set(CHECKLIST_LIBRARY.map((c) => c.key)).size).toBe(CHECKLIST_LIBRARY.length)

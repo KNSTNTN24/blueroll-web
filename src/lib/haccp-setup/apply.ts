@@ -14,14 +14,16 @@ export const itemAddId = (a: DraftItemAdd) => `${a.templateId}:${a.item.name}`
 
 export function defaultSelection(d: Draft): Selection {
   return {
-    checklistKeys: d.checklists.map((c) => c.key),
-    itemAddIds: d.itemAdds.map(itemAddId),
+    // Checklists that duplicate an existing default, and additions to existing checklists, are opt-in.
+    checklistKeys: d.checklists.filter((c) => !c.similarTo).map((c) => c.key),
+    itemAddIds: [],
     fieldIds: d.fields.filter((f) => f.status === 'new').map((f) => f.fieldId),
   }
 }
 
 export function toApplyPayload(draft: Draft, sel: Selection, existing: ExistingState): ApplyPayload {
   const checklists = draft.checklists.filter((c) => sel.checklistKeys.includes(c.key))
+    .map((c) => { const out = { ...c }; delete out.similarTo; return out })
   const adds = draft.itemAdds.filter((a) => sel.itemAddIds.includes(itemAddId(a)))
   const fields = draft.fields.filter((f) => f.status === 'new' && sel.fieldIds.includes(f.fieldId))
   return {

@@ -128,3 +128,14 @@ export const CHECKLIST_LIBRARY: LibChecklist[] = [
       yn('New dishes, suppliers or equipment added to the pack'), yn('Staff training up to date'),
       yn('HACCP pack still matches how we work'), note('Changes made')] },
 ]
+
+// Default checklists every business gets at onboarding (src/lib/seed-checklists.ts, library_key NULL).
+// A library checklist with one of these names already present is offered but not pre-selected.
+export const SIMILAR_DEFAULTS: Record<string, string[]> = {
+  fridge_temps: ['Fridge & Freezer Temperatures'],
+  opening_checks: ['Daily Opening Checks'],
+  closing_checks: ['End of Day Closing'],
+  delivery_check: ['Delivery Acceptance'],
+  weekly_deep_clean: ['Weekly Deep Clean & Calibration'],
+  haccp_review: ['4-Weekly HACCP Review'],
+}
