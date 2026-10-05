@@ -578,7 +578,7 @@ export default function HaccpPackPage() {
         business_id: businessId,
         toggles: inner.toggles ?? {}, texts: inner.texts ?? {},
         files: inner.files ?? {}, selects: inner.selects ?? {},
-        overrides: inner.overrides ?? {},
+        overrides: inner.overrides ?? {}, sources: inner.sources ?? {},
       }
       const p = computeTotalProgress(rowData, autoData, autoFillEnabled)
       m[r.site_id] = { filled: p.filled, total: p.total, pct: p.pct }

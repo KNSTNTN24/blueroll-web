@@ -21,8 +21,7 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
   const pathname = usePathname()
   const { profile, business, user, sites, currentSiteId, setCurrentSiteId } = useAuthStore()
   // Group-shared pages carry a chip clarifying the switcher is context-only here
-  const sharedChip = pathname?.startsWith('/haccp-pack') ? 'Pack shared across all sites'
-    : pathname?.startsWith('/suppliers') ? 'Approved list shared across all sites'
+  const sharedChip = pathname?.startsWith('/suppliers') ? 'Approved list shared across all sites'
     : pathname?.startsWith('/recipes') || pathname?.startsWith('/menu') || pathname?.startsWith('/allergens') ? 'Shared across all sites'
     : null
   const displayName = profile?.full_name || user?.email?.split('@')[0] || 'User'
