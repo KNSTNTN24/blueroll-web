@@ -71,4 +71,15 @@ describe('answer changes and notes', () => {
     expect(buildDraft({ answers: noProbe, scotland: false, existing: none }).notes)
       .toContain('You cook or hold hot food but listed no probe thermometer. You need one to check temperatures.')
   })
+  it('Scotland uses 82 °C in the pack text and the reheating checklist', () => {
+    const d = buildDraft({ answers: PROFILES.restaurant, scotland: true, existing: none })
+    expect(String(d.fields.find((f) => f.fieldId === 'rh_procedure')!.value)).toContain('82 °C')
+    expect(d.checklists.find((c) => c.key === 'reheating')!.items[0].min_value).toBe(82)
+  })
+  it('reheat text does not claim a probe when none is listed', () => {
+    const noProbe = { ...PROFILES.takeaway, equipment: [{ kind: 'fridge', label: 'Fridge' }] } as Answers
+    const v = String(buildDraft({ answers: noProbe, scotland: false, existing: none }).fields.find((f) => f.fieldId === 'rh_procedure')!.value)
+    expect(v).not.toContain('probe')
+    expect(v).toContain('75 °C')
+  })
 })

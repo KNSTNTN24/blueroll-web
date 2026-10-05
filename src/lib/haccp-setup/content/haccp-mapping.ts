@@ -108,7 +108,9 @@ export const FIELD_RULES: FieldRule[] = [
   { fieldId: 'rh_once', value: (c) => when(yes(c, 'reheat_once'), true) },
   { fieldId: 'rh_check', value: (c) => when(yes(c, 'reheat_once') && hasEq(c, 'probe'), true) },
   { fieldId: 'rh_procedure', value: (c) => when(has(c, 'processes', 'reheat'),
-      `Food is reheated until steaming hot all the way through and the core reaches ${c.scotland ? T.reheatMinScotland : T.reheatMin} °C, checked with a probe. Food is reheated only once.`) },
+      `Food is reheated until steaming hot all the way through and the core reaches ${c.scotland ? T.reheatMinScotland : T.reheatMin} °C`
+      + (hasEq(c, 'probe') ? ', checked with a probe' : '') + '.'
+      + (yes(c, 'reheat_once') ? ' Food is reheated only once.' : '')) },
   ...(['eggs', 'rice', 'pulses', 'shellfish'] as const).map((v) => ({
     fieldId: ({ eggs: 'ec_eggs', rice: 'ec_rice', pulses: 'ec_pulses', shellfish: 'ec_shellfish' })[v],
     value: (c: Ctx) => when(has(c, 'extra_care', v), true),
