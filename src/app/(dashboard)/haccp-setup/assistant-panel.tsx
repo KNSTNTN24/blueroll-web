@@ -18,6 +18,7 @@ export function AssistantPanel({ venueType }: { venueType: string | undefined })
     try { setResult(await assistantAnswer(q, venueType)) }
     catch (e) {
       if (e instanceof AssistantError) { setError(e.message); if (e.code === 'unavailable') setHidden(true) }
+      else setError('Something went wrong — try again.')
     } finally { setBusy(false) }
   }
 
@@ -35,7 +36,7 @@ export function AssistantPanel({ venueType }: { venueType: string | undefined })
           <p>{result.answer}</p>
           {result.sources.length > 0 && (
             <ul className="mt-2 text-[12px] text-muted-foreground">
-              {result.sources.map((s) => <li key={s.title}>Source: {s.title} — {s.source}</li>)}
+              {result.sources.map((s, i) => <li key={`${s.title}-${i}`}>Source: {s.title} — {s.source}</li>)}
             </ul>
           )}
         </div>

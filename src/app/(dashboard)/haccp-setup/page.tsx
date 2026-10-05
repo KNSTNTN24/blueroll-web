@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { useAuth } from '@/hooks/use-auth'
@@ -41,29 +41,44 @@ function Notice({ text }: { text: string }) {
 }
 
 function Setup({ businessId, siteId }: { businessId: string; siteId: string }) {
-  const qc = useQueryClient()
-  const { sites } = useAuth()
-  const site = sites.find((s) => s.id === siteId)
   const session = useQuery({
     queryKey: ['haccp-setup-session', businessId, siteId],
     queryFn: () => loadOrCreateSession(businessId, siteId),
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
   })
-  const [answers, setAnswers] = useState<Answers>({})
-  useEffect(() => { if (session.data) setAnswers(session.data.answers ?? {}) }, [session.data])
+  if (session.isLoading) return <Notice text="Loading…" />
+  if (session.error || !session.data) return <Notice text="Could not start the setup. Please try again." />
+  return <SetupInner key={session.data.id} session={session.data} businessId={businessId} siteId={siteId} />
+}
+
+function SetupInner({ session, businessId, siteId }: {
+  session: { id: string; answers: Answers | null }; businessId: string; siteId: string
+}) {
+  const qc = useQueryClient()
+  const { sites } = useAuth()
+  const site = sites.find((s) => s.id === siteId)
+  const [answers, setAnswers] = useState<Answers>(() => session.answers ?? {})
+  const [previous, setPrevious] = useState<Answers>({})
+  const saveChain = useRef<Promise<unknown>>(Promise.resolve())
 
   const persist = (next: Answers) => {
     setAnswers(next)
-    if (session.data) saveAnswers(session.data.id, next).catch(() => toast.error('Could not save your answer — check your connection.'))
+    saveChain.current = saveChain.current
+      .then(() => saveAnswers(session.id, next))
+      .catch(() => { toast.error('Could not save your answer — check your connection.') })
   }
   const onAnswer = (id: string, v: AnswerValue) => persist({ ...answers, [id]: v })
-  const onClear = (id: string) => { const next = { ...answers }; delete next[id]; persist(next) }
-  const restart = async () => {
-    if (session.data) await abandonSession(session.data.id)
-    qc.invalidateQueries({ queryKey: ['haccp-setup-session', businessId, siteId] })
+  const onClear = (id: string) => {
+    if (answers[id] !== undefined) setPrevious((p) => ({ ...p, [id]: answers[id] }))
+    const next = { ...answers }; delete next[id]; persist(next)
   }
-
-  if (session.isLoading) return <Notice text="Loading…" />
-  if (session.error || !session.data) return <Notice text="Could not start the setup. Please try again." />
+  const restart = async () => {
+    try {
+      await abandonSession(session.id)
+      qc.invalidateQueries({ queryKey: ['haccp-setup-session', businessId, siteId] })
+    } catch { toast.error('Could not start over — try again.') }
+  }
 
   const progress = progressBySection(QUESTIONS, answers)
   const finished = nextQuestion(QUESTIONS, answers) === null
@@ -87,7 +102,7 @@ function Setup({ businessId, siteId }: { businessId: string; siteId: string }) {
         <Button variant="ghost" className="mt-4 self-start text-[12px]" onClick={restart}>Start over</Button>
       </aside>
       <main className="flex flex-col gap-6">
-        <Chat answers={answers} onAnswer={onAnswer} onClear={onClear} />
+        <Chat answers={answers} previous={previous} onAnswer={onAnswer} onClear={onClear} />
         {finished && <div data-testid="draft-pending" />}
         <AssistantPanel venueType={answers.venue_type as string | undefined} />
       </main>

@@ -99,6 +99,7 @@ function EquipmentInput({ value, onChange, onConfirm }: {
       setFree('')
     } catch (e) {
       if (e instanceof AssistantError) { toast.error(e.message); if (e.code !== 'limit') setAssistantOff(true) }
+      else toast.error('Something went wrong — try again.')
     } finally { setParsing(false) }
   }
 

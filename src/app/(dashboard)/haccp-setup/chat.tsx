@@ -7,8 +7,8 @@ import { QUESTIONS } from '@/lib/haccp-setup/content/questions'
 import { nextQuestion, suggestedAnswer, visibleQuestions } from '@/lib/haccp-setup/engine'
 import { AnswerInput, formatAnswer } from './answer-input'
 
-export function Chat({ answers, onAnswer, onClear }: {
-  answers: Answers; onAnswer: (id: string, v: AnswerValue) => void; onClear: (id: string) => void
+export function Chat({ answers, previous, onAnswer, onClear }: {
+  answers: Answers; previous: Answers; onAnswer: (id: string, v: AnswerValue) => void; onClear: (id: string) => void
 }) {
   const current = nextQuestion(QUESTIONS, answers)
   const done = visibleQuestions(QUESTIONS, answers).filter((q) => answers[q.id] !== undefined)
@@ -24,12 +24,12 @@ export function Chat({ answers, onAnswer, onClear }: {
           </div>
         </div>
       ))}
-      {current && <CurrentQuestion key={current.id} q={current} answers={answers} onAnswer={onAnswer} />}
+      {current && <CurrentQuestion key={current.id} q={current} answers={answers} previous={previous} onAnswer={onAnswer} />}
     </div>
   )
 }
 
-function CurrentQuestion({ q, answers, onAnswer }: { q: Question; answers: Answers; onAnswer: (id: string, v: AnswerValue) => void }) {
+function CurrentQuestion({ q, answers, previous, onAnswer }: { q: Question; answers: Answers; previous: Answers; onAnswer: (id: string, v: AnswerValue) => void }) {
   const [why, setWhy] = useState(false)
   return (
     <div className="flex flex-col gap-2 rounded-xl border p-4">
@@ -38,7 +38,7 @@ function CurrentQuestion({ q, answers, onAnswer }: { q: Question; answers: Answe
         Why we ask <ChevronDown className="h-3 w-3" />
       </button>
       {why && <p className="text-[13px] text-muted-foreground">{q.why}</p>}
-      <AnswerInput question={q} initial={suggestedAnswer(q, answers)} onConfirm={(v) => onAnswer(q.id, v)} />
+      <AnswerInput question={q} initial={previous[q.id] ?? suggestedAnswer(q, answers)} onConfirm={(v) => onAnswer(q.id, v)} />
     </div>
   )
 }
