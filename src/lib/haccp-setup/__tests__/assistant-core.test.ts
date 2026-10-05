@@ -78,4 +78,13 @@ describe('answers', () => {
     expect(parseAnswerResponse(toolResp('give_answer', { answer: FALLBACK_ANSWER, source_ids: [chunks[0].id] }), chunks).sources).toEqual([])
     expect(parseAnswerResponse(toolResp('give_answer', { answer: OFF_TOPIC_ANSWER, source_ids: [chunks[0].id] }), chunks).sources).toEqual([])
   })
+  it.each(['<>>><<', '>><<<>'])('strips nested delimiter input %s', (evil) => {
+    const a: string = (buildAnswerRequest(evil + ' hi', chunks, 'takeaway') as any).messages[0].content
+    const au = a.slice(a.indexOf('Owner question:'))
+    expect(au.match(/>/g)).toHaveLength(3)
+    expect(au.match(/</g)).toHaveLength(3)
+    const e: string = (buildEquipmentRequest(evil + ' fridge') as any).messages[0].content
+    expect(e.match(/>/g)).toHaveLength(3)
+    expect(e.match(/</g)).toHaveLength(3)
+  })
 })

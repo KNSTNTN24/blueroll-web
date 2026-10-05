@@ -8,9 +8,9 @@ export const FALLBACK_ANSWER = "I can't answer that reliably from our food safet
 export const OFF_TOPIC_ANSWER = 'I can only help with food safety and setting up your HACCP in Blueroll.'
 const MAX_LABEL = 60
 const VENUES = ['restaurant', 'coffee_shop', 'takeaway', 'bakery']
-// Neutralise our prompt delimiters and control characters (keep \n) in user text.
+// Strip all angle brackets (so delimiters cannot re-form) and control characters (keep \n) in user text.
 // eslint-disable-next-line no-control-regex
-const clean = (s: string) => String(s ?? '').replace(/<<<|>>>/g, '').replace(/[\x00-\x09\x0b-\x1f\x7f]/g, '')
+const clean = (s: string) => String(s ?? '').replace(/[<>]/g, '').replace(/[\x00-\x09\x0b-\x1f\x7f]/g, '')
 
 export function buildEquipmentRequest(text: string) {
   return {
