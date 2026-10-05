@@ -38,11 +38,13 @@ create policy "managers read setup sessions" on public.haccp_setup_sessions
   for select using (public.is_business_manager(business_id));
 drop policy if exists "managers create setup sessions" on public.haccp_setup_sessions;
 create policy "managers create setup sessions" on public.haccp_setup_sessions
-  for insert with check (public.is_business_manager(business_id) and status = 'in_progress');
+  for insert with check (public.is_business_manager(business_id) and status = 'in_progress'
+                        and exists (select 1 from public.sites st where st.id = site_id and st.business_id = haccp_setup_sessions.business_id));
 drop policy if exists "managers update setup sessions" on public.haccp_setup_sessions;
 create policy "managers update setup sessions" on public.haccp_setup_sessions
   for update using (public.is_business_manager(business_id) and status = 'in_progress')
   with check (public.is_business_manager(business_id)
+              and exists (select 1 from public.sites st where st.id = site_id and st.business_id = haccp_setup_sessions.business_id)
               and (status in ('in_progress', 'abandoned') or (status = 'applied' and applied_at is not null)));
 
 alter table public.checklist_templates add column if not exists library_key text;
@@ -86,6 +88,9 @@ begin
   if s.status <> 'in_progress' then raise exception 'already_applied'; end if;
   select * into s from public.haccp_setup_sessions where id = p_session for update;
   if not found or s.status <> 'in_progress' then raise exception 'already_applied'; end if;
+  if not exists (select 1 from public.sites st where st.id = s.site_id and st.business_id = s.business_id) then
+    raise exception 'forbidden';
+  end if;
 
   -- Concurrency guard: the draft was built against this version of the pack.
   select id, updated_at into v_pack_id, v_pack_upd from public.haccp_pack_data where business_id = s.business_id for update;
@@ -94,9 +99,11 @@ begin
   end if;
 
   for t in select * from jsonb_array_elements(coalesce(p_payload->'checklists', '[]'::jsonb)) loop
+    if coalesce(t->>'key', '') = '' then raise exception 'missing_key'; end if;  -- NULL library_key bypasses the partial unique index
     v_tiers := array(select jsonb_array_elements_text(t->'assigned_roles'));
     if coalesce(array_length(v_tiers, 1), 0) = 0 then raise exception 'empty_roles'; end if;
     v_role_ids := array(select r.id from public.roles r where r.business_id = s.business_id and r.base_tier = any(v_tiers));
+    if coalesce(array_length(v_role_ids, 1), 0) = 0 then raise exception 'empty_roles'; end if;  -- empty assigned_role_ids = invisible template
     v_tid := null;
     insert into public.checklist_templates
       (business_id, site_id, library_key, name, description, frequency, sfbb_section, deadline_time,

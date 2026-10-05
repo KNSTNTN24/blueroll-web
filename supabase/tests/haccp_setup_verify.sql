@@ -22,3 +22,5 @@ select active, is_default, array_length(assigned_role_ids, 1) > 0 as has_role_id
 select apply_haccp_setup(:'sess_id', '{}'::jsonb);                       -- expect ERROR already_applied
 rollback;
 -- 4. pack_changed: repeat steps 1–2 with 'pack_expected_updated_at' = '2000-01-01' → expect ERROR pack_changed; rollback.
+-- Other RPC error codes (not exercised above): missing_key (a checklist without 'key'), empty_roles (no assigned_roles,
+-- or none of them match a role of the business), forbidden (session site not a site of the session business).
