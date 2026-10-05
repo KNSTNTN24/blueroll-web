@@ -88,7 +88,9 @@ export class AssistantError extends Error {
 async function callAssistant<T>(body: unknown): Promise<T> {
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) throw new AssistantError('forbidden', 'Not signed in')
-  const resp = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/haccp-assistant`, {
+  // NEXT_PUBLIC_HACCP_ASSISTANT_URL lets local dev point at a locally served function.
+  const fnUrl = process.env.NEXT_PUBLIC_HACCP_ASSISTANT_URL ?? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/haccp-assistant`
+  const resp = await fetch(fnUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
