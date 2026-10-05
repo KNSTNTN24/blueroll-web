@@ -26,6 +26,7 @@ interface HaccpPackRow {
   files: Record<string, string>
   selects: Record<string, string>
   overrides: Record<string, boolean>
+  sources: Record<string, 'questionnaire'>
   updated_at?: string
 }
 
@@ -115,6 +116,7 @@ const EMPTY_DATA: HaccpPackRow = {
   files: {},
   selects: {},
   overrides: {},
+  sources: {},
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -161,6 +163,7 @@ export default function HaccpPackPage() {
         files: inner.files ?? {},
         selects: inner.selects ?? {},
         overrides: inner.overrides ?? {},
+        sources: inner.sources ?? {},
         updated_at: data.updated_at,
       } as HaccpPackRow
     },
@@ -462,6 +465,7 @@ export default function HaccpPackPage() {
           files: newData.files,
           selects: newData.selects,
           overrides: newData.overrides,
+          sources: newData.sources,
         },
         updated_at: new Date().toISOString(),
       }
@@ -506,6 +510,10 @@ export default function HaccpPackPage() {
         updated.selects = { ...updated.selects, [fieldId]: value as string }
         updated.overrides = { ...updated.overrides, [fieldId]: true }
         break
+    }
+    if (type !== 'file' && updated.sources?.[fieldId]) {
+      updated.sources = { ...updated.sources }
+      delete updated.sources[fieldId]
     }
     queryClient.setQueryData(['haccp-pack', businessId], updated)
     debouncedSave(updated)
