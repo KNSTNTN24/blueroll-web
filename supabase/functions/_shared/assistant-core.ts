@@ -7,6 +7,10 @@ export const EQUIPMENT_KINDS_LIST = ['fridge', 'freezer', 'display_chiller', 'bl
 export const FALLBACK_ANSWER = "I can't answer that reliably from our food safety guidance. Please check with your local environmental health officer (EHO)."
 export const OFF_TOPIC_ANSWER = 'I can only help with food safety and setting up your HACCP in Blueroll.'
 const MAX_LABEL = 60
+const VENUES = ['restaurant', 'coffee_shop', 'takeaway', 'bakery']
+// Neutralise our prompt delimiters and control characters (keep \n) in user text.
+// eslint-disable-next-line no-control-regex
+const clean = (s: string) => String(s ?? '').replace(/<<<|>>>/g, '').replace(/[\x00-\x09\x0b-\x1f\x7f]/g, '')
 
 export function buildEquipmentRequest(text: string) {
   return {
@@ -26,7 +30,7 @@ export function buildEquipmentRequest(text: string) {
       },
     }],
     tool_choice: { type: 'tool', name: 'record_equipment' },
-    messages: [{ role: 'user', content: `Equipment description:\n<<<\n${text.slice(0, 1000)}\n>>>` }],
+    messages: [{ role: 'user', content: `Equipment description:\n<<<\n${clean(text).slice(0, 1000)}\n>>>` }],
   }
 }
 
@@ -66,7 +70,7 @@ export function buildAnswerRequest(question: string, chunks: KnowledgeChunk[], v
     }],
     tool_choice: { type: 'tool', name: 'give_answer' },
     messages: [{ role: 'user', content:
-      `Business type: ${venueType ?? 'unknown'}\n\nGuidance notes:\n${kb || '(none found)'}\n\nOwner question:\n<<<\n${question.slice(0, 500)}\n>>>` }],
+      `Business type: ${venueType && VENUES.includes(venueType) ? venueType : 'unknown'}\n\nGuidance notes:\n${kb || '(none found)'}\n\nOwner question:\n<<<\n${clean(question).slice(0, 500)}\n>>>` }],
   }
 }
 
@@ -74,7 +78,7 @@ export function parseAnswerResponse(resp: unknown, chunks: KnowledgeChunk[]) {
   const input = toolInput(resp, 'give_answer')
   const answer = typeof input?.answer === 'string' ? input.answer.trim().slice(0, 1200) : ''
   const ids = Array.isArray(input?.source_ids) ? (input!.source_ids as unknown[]).filter((x): x is string => typeof x === 'string') : []
-  if (answer === OFF_TOPIC_ANSWER) return { answer, sources: [] }
+  if (answer === OFF_TOPIC_ANSWER || answer === FALLBACK_ANSWER) return { answer, sources: [] }
   const sources = chunks.filter((c) => ids.includes(c.id)).map((c) => ({ title: c.title, source: c.source }))
   if (!answer || !sources.length) return { answer: FALLBACK_ANSWER, sources: [] }
   return { answer, sources }
