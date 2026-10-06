@@ -39,6 +39,16 @@ const SYNONYM_GROUPS = [
   ['clean', 'cleaning', 'sanitise', 'sanitiser', 'sanitize', 'sanitizer', 'disinfect', 'disinfectant'],
   ['ill', 'illness', 'sick', 'sickness', 'unwell', 'diarrhoea', 'diarrhea', 'vomiting', 'vomit'],
   ['allergen', 'allergy', 'allergies', 'allergic'],
+  // Premises compliance
+  ['duct', 'ducts', 'ductwork', 'ducting'],
+  ['certificate', 'cert', 'certs', 'certification', 'certified'],
+  ['pat', 'portable'],
+  ['eicr', 'wiring', 'rewire'],
+  ['legionella', 'legionnaires'],
+  ['extinguisher', 'extinguishers', 'blanket'],
+  ['dumbwaiter', 'dumbwaiters', 'dumb', 'lift', 'lifts'],
+  ['espresso', 'coffee'],
+  ['rubbish', 'waste', 'bins', 'refuse'],
 ]
 const SYNONYM_WEIGHT = 0.5
 let synonymIndex: Map<string, string[]> | null = null

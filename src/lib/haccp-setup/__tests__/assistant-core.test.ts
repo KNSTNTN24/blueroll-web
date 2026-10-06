@@ -2,19 +2,24 @@
 import { describe, it, expect } from 'vitest'
 import { CURATED_KNOWLEDGE, mergeKnowledge } from '../../../../supabase/functions/_shared/knowledge'
 import { SFBB_KNOWLEDGE } from '../../../../supabase/functions/_shared/knowledge-sfbb'
-import { searchKnowledge } from '../../../../supabase/functions/_shared/knowledge-search'
+import { searchKnowledge, rankKnowledge } from '../../../../supabase/functions/_shared/knowledge-search'
 import {
   buildEquipmentRequest, parseEquipmentResponse, buildAnswerRequest, parseAnswerResponse, usageOf,
   FALLBACK_ANSWER, OFF_TOPIC_ANSWER, MODEL,
 } from '../../../../supabase/functions/_shared/assistant-core'
 
 const KNOWLEDGE = mergeKnowledge(CURATED_KNOWLEDGE, SFBB_KNOWLEDGE)
+const PREMISES = CURATED_KNOWLEDGE.filter((c) => c.id.startsWith('premises-'))
 const toolResp = (name: string, input: unknown) => ({ content: [{ type: 'tool_use', name, input }], usage: { input_tokens: 120, output_tokens: 30 } })
 
 describe('knowledge', () => {
   it('chunks have unique ids, a source with OGL attribution and text', () => {
     expect(new Set(KNOWLEDGE.map((c) => c.id)).size).toBe(KNOWLEDGE.length)
-    for (const c of KNOWLEDGE) { expect(c.source).toMatch(/SFBB|Blueroll/); expect(c.text.length).toBeGreaterThan(40) }
+    for (const c of KNOWLEDGE) {
+      // Premises compliance notes cite UK primary sources (HSE, GOV.UK, legislation, BESA…) instead of SFBB.
+      expect(c.source).toMatch(c.id.startsWith('premises-') ? /HSE|GOV\.UK|gov\.|legislation|Regulation|BESA|BAFE|Fire/ : /SFBB|Blueroll/)
+      expect(c.text.length).toBeGreaterThan(40)
+    }
   })
   it('search finds probe calibration for a calibration question', () => {
     expect(searchKnowledge(KNOWLEDGE, 'How often should I calibrate my thermometer?', 3)[0].id).toBe('probe-calibration')
@@ -27,10 +32,10 @@ describe('knowledge', () => {
 
 describe('SFBB knowledge base', () => {
   it('merges the curated notes and the full SFBB pack without duplicate ids', () => {
-    expect(CURATED_KNOWLEDGE).toHaveLength(18)
+    expect(CURATED_KNOWLEDGE).toHaveLength(18 + PREMISES.length)
     expect(SFBB_KNOWLEDGE.length).toBeGreaterThan(80)
     expect(KNOWLEDGE).toHaveLength(CURATED_KNOWLEDGE.length + SFBB_KNOWLEDGE.length)
-    expect(mergeKnowledge(CURATED_KNOWLEDGE, CURATED_KNOWLEDGE)).toHaveLength(18)
+    expect(mergeKnowledge(CURATED_KNOWLEDGE, CURATED_KNOWLEDGE)).toHaveLength(CURATED_KNOWLEDGE.length)
   })
   it('every SFBB chunk cites SFBB, a page and the OGL, and is a sensible size', () => {
     for (const c of SFBB_KNOWLEDGE) {
@@ -45,13 +50,15 @@ describe('SFBB knowledge base', () => {
     }
   })
   const top = (q: string, k = 3) => searchKnowledge(KNOWLEDGE, q, k)
-  it('extraction canopy → an SFBB cleaning/maintenance chunk about extractors', () => {
-    const r = top('How often should I clean the extraction canopy?')
-    expect(r.length).toBeGreaterThan(0)
-    const hit = r.find((c) => c.id.startsWith('sfbb-') && /extractor/i.test(c.text))
+  it('extraction canopy → premises extract notes first, then the SFBB cleaning/maintenance chunk about extractors', () => {
+    // Since the premises notes (TR19 duct cleaning, canopy filters) exist they are the better answer to "how often";
+    // the SFBB extractor guidance must still be the best-ranked SFBB chunk.
+    const q = 'How often should I clean the extraction canopy?'
+    expect(top(q)[0].id).toMatch(/^premises-extract-/)
+    const hit = rankKnowledge(KNOWLEDGE, q).map((s) => s.chunk).find((c) => c.id.startsWith('sfbb-'))
     expect(hit).toBeDefined()
+    expect(hit!.text).toMatch(/extractor/i)
     expect(hit!.title).toMatch(/Maintenance|Cleaning|Extra checks/)
-    expect(r[0]).toBe(hit)
   })
   it('fridge temperature → chilled storage', () => {
     const r = top('What temperature should my fridge be?')
@@ -76,6 +83,51 @@ describe('SFBB knowledge base', () => {
   it('caches the index per chunk array and still honours k', () => {
     expect(top('cleaning disinfecting', 5)).toHaveLength(5)
     expect(top('cleaning disinfecting', 1)).toEqual(top('cleaning disinfecting', 5).slice(0, 1))
+  })
+})
+
+describe('premises compliance notes', () => {
+  const top = (q: string, k = 3) => searchKnowledge(KNOWLEDGE, q, k)
+  it('are a reviewed set of 20–35 plain-English notes with a cited source', () => {
+    expect(PREMISES.length).toBeGreaterThanOrEqual(20)
+    expect(PREMISES.length).toBeLessThanOrEqual(35)
+    for (const c of PREMISES) {
+      const words = c.text.split(/\s+/).length
+      expect(words).toBeGreaterThanOrEqual(60)
+      expect(words).toBeLessThanOrEqual(160)
+      expect(c.source.length).toBeGreaterThan(10)
+      expect(c.tags.length).toBeGreaterThan(3)
+    }
+  })
+  it.each(['should I clean extractor duct?', 'how often clean kitchen extract ductwork'])('%s → a duct note in the top 3', (q) => {
+    expect(top(q).some((c) => c.id.startsWith('premises-extract-duct'))).toBe(true)
+  })
+  it('duct cleaning certificate → the certificate note', () => {
+    expect(top('do I need a certificate for duct cleaning?')[0].id).toBe('premises-extract-duct-certificate')
+  })
+  it('gas safety check → gas note first', () => {
+    expect(top('how often gas safety check')[0].id).toBe('premises-gas-safety-check')
+  })
+  it('emergency lighting test → emergency lighting note', () => {
+    expect(top('emergency lighting test')[0].id).toBe('premises-emergency-lighting')
+  })
+  it('fire alarm test → fire alarm note', () => {
+    expect(top('how often do I test the fire alarm?')[0].id).toBe('premises-fire-alarm')
+  })
+  it('PAT testing → electrical note', () => {
+    expect(top('PAT testing')[0].id).toBe('premises-pat-testing')
+  })
+  it('EICR → fixed wiring note', () => {
+    expect(top('how often do I need an EICR?')[0].id).toBe('premises-eicr-fixed-wiring')
+  })
+  it('legionella → legionella note', () => {
+    expect(top('do I need a legionella risk assessment?')[0].id).toBe('premises-legionella')
+  })
+  it('grease trap → grease trap note', () => {
+    expect(top('grease trap emptying')[0].id).toBe('premises-grease-trap')
+  })
+  it('unrelated question → nothing', () => {
+    expect(top('What is the capital of France?')).toEqual([])
   })
 })
 
