@@ -50,8 +50,25 @@ export function parseEquipmentResponse(resp: unknown): { kind: string; label: st
     .map((i: any) => ({ kind: i.kind, label: i.label.trim().slice(0, MAX_LABEL) }))
 }
 
+// Keep the knowledge sent per answer small so each call stays cheap.
+export const MAX_NOTES = 5
+export const MAX_NOTES_WORDS = 1800
+
+/** The best-ranked chunks that fit: at most MAX_NOTES, and stop before the notes exceed MAX_NOTES_WORDS. */
+export function notesForPrompt(chunks: KnowledgeChunk[]): KnowledgeChunk[] {
+  const out: KnowledgeChunk[] = []
+  let words = 0
+  for (const c of chunks.slice(0, MAX_NOTES)) {
+    const n = `${c.title} ${c.source} ${c.text}`.split(/\s+/).length
+    if (out.length && words + n > MAX_NOTES_WORDS) break
+    out.push(c)
+    words += n
+  }
+  return out
+}
+
 export function buildAnswerRequest(question: string, chunks: KnowledgeChunk[], venueType?: string) {
-  const kb = chunks.map((c) => `[${c.id}] ${c.title} (${c.source})\n${c.text}`).join('\n\n')
+  const kb = notesForPrompt(chunks).map((c) => `[${c.id}] ${c.title} (${c.source})\n${c.text}`).join('\n\n')
   return {
     model: MODEL,
     max_tokens: 500,

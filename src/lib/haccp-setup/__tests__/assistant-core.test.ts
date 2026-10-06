@@ -1,12 +1,14 @@
 // src/lib/haccp-setup/__tests__/assistant-core.test.ts
 import { describe, it, expect } from 'vitest'
-import { KNOWLEDGE } from '../../../../supabase/functions/_shared/knowledge'
+import { CURATED_KNOWLEDGE, mergeKnowledge } from '../../../../supabase/functions/_shared/knowledge'
+import { SFBB_KNOWLEDGE } from '../../../../supabase/functions/_shared/knowledge-sfbb'
 import { searchKnowledge } from '../../../../supabase/functions/_shared/knowledge-search'
 import {
   buildEquipmentRequest, parseEquipmentResponse, buildAnswerRequest, parseAnswerResponse, usageOf,
   FALLBACK_ANSWER, OFF_TOPIC_ANSWER, MODEL,
 } from '../../../../supabase/functions/_shared/assistant-core'
 
+const KNOWLEDGE = mergeKnowledge(CURATED_KNOWLEDGE, SFBB_KNOWLEDGE)
 const toolResp = (name: string, input: unknown) => ({ content: [{ type: 'tool_use', name, input }], usage: { input_tokens: 120, output_tokens: 30 } })
 
 describe('knowledge', () => {
@@ -19,6 +21,61 @@ describe('knowledge', () => {
   })
   it('search returns nothing for an unrelated question', () => {
     expect(searchKnowledge(KNOWLEDGE, 'What is the capital of France?', 3)).toEqual([])
+    expect(searchKnowledge(KNOWLEDGE, 'Write me a poem about the moon', 3)).toEqual([])
+  })
+})
+
+describe('SFBB knowledge base', () => {
+  it('merges the curated notes and the full SFBB pack without duplicate ids', () => {
+    expect(CURATED_KNOWLEDGE).toHaveLength(18)
+    expect(SFBB_KNOWLEDGE.length).toBeGreaterThan(80)
+    expect(KNOWLEDGE).toHaveLength(CURATED_KNOWLEDGE.length + SFBB_KNOWLEDGE.length)
+    expect(mergeKnowledge(CURATED_KNOWLEDGE, CURATED_KNOWLEDGE)).toHaveLength(18)
+  })
+  it('every SFBB chunk cites SFBB, a page and the OGL, and is a sensible size', () => {
+    for (const c of SFBB_KNOWLEDGE) {
+      expect(c.id).toMatch(/^sfbb-p\d+-\d+$/)
+      expect(c.source).toMatch(/SFBB/)
+      expect(c.source).toMatch(/p\.\d+/)
+      expect(c.source).toMatch(/Open Government Licence v3\.0/)
+      expect(c.title).toMatch(/ — /)
+      const words = c.text.split(/\s+/).length
+      expect(words).toBeGreaterThan(30)
+      expect(words).toBeLessThan(450)
+    }
+  })
+  const top = (q: string, k = 3) => searchKnowledge(KNOWLEDGE, q, k)
+  it('extraction canopy → an SFBB cleaning/maintenance chunk about extractors', () => {
+    const r = top('How often should I clean the extraction canopy?')
+    expect(r.length).toBeGreaterThan(0)
+    const hit = r.find((c) => c.id.startsWith('sfbb-') && /extractor/i.test(c.text))
+    expect(hit).toBeDefined()
+    expect(hit!.title).toMatch(/Maintenance|Cleaning|Extra checks/)
+    expect(r[0]).toBe(hit)
+  })
+  it('fridge temperature → chilled storage', () => {
+    const r = top('What temperature should my fridge be?')
+    expect(r.some((c) => /Chilled storage|Fridge and freezer/i.test(c.title))).toBe(true)
+    expect(r[0].title).toMatch(/Chilled storage|Fridge/i)
+  })
+  it('staff with diarrhoea → personal hygiene / illness', () => {
+    const r = top('Can staff with diarrhoea work?')
+    expect(r[0].title).toMatch(/Personal hygiene|illness/i)
+    expect(r.some((c) => c.id.startsWith('sfbb-') && /Personal hygiene/.test(c.title))).toBe(true)
+  })
+  it('checking a probe → probes', () => {
+    const r = top('How do I check my probe?')
+    expect(r[0].title).toMatch(/probe/i)
+    expect(r.some((c) => c.id.startsWith('sfbb-') && /probe/i.test(c.title))).toBe(true)
+  })
+  it('keeping a diary → management / diary', () => {
+    const r = top('Do I need to keep a diary?')
+    expect(r[0].title).toMatch(/diary/i)
+    expect(r.every((c) => /Diary|Management|Introduction|review/i.test(c.title))).toBe(true)
+  })
+  it('caches the index per chunk array and still honours k', () => {
+    expect(top('cleaning disinfecting', 5)).toHaveLength(5)
+    expect(top('cleaning disinfecting', 1)).toEqual(top('cleaning disinfecting', 5).slice(0, 1))
   })
 })
 
@@ -57,6 +114,14 @@ describe('answers', () => {
   it('answer with no valid source → fallback', () => {
     expect(parseAnswerResponse(toolResp('give_answer', { answer: 'Trust me', source_ids: ['nope'] }), chunks).answer).toBe(FALLBACK_ANSWER)
     expect(parseAnswerResponse({}, chunks).answer).toBe(FALLBACK_ANSWER)
+  })
+  it('caps the notes sent to the model at 5 chunks and about 1,800 words', () => {
+    const many = searchKnowledge(KNOWLEDGE, 'cleaning schedule cloths fridge probe cooking', 10)
+    expect(many.length).toBeGreaterThan(5)
+    const c: string = (buildAnswerRequest('q', many, 'takeaway') as any).messages[0].content
+    const notes = c.slice(c.indexOf('Guidance notes:'), c.indexOf('Owner question:'))
+    expect((notes.match(/^\[[a-z0-9-]+\] /gm) ?? []).length).toBeLessThanOrEqual(5)
+    expect(notes.split(/\s+/).length).toBeLessThanOrEqual(1900)
   })
   it('reads token usage', () => expect(usageOf(toolResp('x', {}))).toEqual({ input: 120, output: 30 }))
   it('sanitises delimiters in the question', () => {

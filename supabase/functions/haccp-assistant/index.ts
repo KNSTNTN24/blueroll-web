@@ -1,11 +1,15 @@
 // «Set up my HACCP» assistant: parse free-text equipment, answer questions from the bundled knowledge base.
 // Deployed with --no-verify-jwt (project convention); the user JWT is verified here.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { KNOWLEDGE } from "../_shared/knowledge.ts";
+import { CURATED_KNOWLEDGE, mergeKnowledge } from "../_shared/knowledge.ts";
+import { SFBB_KNOWLEDGE } from "../_shared/knowledge-sfbb.ts";
 import { searchKnowledge } from "../_shared/knowledge-search.ts";
 import {
-  buildAnswerRequest, buildEquipmentRequest, FALLBACK_ANSWER, parseAnswerResponse, parseEquipmentResponse, usageOf,
+  buildAnswerRequest, buildEquipmentRequest, FALLBACK_ANSWER, notesForPrompt, parseAnswerResponse, parseEquipmentResponse, usageOf,
 } from "../_shared/assistant-core.ts";
+
+// Curated Blueroll notes first (reviewed wording), then the full FSA SFBB for caterers pack.
+const KNOWLEDGE = mergeKnowledge(CURATED_KNOWLEDGE, SFBB_KNOWLEDGE);
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -42,7 +46,7 @@ Deno.serve(async (req: Request) => {
   // An answer with no matching knowledge never reaches the model (and costs nothing).
   let chunks = [] as ReturnType<typeof searchKnowledge>;
   if (body.action === "answer") {
-    chunks = searchKnowledge(KNOWLEDGE, body.question!, 3);
+    chunks = notesForPrompt(searchKnowledge(KNOWLEDGE, body.question!, 4));
     if (!chunks.length) return json(200, { answer: FALLBACK_ANSWER, sources: [] });
   }
   if (!ANTHROPIC_KEY) return json(502, { error: "model" });

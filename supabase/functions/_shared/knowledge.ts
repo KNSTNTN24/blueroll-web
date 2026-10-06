@@ -1,11 +1,22 @@
 // supabase/functions/_shared/knowledge.ts
-// Blueroll guidance notes. Each cites the FSA "Safer food, better business" (SFBB) section it summarises.
+// Curated Blueroll guidance notes (reviewed wording). Each cites the FSA "Safer food, better business" (SFBB)
+// section it summarises. The full SFBB for caterers pack lives in knowledge-sfbb.ts (generated); callers combine
+// both with mergeKnowledge(CURATED_KNOWLEDGE, SFBB_KNOWLEDGE) — this file cannot import it at runtime, because
+// these files are loaded by Deno (needs '.ts' paths) and by Vitest/tsc (rejects '.ts' paths).
 // SFBB © Food Standards Agency, Open Government Licence v3.0. No imports — loaded by Deno and Vitest.
 export interface KnowledgeChunk { id: string; title: string; source: string; tags: string[]; text: string }
 
+/** Concatenate knowledge sets in order; a later chunk with an id already seen is dropped. */
+export function mergeKnowledge(...sets: KnowledgeChunk[][]): KnowledgeChunk[] {
+  const seen = new Set<string>()
+  const out: KnowledgeChunk[] = []
+  for (const set of sets) for (const c of set) if (!seen.has(c.id)) { seen.add(c.id); out.push(c) }
+  return out
+}
+
 const SFBB = (section: string) => `FSA Safer food, better business (SFBB) — ${section} (Open Government Licence v3.0)`
 
-export const KNOWLEDGE: KnowledgeChunk[] = [
+export const CURATED_KNOWLEDGE: KnowledgeChunk[] = [
   { id: 'fridge-temps', title: 'Fridge and freezer temperatures', source: SFBB('Chilling: Chilled storage'),
     tags: ['fridge', 'freezer', 'temperature', 'chilled', 'storage', 'record'],
     text: 'Keep fridges at 5 °C or below (the legal limit is 8 °C) and freezers at −18 °C or below. Check and record each unit at least once a day. If a fridge is above 8 °C, move food to another fridge, check how long it was warm and throw away high-risk food that may be unsafe.' },
