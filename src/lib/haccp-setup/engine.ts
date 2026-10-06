@@ -46,3 +46,24 @@ export function progressBySection(questions: Question[], answers: Answers) {
   }
   return res
 }
+
+// ── Tabs: the questionnaire is shown in the HACCP pack's sections, after a short "Profile" tab ──
+
+export type TabId = 'profile' | SectionId
+export const TAB_ORDER: TabId[] = ['profile', 'cross', 'cleaning', 'chilling', 'cooking', 'management']
+/** Questions that describe the business as a whole rather than one SFBB section. */
+export const PROFILE_QUESTION_IDS = new Set(['venue_type', 'processes', 'extra_care', 'equipment'])
+
+export function tabOf(q: Question): TabId {
+  return PROFILE_QUESTION_IDS.has(q.id) ? 'profile' : q.section
+}
+
+export function progressByTab(questions: Question[], answers: Answers): Record<TabId, { answered: number; total: number }> {
+  const res = Object.fromEntries(TAB_ORDER.map((t) => [t, { answered: 0, total: 0 }])) as Record<TabId, { answered: number; total: number }>
+  for (const q of visibleQuestions(questions, answers)) {
+    const t = tabOf(q)
+    res[t].total++
+    if (isAnswered(answers[q.id])) res[t].answered++
+  }
+  return res
+}

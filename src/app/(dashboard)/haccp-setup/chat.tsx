@@ -4,16 +4,18 @@ import { useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import type { AnswerValue, Answers, Question } from '@/lib/haccp-setup/types'
 import { QUESTIONS } from '@/lib/haccp-setup/content/questions'
-import { nextQuestion, suggestedAnswer, visibleQuestions } from '@/lib/haccp-setup/engine'
+import { nextQuestion, suggestedAnswer, tabOf, visibleQuestions, type TabId } from '@/lib/haccp-setup/engine'
 import { AnswerInput, formatAnswer } from './answer-input'
 
-export function Chat({ answers, onAnswer }: {
-  answers: Answers; onAnswer: (id: string, v: AnswerValue) => void
+export function Chat({ tab, answers, onAnswer }: {
+  tab: TabId; answers: Answers; onAnswer: (id: string, v: AnswerValue) => void
 }) {
   // An answered question is edited in place, where the owner clicked "Edit".
   const [editing, setEditing] = useState<string | null>(null)
-  const current = nextQuestion(QUESTIONS, answers)
-  const done = visibleQuestions(QUESTIONS, answers).filter((q) => answers[q.id] !== undefined)
+  // Only this tab's questions; the next unanswered question shows here only if it belongs to this tab.
+  const next = nextQuestion(QUESTIONS, answers)
+  const current = next && tabOf(next) === tab ? next : null
+  const done = visibleQuestions(QUESTIONS, answers).filter((q) => tabOf(q) === tab && answers[q.id] !== undefined)
 
   return (
     <div className="flex flex-col gap-4">
