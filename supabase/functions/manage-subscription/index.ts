@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { subscriptionUpdatePayload } from "../stripe-webhook/payload.ts";
 
 const STRIPE_SECRET_KEY = Deno.env.get("STRIPE_SECRET_KEY")!;
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -156,22 +157,19 @@ Deno.serve(async (req) => {
 
       if (subs.data && subs.data.length > 0) {
         const sub = subs.data[0];
-        const trialEnd = sub.trial_end
-          ? new Date(sub.trial_end * 1000).toISOString()
-          : null;
+        // Same mapping as stripe-webhook: writing sub.trial_end here re-locked
+        // Tootoomoo on every web login once their manual grant ran out (06.10.2026).
+        const payload = subscriptionUpdatePayload(sub);
+        const trialEnd = sub.status === "trialing" ? payload.stripe_until : null;
 
         await supabase
           .from("businesses")
-          .update({
-            subscription_id: sub.id,
-            stripe_status: sub.cancel_at_period_end ? "canceling" : sub.status,
-            stripe_until: trialEnd,
-          })
+          .update(payload)
           .eq("id", businessId);
 
         return new Response(
           JSON.stringify({
-            status: sub.cancel_at_period_end ? "canceling" : sub.status,
+            status: payload.stripe_status,
             trialEnd,
           }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } }
