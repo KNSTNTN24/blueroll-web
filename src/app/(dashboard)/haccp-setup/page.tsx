@@ -60,7 +60,6 @@ function SetupInner({ session, businessId, siteId }: {
   const { sites, business } = useAuth()
   const site = sites.find((s) => s.id === siteId)
   const [answers, setAnswers] = useState<Answers>(() => session.answers ?? {})
-  const [previous, setPrevious] = useState<Answers>({})
   const saveChain = useRef<Promise<unknown>>(Promise.resolve())
 
   const persist = (next: Answers) => {
@@ -70,10 +69,6 @@ function SetupInner({ session, businessId, siteId }: {
       .catch(() => { toast.error('Could not save your answer — check your connection.') })
   }
   const onAnswer = (id: string, v: AnswerValue) => persist({ ...answers, [id]: v })
-  const onClear = (id: string) => {
-    if (answers[id] !== undefined) setPrevious((p) => ({ ...p, [id]: answers[id] }))
-    const next = { ...answers }; delete next[id]; persist(next)
-  }
   const restart = async () => {
     try {
       await abandonSession(session.id)
@@ -103,7 +98,7 @@ function SetupInner({ session, businessId, siteId }: {
         <Button variant="ghost" className="mt-4 self-start text-[12px]" onClick={restart}>Start over</Button>
       </aside>
       <main className="flex flex-col gap-6">
-        <Chat answers={answers} previous={previous} onAnswer={onAnswer} onClear={onClear} />
+        <Chat answers={answers} onAnswer={onAnswer} />
         {finished && (
           <DraftReview businessId={businessId} siteId={siteId} sessionId={session.id} answers={answers}
             postcode={site?.postcode ?? business?.post_code ?? null}
