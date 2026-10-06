@@ -6,16 +6,22 @@ import { cn } from '@/lib/utils'
 import {
   LayoutDashboard, ClipboardCheck, ChefHat, UtensilsCrossed,
   ShieldAlert, BarChart3, Users, AlertTriangle, Truck, Factory,
-  FileText, ShieldCheck, Settings, ChevronsLeft, ChevronsRight,
+  FileText, ShieldCheck, Settings, ChevronsLeft, ChevronsRight, Wand2,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
+import { useAuth } from '@/hooks/use-auth'
 
-const nav = [
+type NavItem = { label: string; href: string; icon: LucideIcon; managerOnly?: boolean }
+type NavGroup = { section: string | null; items: NavItem[] }
+
+const nav: NavGroup[] = [
   { section: null, items: [
     { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   ]},
   { section: 'Compliance', items: [
     { label: 'Checklists', href: '/checklists', icon: ClipboardCheck },
     { label: 'HACCP Pack', href: '/haccp-pack', icon: ShieldCheck },
+    { label: 'Set up my HACCP', href: '/haccp-setup', icon: Wand2, managerOnly: true },
     { label: 'Reports', href: '/reports', icon: BarChart3 },
   ]},
   { section: 'Kitchen', items: [
@@ -44,6 +50,7 @@ interface SidebarProps { collapsed: boolean; onToggle: () => void }
 
 export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const pathname = usePathname()
+  const { isManager } = useAuth()
 
   return (
     <aside className={cn(
@@ -68,7 +75,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             {collapsed && gi > 0 && <div className="mx-auto my-2 h-px w-6 bg-sidebar-border" />}
             {!collapsed && !group.section && <div className="h-1.5" />}
             <div className="space-y-0.5">
-              {group.items.map((item) => {
+              {group.items.filter((item) => !item.managerOnly || isManager).map((item) => {
                 const active = pathname === item.href || pathname.startsWith(item.href + '/')
                 const Icon = item.icon
                 return (

@@ -24,6 +24,7 @@ import {
   Factory,
   FileText,
   ShieldCheck,
+  Wand2,
   Settings,
   Plus,
   Camera,
@@ -43,6 +44,7 @@ const pages = [
   { label: 'Suppliers', href: '/suppliers', icon: Factory },
   { label: 'Documents', href: '/documents', icon: FileText },
   { label: 'HACCP Pack', href: '/haccp-pack', icon: ShieldCheck },
+  { label: 'Set up my HACCP', href: '/haccp-setup', icon: Wand2 },
   { label: 'Settings', href: '/settings', icon: Settings },
 ]
 

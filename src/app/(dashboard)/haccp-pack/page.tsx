@@ -8,32 +8,17 @@ import { HACCP_SECTIONS, ALLERGEN_LABELS, type EUAllergen } from '@/lib/constant
 import { resolveAllergens, sourceMeta, type Dish } from '@/lib/dishes'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
+import Link from 'next/link'
+import { useAuth } from '@/hooks/use-auth'
 import { Download, ChevronDown, FileText, X, Eye, Link2 } from 'lucide-react'
 import { DocumentPickerModal, type PickedDocument } from '@/components/shared/document-picker-modal'
 import { SiteSignoffBadge } from './site-signoff'
 import { AllSitesDashboard } from './all-sites-dashboard'
+import { HACCP_METHODS, type FieldType, type SectionId, type HaccpField, type HaccpMethod } from '@/lib/haccp-pack/methods'
 
 // ═══════════════════════════════════════════════════════════════
 // Types
 // ═══════════════════════════════════════════════════════════════
-
-type FieldType = 'toggle' | 'text' | 'file' | 'select'
-type SectionId = 'cross' | 'cleaning' | 'chilling' | 'cooking' | 'management'
-
-interface HaccpField {
-  id: string
-  label: string
-  type: FieldType
-  options?: string[] // for select
-  autoSource?: string // description of auto-fill source
-}
-
-interface HaccpMethod {
-  id: string
-  name: string
-  section: SectionId
-  fields: HaccpField[]
-}
 
 interface HaccpPackRow {
   id?: string
@@ -43,6 +28,7 @@ interface HaccpPackRow {
   files: Record<string, string>
   selects: Record<string, string>
   overrides: Record<string, boolean>
+  sources: Record<string, 'questionnaire'>
   updated_at?: string
 }
 
@@ -51,267 +37,6 @@ interface HaccpPackRow {
 // ═══════════════════════════════════════════════════════════════
 
 const XP_MAP: Record<FieldType, number> = { toggle: 10, text: 20, file: 50, select: 20 }
-
-// ═══════════════════════════════════════════════════════════════
-// All 26 HACCP methods with their fields
-// ═══════════════════════════════════════════════════════════════
-
-const HACCP_METHODS: HaccpMethod[] = [
-  // ── Cross-Contamination (6 methods) ──
-  {
-    id: 'personal_hygiene', name: 'Personal Hygiene', section: 'cross',
-    fields: [
-      { id: 'ph_uniform', label: 'Staff wear clean uniform / protective clothing', type: 'toggle' },
-      { id: 'ph_hair', label: 'Hair tied back and covered where required', type: 'toggle' },
-      { id: 'ph_jewellery', label: 'No jewellery except plain wedding band', type: 'toggle' },
-      { id: 'ph_nails', label: 'Nails are short, clean and free of polish', type: 'toggle' },
-      { id: 'ph_illness', label: 'Staff report illness / sickness / diarrhoea to manager', type: 'toggle' },
-      { id: 'ph_cuts', label: 'Cuts and sores covered with blue waterproof plaster', type: 'toggle' },
-      { id: 'ph_changing', label: 'Describe your staff changing and locker arrangements', type: 'text' },
-      { id: 'ph_clothing', label: 'Describe how uniforms / protective clothing are provided', type: 'text' },
-    ],
-  },
-  {
-    id: 'cloths', name: 'Cloths', section: 'cross',
-    fields: [
-      { id: 'cl_single_use', label: 'Single-use cloths or paper towels for cleaning', type: 'toggle' },
-      { id: 'cl_colour_coded', label: 'Colour-coded cloths in use (red, blue, green, yellow)', type: 'toggle' },
-      { id: 'cl_laundry', label: 'Reusable cloths washed at 90\u00b0C or above', type: 'toggle' },
-      { id: 'cl_stored', label: 'Cloths stored in sanitiser solution between uses', type: 'toggle' },
-      { id: 'cl_method', label: 'Describe your cloth management system', type: 'text' },
-    ],
-  },
-  {
-    id: 'separating_foods', name: 'Separating Foods', section: 'cross',
-    fields: [
-      { id: 'sf_raw_separate', label: 'Raw and ready-to-eat foods stored separately', type: 'toggle' },
-      { id: 'sf_colour_boards', label: 'Colour-coded chopping boards used', type: 'toggle' },
-      { id: 'sf_equipment', label: 'Separate utensils for raw and cooked foods', type: 'toggle' },
-      { id: 'sf_raw_products', label: 'List raw products handled (meat, poultry, fish, etc.)', type: 'text', autoSource: 'Recipes: raw meat/fish/poultry ingredients' },
-      { id: 'sf_delivery_schedule', label: 'Delivery schedule for raw products', type: 'text', autoSource: 'Suppliers: delivery_days' },
-      { id: 'sf_storage', label: 'Describe how raw and RTE foods are separated in storage', type: 'text' },
-    ],
-  },
-  {
-    id: 'food_allergies', name: 'Food Allergies', section: 'cross',
-    fields: [
-      { id: 'fa_aware', label: 'All staff trained on 14 EU allergens', type: 'toggle' },
-      { id: 'fa_matrix', label: 'Allergen matrix / chart available and up to date', type: 'toggle' },
-      { id: 'fa_communication', label: 'System for customers to declare allergies', type: 'toggle' },
-      { id: 'fa_allergens_list', label: 'List allergens present in your menu items', type: 'text', autoSource: 'Menu: allergens per dish, with attestation' },
-      { id: 'fa_procedure', label: 'Describe your allergen management procedure', type: 'text' },
-      { id: 'fa_matrix_file', label: 'Upload allergen matrix document', type: 'file' },
-    ],
-  },
-  {
-    id: 'contamination_prevention', name: 'Contamination Prevention', section: 'cross',
-    fields: [
-      { id: 'cp_chemicals', label: 'Chemicals stored separately from food', type: 'toggle' },
-      { id: 'cp_glass', label: 'Glass and brittle items policy in place', type: 'toggle' },
-      { id: 'cp_physical', label: 'Steps taken to prevent physical contamination', type: 'toggle' },
-      { id: 'cp_describe', label: 'Describe physical contamination prevention measures', type: 'text' },
-      { id: 'cp_chemicals_desc', label: 'Describe chemical storage arrangements', type: 'text' },
-    ],
-  },
-  {
-    id: 'pest_control', name: 'Pest Control', section: 'cross',
-    fields: [
-      { id: 'pc_contract', label: 'Pest control contract in place', type: 'toggle' },
-      { id: 'pc_proofing', label: 'Building proofed against pest entry', type: 'toggle' },
-      { id: 'pc_company', label: 'Pest control company and visit frequency', type: 'text', autoSource: 'Documents: pest control contract' },
-      { id: 'pc_measures', label: 'Describe pest prevention measures in place', type: 'text' },
-      { id: 'pc_contract_file', label: 'Upload pest control contract', type: 'file', autoSource: 'Documents: category=contract' },
-    ],
-  },
-
-  // ── Cleaning (4 methods) ──
-  {
-    id: 'handwashing', name: 'Handwashing', section: 'cleaning',
-    fields: [
-      { id: 'hw_basin', label: 'Dedicated handwash basin available', type: 'toggle' },
-      { id: 'hw_soap', label: 'Antibacterial soap provided', type: 'toggle' },
-      { id: 'hw_towels', label: 'Disposable paper towels or air dryer available', type: 'toggle' },
-      { id: 'hw_signs', label: 'Handwashing signs displayed', type: 'toggle' },
-      { id: 'hw_when', label: 'Staff know when to wash hands (before handling food, after breaks, etc.)', type: 'toggle' },
-    ],
-  },
-  {
-    id: 'cleaning_effectively', name: 'Cleaning Effectively', section: 'cleaning',
-    fields: [
-      { id: 'ce_2stage', label: 'Two-stage clean-and-sanitise method used', type: 'toggle' },
-      { id: 'ce_sanitiser', label: 'Correct sanitiser concentration used', type: 'toggle' },
-      { id: 'ce_contact', label: 'Contact time for sanitiser followed', type: 'toggle' },
-      { id: 'ce_surfaces', label: 'All food contact surfaces cleaned between tasks', type: 'toggle' },
-    ],
-  },
-  {
-    id: 'clear_clean', name: 'Clear & Clean As You Go', section: 'cleaning',
-    fields: [
-      { id: 'cc_clear', label: 'Work surfaces cleared immediately after use', type: 'toggle' },
-      { id: 'cc_spills', label: 'Spills cleaned up immediately', type: 'toggle' },
-      { id: 'cc_waste', label: 'Waste disposed of regularly', type: 'toggle' },
-      { id: 'cc_method', label: 'Describe your clean-as-you-go procedure', type: 'text' },
-    ],
-  },
-  {
-    id: 'cleaning_schedule', name: 'Cleaning Schedule', section: 'cleaning',
-    fields: [
-      { id: 'cs_schedule', label: 'Cleaning schedule in place and followed', type: 'toggle' },
-      { id: 'cs_file', label: 'Upload cleaning schedule document', type: 'file', autoSource: 'Checklists: cleaning template + Documents: category=policy' },
-    ],
-  },
-
-  // ── Chilling (4 methods) ──
-  {
-    id: 'chilled_storage', name: 'Chilled Storage', section: 'chilling',
-    fields: [
-      { id: 'st_temp', label: 'Fridge temperature checked daily (0\u20135\u00b0C)', type: 'toggle' },
-      { id: 'st_records', label: 'Temperature records maintained', type: 'toggle' },
-      { id: 'st_rotation', label: 'Stock rotation (FIFO) followed', type: 'toggle' },
-      { id: 'st_labelled', label: 'All items labelled with date of preparation/opening', type: 'toggle' },
-      { id: 'st_method', label: 'Describe temperature monitoring method', type: 'text', autoSource: 'Checklists: temperature checking template' },
-      { id: 'st_check_method', label: 'How fridges are checked', type: 'select', options: ['Digital thermometer', 'Fridge display', 'Dial thermometer', 'Data logger'], autoSource: 'Checklists: temperature probe type' },
-    ],
-  },
-  {
-    id: 'chilling_down', name: 'Chilling Down Hot Food', section: 'chilling',
-    fields: [
-      { id: 'cd_90min', label: 'Hot food cooled to room temp within 90 minutes', type: 'toggle' },
-      { id: 'cd_fridge', label: 'Then refrigerated immediately', type: 'toggle' },
-      { id: 'cd_portions', label: 'Large batches divided into smaller portions', type: 'toggle' },
-      { id: 'cd_method', label: 'Describe chilling methods used for hot food', type: 'text', autoSource: 'Recipes: chilling_method' },
-    ],
-  },
-  {
-    id: 'defrosting', name: 'Defrosting', section: 'chilling',
-    fields: [
-      { id: 'df_fridge', label: 'Food defrosted in fridge (preferred method)', type: 'toggle' },
-      { id: 'df_microwave', label: 'Microwave defrost used for immediate cooking', type: 'toggle' },
-      { id: 'df_not_refreeze', label: 'Defrosted food not refrozen', type: 'toggle' },
-      { id: 'df_method', label: 'Describe defrosting procedures for different products', type: 'text', autoSource: 'Recipes: defrosting_instructions' },
-      { id: 'df_products', label: 'List products that require defrosting', type: 'text', autoSource: 'Recipes: defrosting_instructions' },
-    ],
-  },
-  {
-    id: 'freezing', name: 'Freezing', section: 'chilling',
-    fields: [
-      { id: 'fz_temp', label: 'Freezer operating at -18\u00b0C or below', type: 'toggle' },
-      { id: 'fz_labelled', label: 'Frozen items labelled with date of freezing', type: 'toggle' },
-      { id: 'fz_suitable', label: 'Only suitable food items frozen', type: 'toggle' },
-      { id: 'fz_method', label: 'Describe freezing procedures', type: 'text', autoSource: 'Recipes: freezing_instructions' },
-    ],
-  },
-
-  // ── Cooking (6 methods) ──
-  {
-    id: 'cooking_safely', name: 'Cooking Safely', section: 'cooking',
-    fields: [
-      { id: 'ck_75c', label: 'Food cooked to 75\u00b0C core temperature', type: 'toggle' },
-      { id: 'ck_probe', label: 'Probe thermometer used to check cooking temperatures', type: 'toggle' },
-      { id: 'ck_visual', label: 'Visual checks: piping hot, steam, no pink (where applicable)', type: 'toggle' },
-      { id: 'ck_dishes', label: 'List main dishes and cooking methods', type: 'text', autoSource: 'Recipes: cooking_method + cooking_temp' },
-    ],
-  },
-  {
-    id: 'extra_care', name: 'Extra Care Foods', section: 'cooking',
-    fields: [
-      { id: 'ec_eggs', label: 'Eggs: cooked until yolk and white are solid (or pasteurised)', type: 'toggle' },
-      { id: 'ec_rice', label: 'Rice: served immediately or cooled within 1 hour', type: 'toggle' },
-      { id: 'ec_pulses', label: 'Pulses: soaked and boiled properly', type: 'toggle' },
-      { id: 'ec_shellfish', label: 'Shellfish: from reputable supplier, cooked thoroughly', type: 'toggle' },
-      { id: 'ec_items', label: 'List extra care food items on your menu', type: 'text', autoSource: 'Recipes: extra_care_flags' },
-      { id: 'ec_procedure', label: 'Describe extra care handling procedures', type: 'text' },
-    ],
-  },
-  {
-    id: 'reheating', name: 'Reheating', section: 'cooking',
-    fields: [
-      { id: 'rh_75c', label: 'Food reheated to 75\u00b0C core temperature', type: 'toggle' },
-      { id: 'rh_once', label: 'Food only reheated once', type: 'toggle' },
-      { id: 'rh_check', label: 'Temperature checked with probe thermometer', type: 'toggle' },
-      { id: 'rh_items', label: 'List items that are reheated and how', type: 'text', autoSource: 'Recipes: reheating_instructions' },
-      { id: 'rh_procedure', label: 'Describe your reheating procedure', type: 'text' },
-    ],
-  },
-  {
-    id: 'menu_checks', name: 'Menu Checks', section: 'cooking',
-    fields: [
-      { id: 'mc_items', label: 'List key menu items and their cooking verification methods', type: 'text', autoSource: 'Recipes: cooking method + verification' },
-      { id: 'mc_new_dishes', label: 'Describe process for introducing new dishes to the menu', type: 'text' },
-    ],
-  },
-  {
-    id: 'hot_holding', name: 'Hot Holding', section: 'cooking',
-    fields: [
-      { id: 'hh_63c', label: 'Hot food held at 63\u00b0C or above', type: 'toggle' },
-      { id: 'hh_check', label: 'Temperature of hot-held food checked regularly', type: 'toggle' },
-      { id: 'hh_2hr', label: 'Food not held hot for more than 2 hours', type: 'toggle' },
-      { id: 'hh_items', label: 'List items that are hot-held and equipment used', type: 'text', autoSource: 'Recipes: hot_holding_required' },
-    ],
-  },
-  {
-    id: 'ready_to_eat', name: 'Ready-to-Eat', section: 'cooking',
-    fields: [
-      { id: 'rte_separate', label: 'Ready-to-eat food kept separate from raw', type: 'toggle' },
-      { id: 'rte_utensils', label: 'Separate utensils used for RTE food', type: 'toggle' },
-      { id: 'rte_stored', label: 'RTE food stored above raw in fridge', type: 'toggle' },
-      { id: 'rte_items', label: 'List ready-to-eat products', type: 'text', autoSource: 'Recipes: ready-to-eat ingredients' },
-    ],
-  },
-
-  // ── Management (6 methods) ──
-  {
-    id: 'opening_closing', name: 'Opening & Closing Checks', section: 'management',
-    fields: [
-      { id: 'oc_opening', label: 'Opening checks completed daily', type: 'toggle' },
-      { id: 'oc_closing', label: 'Closing checks completed daily', type: 'toggle' },
-      { id: 'oc_recorded', label: 'Checks recorded and signed off', type: 'toggle' },
-      { id: 'oc_file', label: 'Upload opening / closing checklist', type: 'file', autoSource: 'Checklists: opening/closing templates' },
-    ],
-  },
-  {
-    id: 'suppliers', name: 'Suppliers', section: 'management',
-    fields: [
-      { id: 'sup_list', label: 'List your food suppliers and contact details', type: 'text', autoSource: 'Suppliers: name + contact' },
-      { id: 'sup_approved', label: 'Describe how you ensure suppliers are reputable', type: 'text' },
-      { id: 'sup_file', label: 'Upload supplier list or approved supplier document', type: 'file', autoSource: 'Suppliers table' },
-    ],
-  },
-  {
-    id: 'stock_control', name: 'Stock Control', section: 'management',
-    fields: [
-      { id: 'sc_fifo', label: 'First In, First Out (FIFO) stock rotation used', type: 'toggle' },
-      { id: 'sc_dates', label: 'Use-by and best-before dates checked on delivery', type: 'toggle' },
-      { id: 'sc_reject', label: 'Out-of-date stock removed and disposed of', type: 'toggle' },
-      { id: 'sc_delivery', label: 'Delivery checks carried out (temperature, condition)', type: 'toggle' },
-    ],
-  },
-  {
-    id: 'training', name: 'Training', section: 'management',
-    fields: [
-      { id: 'tr_induction', label: 'All new staff receive food safety induction', type: 'toggle' },
-      { id: 'tr_responsible', label: 'Named person responsible for food safety training', type: 'text', autoSource: 'Team: profiles with manager/owner role' },
-      { id: 'tr_records', label: 'Describe training records and certificates held', type: 'text', autoSource: 'Documents: category=training' },
-      { id: 'tr_file', label: 'Upload training records / certificates', type: 'file', autoSource: 'Documents: category=training' },
-    ],
-  },
-  {
-    id: 'temperature_probes', name: 'Temperature Probes', section: 'management',
-    fields: [
-      { id: 'tp_calibrated', label: 'Probe thermometer calibrated regularly', type: 'toggle' },
-      { id: 'tp_sanitised', label: 'Probe cleaned and sanitised between uses', type: 'toggle' },
-      { id: 'tp_boil_ice', label: 'Boiling water and ice used to check accuracy', type: 'toggle' },
-      { id: 'tp_method', label: 'Describe probe calibration procedure and frequency', type: 'text', autoSource: 'Checklists: probe calibration template' },
-    ],
-  },
-  {
-    id: 'daily_diary', name: 'Daily Diary', section: 'management',
-    fields: [
-      { id: 'dd_kept', label: 'Daily diary maintained', type: 'toggle' },
-      { id: 'dd_file', label: 'Upload daily diary template or sample', type: 'file', autoSource: 'Checklists: daily diary template' },
-    ],
-  },
-]
 
 // ═══════════════════════════════════════════════════════════════
 // Helpers
@@ -393,6 +118,7 @@ const EMPTY_DATA: HaccpPackRow = {
   files: {},
   selects: {},
   overrides: {},
+  sources: {},
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -401,6 +127,7 @@ const EMPTY_DATA: HaccpPackRow = {
 
 export default function HaccpPackPage() {
   const { business, profile } = useAuthStore()
+  const { isManager } = useAuth()
   const sites = useAuthStore((s) => s.sites)
   const currentSiteId = useAuthStore((s) => s.currentSiteId)
   // Scope "All sites" on a multi-site group → group dashboard instead of the pack.
@@ -416,17 +143,20 @@ export default function HaccpPackPage() {
   const sentinelRef = useRef<HTMLDivElement | null>(null)
 
   const businessId = business?.id ?? ''
+  // Packs are per-site: resolve which site's pack this page edits.
+  const packSiteId = currentSiteId ?? (sites.length === 1 ? sites[0].id : null)
   const autoFillEnabled = business?.haccp_auto_fill ?? true
 
   // ── Fetch HACCP pack data ──
   const { data: packData } = useQuery({
-    queryKey: ['haccp-pack', businessId],
+    queryKey: ['haccp-pack', businessId, packSiteId],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let q = supabase
         .from('haccp_pack_data')
         .select('*')
         .eq('business_id', businessId)
-        .single()
+      q = packSiteId ? q.eq('site_id', packSiteId) : q.is('site_id', null)
+      const { data, error } = await q.single()
       if (error && error.code !== 'PGRST116') throw error
       if (!data) return { ...EMPTY_DATA, business_id: businessId }
       // DB stores {data: {toggles, texts, ...}} — unpack into flat HaccpPackRow
@@ -439,6 +169,7 @@ export default function HaccpPackPage() {
         files: inner.files ?? {},
         selects: inner.selects ?? {},
         overrides: inner.overrides ?? {},
+        sources: inner.sources ?? {},
         updated_at: data.updated_at,
       } as HaccpPackRow
     },
@@ -740,16 +471,17 @@ export default function HaccpPackPage() {
           files: newData.files,
           selects: newData.selects,
           overrides: newData.overrides,
+          sources: newData.sources,
         },
         updated_at: new Date().toISOString(),
       }
       const { error } = await supabase
         .from('haccp_pack_data')
-        .upsert(payload, { onConflict: 'business_id' })
+        .upsert({ ...payload, site_id: packSiteId }, { onConflict: 'business_id,site_id' })
       if (error) throw error
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['haccp-pack', businessId] })
+      queryClient.invalidateQueries({ queryKey: ['haccp-pack', businessId, packSiteId] })
     },
     onError: () => {
       toast.error('Failed to save HACCP Pack data')
@@ -785,6 +517,10 @@ export default function HaccpPackPage() {
         updated.overrides = { ...updated.overrides, [fieldId]: true }
         break
     }
+    if (type !== 'file' && updated.sources?.[fieldId]) {
+      updated.sources = { ...updated.sources }
+      delete updated.sources[fieldId]
+    }
     queryClient.setQueryData(['haccp-pack', businessId], updated)
     debouncedSave(updated)
   }
@@ -819,6 +555,37 @@ export default function HaccpPackPage() {
     () => computeTotalProgress(localData, autoData, autoFillEnabled),
     [localData, autoData, autoFillEnabled],
   )
+
+  // Per-site packs (packs are separate documents per site now) — feeds the
+  // All-sites dashboard so every site shows its own completeness.
+  const { data: allPackRows = [] } = useQuery({
+    queryKey: ['haccp-pack-all', businessId],
+    enabled: !!businessId && isAllSites,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('haccp_pack_data')
+        .select('site_id, data')
+        .eq('business_id', businessId)
+        .not('site_id', 'is', null)
+      return (data ?? []) as { site_id: string; data: Record<string, unknown> }[]
+    },
+  })
+  const siteProgress = useMemo(() => {
+    const m: Record<string, { filled: number; total: number; pct: number }> = {}
+    for (const r of allPackRows) {
+      const inner = (r.data ?? {}) as Partial<HaccpPackRow>
+      const rowData: HaccpPackRow = {
+        business_id: businessId,
+        toggles: inner.toggles ?? {}, texts: inner.texts ?? {},
+        files: inner.files ?? {}, selects: inner.selects ?? {},
+        overrides: inner.overrides ?? {}, sources: inner.sources ?? {},
+      }
+      const p = computeTotalProgress(rowData, autoData, autoFillEnabled)
+      m[r.site_id] = { filled: p.filled, total: p.total, pct: p.pct }
+    }
+    return m
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allPackRows, autoData, autoFillEnabled])
 
   // ── 4-week review ──
   const reviewInfo = useMemo(() => {
@@ -941,6 +708,7 @@ export default function HaccpPackPage() {
       <AllSitesDashboard
         sectionProgress={sectionProgress}
         totalProgress={totalProgress}
+        siteProgress={siteProgress}
         reviewLabel={reviewInfo.label}
         reviewOverdue={reviewInfo.overdue}
         onExportPDF={handleExportPDF}
@@ -1002,6 +770,10 @@ export default function HaccpPackPage() {
               />
             </span>
           </button>
+
+          {isManager && (
+            <Link href="/haccp-setup" className="rounded-md border px-3 py-1.5 text-[13px] font-medium">Set up with questions</Link>
+          )}
 
           {/* Export PDF */}
           <button
