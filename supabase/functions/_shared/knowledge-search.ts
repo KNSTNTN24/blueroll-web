@@ -118,12 +118,15 @@ export function rankKnowledge(chunks: KnowledgeChunk[], query: string): { chunk:
   }
   const scored = docs.map((d) => {
     let score = 0
+    let matched = 0
     for (const terms of concepts) {
       let best = 0
       for (const [term, w] of terms) best = Math.max(best, w * termScore(d, term))
       score += best
+      if (best > 0) matched++
     }
-    return { chunk: d.chunk, score }
+    // Coverage: a chunk that matches every concept of the question beats one that matches a common word many times.
+    return { chunk: d.chunk, score: score * (matched / concepts.length) }
   })
   return scored.filter((s) => s.score > 0).sort((a, b) => b.score - a.score)
 }
