@@ -20,20 +20,25 @@ export async function verifySignature(rawBody: string, header: string | null, ap
 // deno-lint-ignore no-explicit-any
 type Any = any
 
+const arr = (v: unknown): Any[] => (Array.isArray(v) ? v : [])
+const nonEmpty = (v: unknown): v is string => typeof v === 'string' && v !== ''
+
+// Never throws: anything malformed is skipped.
 export function parseInbound(body: unknown): InboundEvent[] {
   const out: InboundEvent[] = []
-  const entries = (body as Any)?.entry
-  if (!Array.isArray(entries)) return out
-  for (const e of entries) for (const c of e?.changes ?? []) for (const m of c?.value?.messages ?? []) {
-    const from = String(m?.from ?? ''); const id = String(m?.id ?? '')
-    if (!from) continue
+  for (const e of arr((body as Any)?.entry)) for (const c of arr(e?.changes)) for (const m of arr(c?.value?.messages)) {
+    const from = m?.from; const id = String(m?.id ?? '')
+    if (typeof from !== 'string' || !/^\d+$/.test(from)) continue
     if (m.type === 'text' && typeof m.text?.body === 'string') out.push({ kind: 'text', from, text: m.text.body, id })
-    else if (m.type === 'button' && typeof m.button?.payload === 'string') out.push({ kind: 'button', from, payload: m.button.payload, id })
-    else if (m.type === 'interactive' && m.interactive?.type === 'button_reply') out.push({ kind: 'button', from, payload: String(m.interactive.button_reply?.id ?? ''), id })
-    else if (m.type === 'interactive' && m.interactive?.type === 'nfm_reply') {
+    else if (m.type === 'button') { if (nonEmpty(m.button?.payload)) out.push({ kind: 'button', from, payload: m.button.payload, id }) }
+    else if (m.type === 'interactive' && m.interactive?.type === 'button_reply') {
+      const payload = m.interactive.button_reply?.id
+      if (nonEmpty(payload)) out.push({ kind: 'button', from, payload, id })
+    } else if (m.type === 'interactive' && m.interactive?.type === 'nfm_reply') {
       try {
         const parsed = JSON.parse(m.interactive.nfm_reply?.response_json ?? '')
-        const { flow_token, ...response } = parsed ?? {}
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) continue
+        const { flow_token, ...response } = parsed
         if (typeof flow_token === 'string') out.push({ kind: 'flow', from, token: flow_token, response, id })
       } catch { /* malformed flow reply: ignore */ }
     }

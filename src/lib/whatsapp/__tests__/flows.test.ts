@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildChecklistFlow, itemsHash, CORRECTIVE_FLOW_JSON, MAX_FORM_ITEMS, FLOW_JSON_VERSION } from '../../../../supabase/functions/_shared/channels/whatsapp-flows'
+import { buildChecklistFlow, itemsHash, CORRECTIVE_FLOW_JSON, MAX_FORM_ITEMS, FLOW_JSON_VERSION, FLOW_BUILDER_VERSION } from '../../../../supabase/functions/_shared/channels/whatsapp-flows'
 import type { TemplateItem } from '../../../../supabase/functions/_shared/checklists-core/types'
 
 const item = (id: string, item_type: TemplateItem['item_type'], o: Partial<TemplateItem> = {}): TemplateItem =>
@@ -15,6 +15,15 @@ function assertMetaLimits(json: Record<string, unknown>) {
     expect(all.length).toBeLessThanOrEqual(50)
     expect(all.filter((c) => c.type === 'OptIn').length).toBeLessThanOrEqual(5)
     expect(all.filter((c) => c.type === 'Footer').length).toBe(1)
+    // Meta rejects mixing a dynamic reference with static text inside one property
+    const strings: string[] = []
+    const collect = (v: unknown) => {
+      if (typeof v === 'string') strings.push(v)
+      else if (Array.isArray(v)) v.forEach(collect)
+      else if (v && typeof v === 'object') Object.values(v).forEach(collect)
+    }
+    collect(screen.layout)
+    for (const s of strings.filter((x) => x.includes('${'))) expect(s).toMatch(/^\$\{[^}]+\}$/)
     for (const c of all) {
       if (LABEL_MAX[c.type]) expect(c.label.length, `${c.type} label`).toBeLessThanOrEqual(LABEL_MAX[c.type])
       if (c['helper-text']) expect(c['helper-text'].length).toBeLessThanOrEqual(80)
@@ -67,10 +76,15 @@ describe('buildChecklistFlow', () => {
 })
 
 describe('itemsHash', () => {
-  it('changes when an item changes, stable otherwise', async () => {
-    const a = [item('a', 'temperature', { min_value: 0, max_value: 5 })]
-    expect(await itemsHash(a)).toBe(await itemsHash([...a]))
-    expect(await itemsHash(a)).not.toBe(await itemsHash([item('a', 'temperature', { min_value: 0, max_value: 8 })]))
+  it('changes when an item, unit, name or builder version changes, stable otherwise', async () => {
+    const a = [item('a', 'temperature', { min_value: 0, max_value: 5, unit: '°C' })]
+    const h = await itemsHash('Fridge temps', a)
+    expect(h).toMatch(/^[0-9a-f]{64}$/)
+    expect(await itemsHash('Fridge temps', [...a])).toBe(h)
+    expect(await itemsHash('Fridge temps', [item('a', 'temperature', { min_value: 0, max_value: 8, unit: '°C' })])).not.toBe(h)
+    expect(await itemsHash('Fridge temps', [item('a', 'temperature', { min_value: 0, max_value: 5, unit: '°F' })])).not.toBe(h)
+    expect(await itemsHash('Freezer temps', a)).not.toBe(h)
+    expect(await itemsHash('Fridge temps', a, FLOW_BUILDER_VERSION + 1)).not.toBe(h)
   })
 })
 

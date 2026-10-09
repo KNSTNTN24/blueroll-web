@@ -2,9 +2,12 @@
 // Limits follow developers.facebook.com/docs/whatsapp/flows/reference/components: TextInput/TextArea label ≤20,
 // RadioButtonsGroup label/option title ≤30, helper-text ≤80, ≤50 components and ≤5 OptIn per screen, one Footer.
 import type { TemplateItem } from '../checklists-core/types.ts'
+import { fieldName, formItems } from '../checklists-core/answers.ts'
 
 export const FLOW_JSON_VERSION = '7.3'   // Meta's recommended Flow JSON version (changelog, 2026-10)
 export const MAX_FORM_ITEMS = 40
+// Bump when the generated Flow JSON changes shape, so stored flows are rebuilt.
+export const FLOW_BUILDER_VERSION = 1
 
 const INPUT_LABEL_MAX = 20
 const CHOICE_LABEL_MAX = 30
@@ -12,13 +15,11 @@ const HELPER_MAX = 80
 
 const fit = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1) + '…' : s)
 
-function sortedSupported(items: TemplateItem[]) {
-  return [...items].sort((a, b) => a.sort_order - b.sort_order).filter((i) => i.item_type !== 'photo' && i.item_type !== 'initials')
-}
-
-export async function itemsHash(items: TemplateItem[]): Promise<string> {
-  const shape = sortedSupported(items).map((i) => [i.id, i.name, i.item_type, i.required, i.min_value, i.max_value])
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(shape)))
+// Hash of everything that shapes the generated Flow; a change means the published Flow must be rebuilt.
+export async function itemsHash(templateName: string, items: TemplateItem[], builderVersion: number = FLOW_BUILDER_VERSION): Promise<string> {
+  const shape = formItems(items).supported.map((i) => [i.id, i.name, i.item_type, i.required, i.min_value, i.max_value, i.unit])
+  const payload = JSON.stringify({ v: FLOW_JSON_VERSION, b: builderVersion, name: templateName, items: shape })
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(payload))
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
@@ -49,10 +50,10 @@ function component(i: TemplateItem, name: string): Record<string, unknown> {
 }
 
 export function buildChecklistFlow(templateName: string, items: TemplateItem[]): { json: Record<string, unknown>; itemIds: string[] } | null {
-  if (items.some((i) => i.item_type === 'photo' && i.required)) return null
-  const list = sortedSupported(items)
+  const { supported: list, unsupportedRequired } = formItems(items)
+  if (unsupportedRequired.length > 0) return null
   if (list.length === 0 || list.length > MAX_FORM_ITEMS) return null
-  const names = list.map((_, idx) => `f${idx}`)
+  const names = list.map((_, idx) => fieldName(idx))
   const json = {
     version: FLOW_JSON_VERSION,
     screens: [{
@@ -84,7 +85,9 @@ export const CORRECTIVE_FLOW_JSON: Record<string, unknown> = {
     data: { item_name: { type: 'string', __example__: 'Walk-in fridge' }, value_text: { type: 'string', __example__: '9 °C (limit 0–5 °C)' } },
     layout: { type: 'SingleColumnLayout', children: [
       { type: 'TextSubheading', text: '${data.item_name}' },
-      { type: 'TextBody', text: '${data.value_text}. What did you do?' },
+      // Meta rejects mixing a ${data.x} reference with static text in one property.
+      { type: 'TextBody', text: '${data.value_text}' },
+      { type: 'TextBody', text: 'What did you do?' },
       { type: 'Form', name: 'form', children: [
         { type: 'RadioButtonsGroup', name: 'action', label: 'Action taken', required: true, 'data-source': CORRECTIVE_ACTIONS },
         { type: 'TextArea', name: 'details', label: 'Details', required: false },
