@@ -20,3 +20,14 @@ $$);
 alter table public.channel_flows
   add column if not exists prev_flow_id text,
   add column if not exists prev_replaced_at timestamptz;
+
+-- Nightly Flow sync (cron path): deprecate replaced flows past their grace period, republish changed checklists.
+select cron.unschedule('whatsapp-sync-flows') where exists (select 1 from cron.job where jobname = 'whatsapp-sync-flows');
+select cron.schedule('whatsapp-sync-flows', '30 3 * * *', $$
+  select net.http_post(
+    url := 'https://rszrggreuarvodcqeqrj.supabase.co/functions/v1/whatsapp-sync-flows',
+    headers := jsonb_build_object('Content-Type','application/json',
+      'x-cron-secret', (select decrypted_secret from vault.decrypted_secrets where name = 'whatsapp_cron_secret')),
+    body := '{}'::jsonb,
+    timeout_milliseconds := 120000)
+$$);
