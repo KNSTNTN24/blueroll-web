@@ -77,6 +77,21 @@ export function textsFor(ui: Pick<ChannelUI, 'channel' | 'commandWord'>) {
 export const TEXT = textsFor(whatsappUI())
 
 const TOKEN_TTL_MS = 24 * 3600 * 1000
+
+/** Save a one-off `checklist` form token for (person, site, template) covering `itemIds`; returns the token. */
+export async function saveChecklistToken(d: Pick<BotDeps, 'newToken' | 'saveToken' | 'now'>,
+  a: { business_id: string; profile_id: string; site_id: string; template_id: string }, itemIds: string[]): Promise<string> {
+  const token = d.newToken()
+  await d.saveToken({ token, kind: 'checklist', business_id: a.business_id, profile_id: a.profile_id, site_id: a.site_id,
+    template_id: a.template_id, item_ids: itemIds, response_id: null, expires_at: new Date(d.now().getTime() + TOKEN_TTL_MS).toISOString(), used_at: null })
+  return token
+}
+
+/** Item ids the Telegram Mini App form covers, or null when the checklist can only be completed in the app (required photo / nothing fillable). */
+export function telegramFormItemIds(items: TemplateItem[]): string[] | null {
+  const fi = formItems(items)
+  return fi.unsupportedRequired.length || !fi.supported.length ? null : fi.supported.map((i) => i.id)
+}
 /** WhatsApp customer-service window: a business-initiated template is free within 24h of the person's last inbound message. */
 export const SERVICE_WINDOW_MS = 24 * 3600 * 1000
 export const isBillable = (lastInboundAt: string | null | undefined, now: Date) =>
@@ -125,17 +140,12 @@ async function sendChecklistForm(d: BotDeps, from: string, person: Person, templ
   const sites = await d.sitesFor(person.profile_id)
   const t = (await d.templates(person.business_id)).find((x) => x.id === templateId)
   if (!t || !sites.some((s) => s.id === siteId) || !availableChecklists([t], person, siteId).length) return out(d, ctx, d.ui.text(from, X.formExpired), 'reply')
-  const saveChecklistToken = async (itemIds: string[]) => {
-    const token = d.newToken()
-    await d.saveToken({ token, kind: 'checklist', business_id: person.business_id, profile_id: person.profile_id, site_id: siteId,
-      template_id: templateId, item_ids: itemIds, response_id: null, expires_at: new Date(d.now().getTime() + TOKEN_TTL_MS).toISOString(), used_at: null })
-    return token
-  }
+  const tokenFor = (itemIds: string[]) => saveChecklistToken(d, { ...ctx, template_id: templateId }, itemIds)
   if (d.ui.channel === 'telegram') {
     // The Mini App renders the current items directly — no published Flow to match against.
-    const fi = formItems(await d.items(templateId))
-    if (fi.unsupportedRequired.length || !fi.supported.length) return out(d, ctx, d.ui.text(from, X.appOnly(t.name)), 'reply')
-    const token = await saveChecklistToken(fi.supported.map((i) => i.id))
+    const ids = telegramFormItemIds(await d.items(templateId))
+    if (!ids) return out(d, ctx, d.ui.text(from, X.appOnly(t.name)), 'reply')
+    const token = await tokenFor(ids)
     const msg = d.ui.form(from, { templateName: t.name, token })
     return msg ? out(d, ctx, msg, 'form') : out(d, ctx, d.ui.text(from, X.appOnly(t.name)), 'reply')
   }
@@ -149,7 +159,7 @@ async function sendChecklistForm(d: BotDeps, from: string, person: Person, templ
   if (current.length !== flow.item_ids.length || (await itemsHash(t.name, items)) !== flow.items_hash) {
     return out(d, ctx, d.ui.text(from, X.appOnly(t.name)), 'reply')
   }
-  const token = await saveChecklistToken(current.map((i) => i.id))
+  const token = await tokenFor(current.map((i) => i.id))
   const msg = d.ui.form(from, { templateName: t.name, token, flowId: flow.flow_id })
   if (!msg) return out(d, ctx, d.ui.text(from, X.appOnly(t.name)), 'reply')
   await out(d, ctx, msg, 'flow')

@@ -1,24 +1,39 @@
 // supabase/functions/whatsapp-reminders/index.ts
-// Every 10 minutes (pg_cron → net.http_post with x-cron-secret): send due reminders and corrective follow-ups,
-// then tidy old link codes / form tokens / reminder keys. Deployed with --no-verify-jwt; authenticity = x-cron-secret.
-// Never log raw phone numbers — use maskPhone.
+// Serves BOTH channels (WhatsApp and Telegram); the name is historical.
+// Every 10 minutes (pg_cron → net.http_post with x-cron-secret): send due reminders (Telegram + WhatsApp), WhatsApp corrective
+// follow-ups, then tidy old link codes / form tokens / reminder keys / message log. Deployed with --no-verify-jwt; authenticity = x-cron-secret.
+// A channel runs only when its env is set: Telegram needs TG_BOT_TOKEN; WhatsApp needs WA_TOKEN + WA_PHONE_NUMBER_ID.
+// Never log raw phone numbers / chat ids — use maskPhone.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { makeSender, templateMessage } from "../_shared/channels/whatsapp.ts";
+import { makeTelegramSender } from "../_shared/channels/telegram.ts";
 import { makeDeps, pageAll } from "../_shared/channels/db.ts";
-import { isBillable, withUnit } from "../_shared/channels/bot.ts";
-import { alertManagers, makeAlertDeps, type Senders } from "../_shared/channels/alerts.ts";
-import { whatsappUI } from "../_shared/channels/ui.ts";
+import { isBillable, saveChecklistToken, telegramFormItemIds, withUnit, type BotDeps } from "../_shared/channels/bot.ts";
+import { alertManagers, makeAlertDeps, TG_MINI_APP_URL, type Senders } from "../_shared/channels/alerts.ts";
+import { telegramUI, whatsappUI, type Channel } from "../_shared/channels/ui.ts";
+import { buildTelegramReminder } from "../_shared/channels/tg-reminder.ts";
 import { maskPhone } from "../_shared/channels/mask.ts";
-import { planCorrective, planReminders, reminderKey, type Recipient } from "../_shared/checklists-core/reminders.ts";
+import { planCorrective, planReminders, reminderKey, type Recipient, type ReminderJob } from "../_shared/checklists-core/reminders.ts";
 import { completionsWindowStart } from "../_shared/checklists-core/due.ts";
+import type { Person } from "../_shared/checklists-core/types.ts";
+import type { SendFn } from "../_shared/channels/types.ts";
 
 const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
 const CRON_SECRET = Deno.env.get("WA_CRON_SECRET") ?? "";
-const send = makeSender({ token: Deno.env.get("WA_TOKEN") ?? "", phoneNumberId: Deno.env.get("WA_PHONE_NUMBER_ID") ?? "" });
+const WA_TOKEN = Deno.env.get("WA_TOKEN") ?? "";
+const WA_PHONE = Deno.env.get("WA_PHONE_NUMBER_ID") ?? "";
+const TG_TOKEN = Deno.env.get("TG_BOT_TOKEN") ?? "";
+const waSend: SendFn | undefined = WA_TOKEN && WA_PHONE ? makeSender({ token: WA_TOKEN, phoneNumberId: WA_PHONE }) : undefined;
+const tgSend: SendFn | undefined = TG_TOKEN ? makeTelegramSender({ token: TG_TOKEN }) : undefined;
 const CORRECTIVE_FLOW_ID = Deno.env.get("WA_CORRECTIVE_FLOW_ID") ?? "";
-if (!CORRECTIVE_FLOW_ID) console.error("whatsapp-reminders: WA_CORRECTIVE_FLOW_ID is not set — corrective forms will be skipped");
-const senders: Senders = { whatsapp: send };
-const deps = makeDeps(admin, { channel: "whatsapp", ui: whatsappUI(), send, correctiveFlowId: CORRECTIVE_FLOW_ID, senders });
+if (waSend && !CORRECTIVE_FLOW_ID) console.error("whatsapp-reminders: WA_CORRECTIVE_FLOW_ID is not set — corrective forms will be skipped");
+const senders: Senders = { ...(tgSend ? { telegram: tgSend } : {}), ...(waSend ? { whatsapp: waSend } : {}) };
+// Telegram first: a person linked on both channels gets the (free) Telegram reminder; the shared key then skips WhatsApp.
+const channelDeps: { channel: Channel; send: SendFn; deps: BotDeps }[] = [
+  ...(tgSend ? [{ channel: "telegram" as const, send: tgSend, deps: makeDeps(admin, { channel: "telegram", ui: telegramUI(TG_MINI_APP_URL), send: tgSend, senders }) }] : []),
+  ...(waSend ? [{ channel: "whatsapp" as const, send: waSend, deps: makeDeps(admin, { channel: "whatsapp", ui: whatsappUI(), send: waSend, correctiveFlowId: CORRECTIVE_FLOW_ID, senders }) }] : []),
+];
+const CHANNELS = channelDeps.map((c) => c.channel);
 const alertDeps = makeAlertDeps(admin);
 
 const DAY_MS = 86400_000;
@@ -26,7 +41,7 @@ const REMINDER_KEY_COLS = "profile_id,template_id,site_id,period_key";
 
 // deno-lint-ignore no-explicit-any
 type Any = any;
-interface Ident { id: string; business_id: string; profile_id: string; external_id: string; last_inbound_at: string | null }
+interface Ident { id: string; business_id: string; profile_id: string; channel: Channel; external_id: string; last_inbound_at: string | null }
 interface SiteRow { name: string; timezone: string }
 
 const hhmm = (iso: string, tz: string) =>
@@ -49,69 +64,118 @@ async function claimStep(row: { business_id: string; site_id: string; profile_id
   return data.id as number;
 }
 
-async function remindBusiness(biz: string, list: Ident[], sites: Map<string, SiteRow>, now: Date): Promise<number> {
-  const templates = await deps.templates(biz);
-  if (!templates.length) return 0;
-  // Only (template, site) pairs with a published Flow: a reminder for a checklist that can't be filled here is billable noise.
-  const { data: flowRows, error: flowErr } = await admin.from("channel_flows").select("template_id, site_id")
-    .eq("channel", "whatsapp").eq("status", "published").not("flow_id", "is", null).in("template_id", templates.map((t) => t.id));
-  if (flowErr) throw flowErr;
-  const withFlow = new Set((flowRows ?? []).map((f: Any) => `${f.template_id}:${f.site_id}`));
-  if (!withFlow.size) return 0;
-  const completions = await deps.completionsSince(biz, completionsWindowStart(templates, [...new Set([...sites.values()].map((s) => s.timezone))], now));
-  const recipients: Recipient[] = [];
-  for (const i of list) {
-    const person = await deps.person(i.profile_id);
-    if (!person || person.business_id !== biz) continue;
-    for (const s of await deps.sitesFor(i.profile_id)) recipients.push({ person, external_id: i.external_id, site_id: s.id, tz: s.timezone });
+async function releaseKeys(job: ReminderJob, items: ReminderJob["items"]): Promise<void> {
+  for (const it of items) {
+    const { error: relErr } = await admin.from("channel_reminders_sent").delete()
+      .eq("profile_id", job.profile_id).eq("template_id", it.template.id).eq("site_id", job.site_id).eq("period_key", it.period_key);
+    if (relErr) console.error("reminder key release failed", maskPhone(job.external_id), it.template.id, it.period_key, errMsg(relErr));
   }
-  if (!recipients.length) return 0;
+}
 
+/** Reminders for one business across its ready channels. `byChannel` holds that business's identities per channel. */
+async function remindBusiness(biz: string, byChannel: Map<Channel, Ident[]>, sites: Map<string, SiteRow>, now: Date): Promise<number> {
+  const shared = channelDeps[0].deps;   // business-level reads are channel-independent
+  const templates = await shared.templates(biz);
+  if (!templates.length) return 0;
+  const completions = await shared.completionsSince(biz, completionsWindowStart(templates, [...new Set([...sites.values()].map((s) => s.timezone))], now));
+
+  const allProfiles = [...new Set([...byChannel.values()].flat().map((i) => i.profile_id))];
+  if (!allProfiles.length) return 0;
+  // The reminder key has no channel: one reminder per person per key, whichever channel claims it first.
   const sentRows = await pageAll<Any>((from, to) => admin.from("channel_reminders_sent").select("profile_id, template_id, site_id, period_key")
-    .in("profile_id", list.map((i) => i.profile_id)).in("site_id", [...sites.keys()])
+    .in("profile_id", allProfiles).in("site_id", [...sites.keys()])
     .gte("sent_at", new Date(now.getTime() - 40 * DAY_MS).toISOString())
     .order("profile_id").order("template_id").order("site_id").order("period_key").range(from, to));
   const already = new Set(sentRows.map((r: Any) => reminderKey(r.profile_id, r.template_id, r.site_id, r.period_key)));
 
-  let sent = 0;
-  // planReminders returns several jobs per recipient (chunks of MAX_PER_MESSAGE) — every job is sent.
-  const hasFlow = (templateId: string, siteId: string) => withFlow.has(`${templateId}:${siteId}`);
-  for (const job of planReminders({ now, recipients, templates, completions, alreadySent: already, hasFlow })) {
-    // Claim the keys before sending: the PK makes overlapping runs safe; conflicting keys are skipped.
-    const { data: claimed, error: claimErr } = await admin.from("channel_reminders_sent")
-      .upsert(job.items.map((it) => ({ profile_id: job.profile_id, template_id: it.template.id, site_id: job.site_id, period_key: it.period_key })),
-        { onConflict: REMINDER_KEY_COLS, ignoreDuplicates: true })
-      .select("template_id, period_key");
-    if (claimErr) { console.error("whatsapp reminder claim failed", errMsg(claimErr)); continue; }
-    const claimedKeys = new Set((claimed ?? []).map((c: Any) => `${c.template_id}:${c.period_key}`));
-    const items = job.items.filter((it) => claimedKeys.has(`${it.template.id}:${it.period_key}`));
-    if (!items.length) continue;
+  // Per-run caches shared by both channels.
+  const personCache = new Map<string, Person | null>();
+  const sitesCache = new Map<string, { id: string; timezone: string }[]>();
+  const tgItemsCache = new Map<string, string[] | null>();
 
-    const ident = list.find((i) => i.profile_id === job.profile_id);
-    const site = sites.get(job.site_id);
-    const siteName = site?.name ?? "";
-    const tz = site?.timezone ?? "Europe/London";
-    const single = items.length === 1;
-    const msg = single
-      ? templateMessage(job.external_id, "checklist_reminder", [items[0].template.name, hhmm(items[0].deadline_utc!, tz), siteName], [`fill:${items[0].template.id}:${job.site_id}`])
-      : templateMessage(job.external_id, "checklist_reminder_list",
-        [String(items.length), siteName, items.map((x) => `${x.template.name} (${hhmm(x.deadline_utc!, tz)})`).join(", ")],
-        // One QUICK_REPLY "Show checks": the bot answers with named Fill-in buttons (a template can't label its buttons per send).
-        ["checks"]);
-    const r = await send(msg);
-    if (!r.ok) {
-      // Give the keys back so the next run (still inside the lead window) retries.
-      console.error("whatsapp reminder send failed", maskPhone(job.external_id), r.status);
-      for (const it of items) {
-        const { error: relErr } = await admin.from("channel_reminders_sent").delete()
-          .eq("profile_id", job.profile_id).eq("template_id", it.template.id).eq("site_id", job.site_id).eq("period_key", it.period_key);
-        if (relErr) console.error("whatsapp reminder key release failed", maskPhone(job.external_id), it.template.id, it.period_key, errMsg(relErr));
+  let sent = 0;
+  for (const { channel, send, deps } of channelDeps) {
+    const list = byChannel.get(channel) ?? [];
+    if (!list.length) continue;
+
+    let hasFlow: ((templateId: string, siteId: string) => boolean) | undefined;
+    if (channel === "whatsapp") {
+      // Only (template, site) pairs with a published Flow: a reminder for a checklist that can't be filled here is billable noise.
+      const { data: flowRows, error: flowErr } = await admin.from("channel_flows").select("template_id, site_id")
+        .eq("channel", "whatsapp").eq("status", "published").not("flow_id", "is", null).in("template_id", templates.map((t) => t.id));
+      if (flowErr) throw flowErr;
+      const withFlow = new Set((flowRows ?? []).map((f: Any) => `${f.template_id}:${f.site_id}`));
+      if (!withFlow.size) continue;
+      hasFlow = (templateId, siteId) => withFlow.has(`${templateId}:${siteId}`);
+    }
+
+    const recipients: Recipient[] = [];
+    for (const i of list) {
+      if (!personCache.has(i.profile_id)) personCache.set(i.profile_id, await deps.person(i.profile_id));
+      const person = personCache.get(i.profile_id);
+      if (!person || person.business_id !== biz) continue;
+      if (!sitesCache.has(i.profile_id)) sitesCache.set(i.profile_id, await deps.sitesFor(i.profile_id));
+      for (const s of sitesCache.get(i.profile_id)!) recipients.push({ person, external_id: i.external_id, site_id: s.id, tz: s.timezone });
+    }
+    if (!recipients.length) continue;
+
+    // planReminders returns several jobs per recipient (chunks of MAX_PER_MESSAGE) — every job is sent.
+    for (const job of planReminders({ now, recipients, templates, completions, alreadySent: already, hasFlow })) {
+      // Claim the keys before sending: the PK makes overlapping runs (and the other channel) safe; conflicting keys are skipped.
+      const { data: claimed, error: claimErr } = await admin.from("channel_reminders_sent")
+        .upsert(job.items.map((it) => ({ profile_id: job.profile_id, template_id: it.template.id, site_id: job.site_id, period_key: it.period_key })),
+          { onConflict: REMINDER_KEY_COLS, ignoreDuplicates: true })
+        .select("template_id, period_key");
+      if (claimErr) { console.error(`${channel} reminder claim failed`, errMsg(claimErr)); continue; }
+      const claimedKeys = new Set((claimed ?? []).map((c: Any) => `${c.template_id}:${c.period_key}`));
+      // Keys this job touched are now taken either way — the other channel must not re-plan them in this run.
+      for (const it of job.items) already.add(reminderKey(job.profile_id, it.template.id, job.site_id, it.period_key));
+      const items = job.items.filter((it) => claimedKeys.has(`${it.template.id}:${it.period_key}`));
+      if (!items.length) continue;
+
+      const ident = list.find((i) => i.profile_id === job.profile_id);
+      const site = sites.get(job.site_id);
+      const siteName = site?.name ?? "";
+      const tz = site?.timezone ?? "Europe/London";
+      const single = items.length === 1;
+
+      let r: { id: string | null; ok: boolean; status: number };
+      if (channel === "telegram") {
+        try {
+          const tokens = new Map<string, string | null>();
+          for (const it of items) {
+            if (!tgItemsCache.has(it.template.id)) tgItemsCache.set(it.template.id, telegramFormItemIds(await deps.items(it.template.id)));
+            const ids = tgItemsCache.get(it.template.id);
+            tokens.set(it.template.id, ids
+              ? await saveChecklistToken(deps, { business_id: biz, profile_id: job.profile_id, site_id: job.site_id, template_id: it.template.id }, ids)
+              : null);
+          }
+          r = await send(buildTelegramReminder({ external_id: job.external_id, siteName, tz, items }, tokens));
+        } catch (err) {
+          console.error("telegram reminder build failed", maskPhone(job.external_id), errMsg(err));
+          r = { id: null, ok: false, status: 0 };
+        }
+      } else {
+        const msg = single
+          ? templateMessage(job.external_id, "checklist_reminder", [items[0].template.name, hhmm(items[0].deadline_utc!, tz), siteName], [`fill:${items[0].template.id}:${job.site_id}`])
+          : templateMessage(job.external_id, "checklist_reminder_list",
+            [String(items.length), siteName, items.map((x) => `${x.template.name} (${hhmm(x.deadline_utc!, tz)})`).join(", ")],
+            // One QUICK_REPLY "Show checks": the bot answers with named Fill-in buttons (a template can't label its buttons per send).
+            ["checks"]);
+        r = await send(msg);
       }
-    } else sent++;
-    await deps.log({
-      business_id: biz, site_id: job.site_id, profile_id: job.profile_id, direction: "out", kind: single ? "reminder" : "reminder_list",
-      template_name: single ? "checklist_reminder" : "checklist_reminder_list", billable: r.ok && isBillable(ident?.last_inbound_at, now), wa_message_id: r.id,
-    });
+      if (!r.ok) {
+        // Give the keys back so the next run (still inside the lead window) retries.
+        console.error(`${channel} reminder send failed`, maskPhone(job.external_id), r.status);
+        await releaseKeys(job, items);
+      } else sent++;
+      await deps.log({
+        business_id: biz, site_id: job.site_id, profile_id: job.profile_id, direction: "out", kind: single ? "reminder" : "reminder_list",
+        // Telegram messages are free; only WhatsApp templates outside the 24h window cost money.
+        template_name: channel === "whatsapp" ? (single ? "checklist_reminder" : "checklist_reminder_list") : undefined,
+        billable: channel === "whatsapp" && r.ok && isBillable(ident?.last_inbound_at, now), wa_message_id: r.id,
+      });
+    }
   }
   return sent;
 }
@@ -146,7 +210,7 @@ async function correctiveBusiness(biz: string, list: Ident[], sites: Map<string,
       const logId = await claimStep({ business_id: biz, site_id: n.completion.site_id, profile_id: ident ? n.completion.completed_by : null,
         kind: "corrective_nudge", template_name: ident ? "corrective_nudge" : undefined, ref_id: a.response_id });
       if (logId === null || !ident) continue;
-      const r = await send(templateMessage(ident.external_id, "corrective_nudge", [site?.name ?? ""], ["checks"]));
+      const r = await waSend!(templateMessage(ident.external_id, "corrective_nudge", [site?.name ?? ""], ["checks"]));
       if (!r.ok) console.error("whatsapp nudge send failed", maskPhone(ident.external_id), r.status);
       const { error: upErr } = await admin.from("channel_messages_log")
         .update({ billable: r.ok && isBillable(ident.last_inbound_at, now), wa_message_id: r.id }).eq("id", logId);
@@ -174,39 +238,56 @@ async function housekeeping(now: Date): Promise<void> {
   const b = await admin.from("channel_link_codes").delete().lt("expires_at", now.toISOString()).lt("created_at", dayAgo);
   const c = await admin.from("channel_form_tokens").delete().lt("expires_at", twoDaysAgo);
   const d = await admin.from("channel_reminders_sent").delete().lt("sent_at", new Date(now.getTime() - 60 * DAY_MS).toISOString());
-  for (const r of [a, b, c, d]) if (r.error) console.error("whatsapp housekeeping failed", errMsg(r.error));
+  // Privacy policy: channel message logs are kept for 12 months.
+  const yearAgo = new Date(now);
+  yearAgo.setUTCMonth(yearAgo.getUTCMonth() - 12);
+  const e = await admin.from("channel_messages_log").delete().lt("created_at", yearAgo.toISOString());
+  for (const r of [a, b, c, d, e]) if (r.error) console.error("channel housekeeping failed", errMsg(r.error));
 }
 
 Deno.serve(async (req) => {
   if (!CRON_SECRET || req.headers.get("x-cron-secret") !== CRON_SECRET) return new Response("forbidden", { status: 403 });
   const now = new Date();
-  let idents: Ident[];
-  try {
-    idents = await pageAll<Ident>((from, to) => admin.from("channel_identities")
-      .select("id, business_id, profile_id, external_id, last_inbound_at").eq("channel", "whatsapp").is("revoked_at", null)
-      .order("id").range(from, to));
-  } catch (error) { console.error("whatsapp reminders: identities query failed", errMsg(error)); return new Response("error", { status: 500 }); }
+  let idents: Ident[] = [];
+  if (CHANNELS.length) {
+    try {
+      idents = await pageAll<Ident>((from, to) => admin.from("channel_identities")
+        .select("id, business_id, profile_id, channel, external_id, last_inbound_at").in("channel", CHANNELS).is("revoked_at", null)
+        .order("id").range(from, to));
+    } catch (error) { console.error("channel reminders: identities query failed", errMsg(error)); return new Response("error", { status: 500 }); }
+  } else console.error("channel reminders: neither TG_BOT_TOKEN nor WA_TOKEN/WA_PHONE_NUMBER_ID is set — only housekeeping runs");
 
-  const byBiz = new Map<string, Ident[]>();
+  // business → channel → identities
+  const byBiz = new Map<string, Map<Channel, Ident[]>>();
   for (const i of idents) {
-    const l = byBiz.get(i.business_id) ?? [];
+    const m = byBiz.get(i.business_id) ?? new Map<Channel, Ident[]>();
+    const l = m.get(i.channel) ?? [];
     l.push(i);
-    byBiz.set(i.business_id, l);
+    m.set(i.channel, l);
+    byBiz.set(i.business_id, m);
   }
 
   let sent = 0;
   let failed = 0;
-  for (const [biz, list] of byBiz) {
+  for (const [biz, all] of byBiz) {
     try {
-      if (!(await deps.ready(biz))) continue;
+      // channel_ready(b, channel): keep only the channels this business can use right now.
+      const byChannel = new Map<Channel, Ident[]>();
+      for (const { channel, deps } of channelDeps) {
+        const list = all.get(channel);
+        if (list?.length && (await deps.ready(biz))) byChannel.set(channel, list);
+      }
+      if (!byChannel.size) continue;
       const { data: siteRows, error: siteErr } = await admin.from("sites").select("id, name, timezone").eq("business_id", biz).is("removed_at", null);
       if (siteErr) throw siteErr;
       const sites = new Map<string, SiteRow>((siteRows ?? []).map((s: Any) => [s.id, { name: s.name ?? "", timezone: s.timezone ?? "Europe/London" }]));
-      sent += await remindBusiness(biz, list, sites, now);
-      await correctiveBusiness(biz, list, sites, now);
+      sent += await remindBusiness(biz, byChannel, sites, now);
+      // Corrective nudges / no-action alerts: WhatsApp-recorded answers only (Telegram submissions always carry their action).
+      const waList = byChannel.get("whatsapp");
+      if (waList && waSend) await correctiveBusiness(biz, waList, sites, now);
     } catch (err) {
       failed++;
-      console.error("whatsapp reminders: business run failed", biz, errMsg(err));
+      console.error("channel reminders: business run failed", biz, errMsg(err));
     }
   }
   await housekeeping(now);
