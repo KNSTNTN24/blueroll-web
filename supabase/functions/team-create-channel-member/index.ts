@@ -5,6 +5,20 @@ const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type" };
 const json = (s: number, b: unknown) => new Response(JSON.stringify(b), { status: s, headers: { ...cors, "Content-Type": "application/json" } });
 
+// Rollback never logs the email; log the user id only if a step fails.
+async function rollback(pid: string, deleteProfile: boolean) {
+  try {
+    if (deleteProfile) {
+      const { error } = await admin.from("profiles").delete().eq("id", pid);
+      if (error) console.error("rollback: profile delete failed", pid);
+    }
+    const { error } = await admin.auth.admin.deleteUser(pid);
+    if (error) console.error("rollback: deleteUser failed", pid);
+  } catch (_e) {
+    console.error("rollback: exception", pid);
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   const jwt = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
@@ -12,7 +26,9 @@ Deno.serve(async (req) => {
   if (!u?.user) return json(401, { error: "auth" });
   const { data: me } = await admin.from("profiles").select("business_id, role").eq("id", u.user.id).is("removed_at", null).maybeSingle();
   if (!me || !me.business_id || !["owner", "manager"].includes(me.role)) return json(403, { error: "forbidden" });
-  const body = await req.json().catch(() => ({}));
+  const body = (await req.json().catch(() => null)) ?? {};
+  if (typeof body !== "object" || Array.isArray(body)) return json(400, { error: "body" });
+  if (typeof body.role_id !== "string" || typeof body.site_id !== "string") return json(400, { error: "ids" });
   const name = typeof body.full_name === "string" ? body.full_name.trim().slice(0, 80) : "";
   if (!name) return json(400, { error: "name" });
   const { data: role } = await admin.from("roles").select("id, base_tier").eq("id", body.role_id).eq("business_id", me.business_id).maybeSingle();
@@ -23,7 +39,7 @@ Deno.serve(async (req) => {
   // Synthetic address: never logged, never used for login (no password set).
   const email = `wa+${crypto.randomUUID()}@noreply.blueroll.app`;
   const { data: created, error } = await admin.auth.admin.createUser({
-    email, email_confirm: true, app_metadata: { channel_only: true }, user_metadata: { full_name: name },
+    email, email_confirm: true, ban_duration: "876000h", app_metadata: { channel_only: true }, user_metadata: { full_name: name },
   });
   if (error || !created.user) return json(500, { error: "create" });
   const pid = created.user.id;
@@ -32,11 +48,10 @@ Deno.serve(async (req) => {
   const { error: pErr } = await admin.from("profiles").insert({
     id: pid, email, full_name: name, role: role.base_tier, role_id: role.id, business_id: me.business_id, site_id: site.id,
   });
-  if (pErr) { await admin.auth.admin.deleteUser(pid); return json(500, { error: "profile" }); }
+  if (pErr) { await rollback(pid, false); return json(500, { error: "profile" }); }
   const { error: mErr } = await admin.from("member_sites").upsert({ profile_id: pid, site_id: site.id }, { onConflict: "profile_id,site_id", ignoreDuplicates: true });
   if (mErr) {
-    await admin.from("profiles").delete().eq("id", pid);
-    await admin.auth.admin.deleteUser(pid);
+    await rollback(pid, true);
     return json(500, { error: "membership" });
   }
   return json(200, { profile_id: pid });
