@@ -28,7 +28,7 @@ function fake(overAll: Partial<BotDeps> & { managerRecipients?: Recipients } = {
     findIdentity: async (x) => (x === '447700900123' ? { id: 'id1', business_id: 'b', profile_id: 'p1', external_id: x } : null),
     touchIdentity: async () => {},
     revokeIdentity: async (id) => { state.revoked.push(id) },
-    consumeLinkCode: async (code) => code === '482913' ? { ok: true, identity: { id: 'id1', business_id: 'b', profile_id: 'p1', external_id: '447700900123' }, siteName: 'Wharf Side', name: 'Anna' } : { ok: false },
+    consumeLinkCode: async (code) => code === '482913' ? { ok: true, identity: { id: 'id1', business_id: 'b', profile_id: 'p1', external_id: '447700900123' }, siteName: 'Wharf Side', name: 'Anna' } : { ok: false, reason: 'invalid' as const },
     ready: async () => true,
     person: async () => ({ profile_id: 'p1', business_id: 'b', full_name: 'Anna', role: 'kitchen_staff', role_id: 'r' }),
     sitesFor: async () => [{ id: 's1', name: 'Wharf Side', timezone: 'Europe/London' }],
@@ -200,6 +200,17 @@ describe('bot', () => {
     await handleInbound({ kind: 'flow', from, token: 'ct', response: { action: 'moved' }, id: 'z' }, f.d)
     // 09:40Z = 05:40 in New York (EDT)
     expect(f.sent[0].template.components[0].parameters[3].text).toBe('05:40')
+  })
+  it('LINK code for a team that cannot use the channel → "unavailable", not counted as a failure', async () => {
+    const f = fake({ consumeLinkCode: async () => ({ ok: false, reason: 'unavailable' }) })
+    await handleInbound({ kind: 'text', from: '447000000001', text: 'LINK 482913', id: 'x' }, f.d)
+    expect(textOf(f.sent[0])).toBe(TEXT.unavailable)
+    expect(f.state.linkFails).toHaveLength(0)
+  })
+  it('a bare 6-digit WhatsApp message is not a LINK code (unchanged)', async () => {
+    const f = fake()
+    await handleInbound({ kind: 'text', from: '447000000001', text: '482913', id: 'x' }, f.d)
+    expect(textOf(f.sent[0])).toBe(TEXT.unknown)
   })
   it('a failed LINK code records a failure', async () => {
     const f = fake()
@@ -376,7 +387,7 @@ describe('bot on Telegram', () => {
     const f = fake({
       channel: 'telegram', ui: tgUi,
       findIdentity: async (x) => (x === tgFrom ? { id: 'tg1', business_id: 'b', profile_id: 'p1', external_id: x } : null),
-      consumeLinkCode: async (code, ext) => code === '482913' ? { ok: true, identity: { id: 'tg1', business_id: 'b', profile_id: 'p1', external_id: ext }, siteName: 'Wharf Side', name: 'Anna' } : { ok: false },
+      consumeLinkCode: async (code, ext) => code === '482913' ? { ok: true, identity: { id: 'tg1', business_id: 'b', profile_id: 'p1', external_id: ext }, siteName: 'Wharf Side', name: 'Anna' } : { ok: false, reason: 'invalid' as const },
       flowFor: async () => { flowAsked++; return null },
       ...over,
     })
@@ -464,6 +475,21 @@ describe('bot on Telegram', () => {
     expect([...f.tokens.values()].map((t) => t.kind)).toEqual(['checklist'])
     expect(f.sent).toHaveLength(1)
     expect(f.sent[0].reply_markup.inline_keyboard[0][0].web_app.url).toBe('https://app.blueroll.app/tg/form?t=tok1')
+  })
+  it('a bare 6-digit message from an unlinked Telegram user is a LINK code', async () => {
+    const f = tg()
+    await handleInbound({ kind: 'text', from: '555', text: ' 482913 ', id: '1' }, f.d)
+    expect(f.sent[0]).toEqual({ chat_id: '555', text: X.linked('Anna', 'Wharf Side') })
+    await handleInbound({ kind: 'text', from: '556', text: '000000', id: '2' }, f.d)
+    expect(f.sent[1]).toEqual({ chat_id: '556', text: X.linkExpired })
+    expect(f.state.linkFails).toHaveLength(1)
+  })
+  it('a bare 6-digit message from a linked Telegram user is not treated as a code', async () => {
+    let consumed = 0
+    const f = tg({ consumeLinkCode: async () => { consumed++; return { ok: false, reason: 'invalid' } } })
+    await handleInbound({ kind: 'text', from: tgFrom, text: '482913', id: '1' }, f.d)
+    expect(consumed).toBe(0)
+    expect(f.sent[0]).toEqual({ chat_id: tgFrom, text: X.fallback })
   })
   it('unknown Telegram user → Telegram text', async () => {
     const f = tg()

@@ -1,9 +1,9 @@
 // supabase/functions/_shared/channels/db.ts
 // Supabase-backed BotDeps. `admin` is a service-role supabase-js client (typed loosely to keep this file import-free).
-// Never log raw phone numbers from here — use maskPhone.
+// Never log raw phone numbers / chat ids from here — use maskId.
 import type { BotDeps, FormToken, Identity } from './bot.ts'
 import type { SendFn } from './types.ts'
-import { maskPhone } from './mask.ts'
+import { maskId } from './mask.ts'
 import type { Channel, ChannelUI } from './ui.ts'
 import { alertManagers, makeAlertDeps, type Senders } from './alerts.ts'
 
@@ -104,7 +104,7 @@ export function makeDeps(admin: any, cfg: DepsConfig): BotDeps {
         .eq('code', code).is('used_at', null).gt('expires_at', nowIso)
         .select('code, business_id, profile_id, site_id, issued_by'))
       const c = claimed?.[0]
-      if (!c) return { ok: false }
+      if (!c) return { ok: false, reason: 'invalid' }
       // Give the code back if the team can't use this channel yet (manager can enable it and the worker retries).
       const release = async () => {
         await one(admin.from('channel_link_codes').update({ used_at: null }).eq('code', code).eq('used_at', nowIso))
@@ -112,10 +112,10 @@ export function makeDeps(admin: any, cfg: DepsConfig): BotDeps {
       let ready: boolean
       try { ready = await channelReady(c.business_id) }
       catch (err) { await release(); throw err }   // transient failure: don't burn the worker's code
-      if (!ready) { await release(); return { ok: false } }
+      if (!ready) { await release(); return { ok: false, reason: 'unavailable' } }
       const prof = await one(admin.from('profiles').select('full_name, site_id')
         .eq('id', c.profile_id).eq('business_id', c.business_id).is('removed_at', null).maybeSingle())
-      if (!prof) return { ok: false }   // member removed after the code was issued — code stays burnt
+      if (!prof) return { ok: false, reason: 'invalid' }   // member removed after the code was issued — code stays burnt
       // One active identity per external id and per profile on this channel: revoke both before linking (two queries, no filter-string interpolation).
       await one(admin.from('channel_identities').update({ revoked_at: nowIso })
         .eq('channel', ch).eq('external_id', externalId).is('revoked_at', null))
@@ -129,7 +129,7 @@ export function makeDeps(admin: any, cfg: DepsConfig): BotDeps {
       const site = siteId
         ? await one(admin.from('sites').select('name').eq('id', siteId).eq('business_id', c.business_id).is('removed_at', null).maybeSingle())
         : null
-      console.log(`${ch} linked`, maskPhone(externalId))
+      console.log(`${ch} linked`, maskId(ch, externalId))
       return { ok: true, identity, name: (prof.full_name ?? '').split(' ')[0] || 'there', siteName: site?.name ?? 'your team' }
     },
 

@@ -25,7 +25,11 @@ export interface BotDeps extends CoreDb {
   findIdentity(externalId: string): Promise<Identity | null>
   touchIdentity(id: string, at: Date): Promise<void>
   revokeIdentity(id: string): Promise<void>
-  consumeLinkCode(code: string, externalId: string, now: Date): Promise<{ ok: true; identity: Identity; siteName: string; name: string } | { ok: false }>
+  /**
+   * Claim a 6-digit link code. `reason`: 'unavailable' = valid code but the team can't use this channel right now (code given
+   * back, NOT a brute-force failure); 'invalid' = unknown / used / expired / member removed.
+   */
+  consumeLinkCode(code: string, externalId: string, now: Date): Promise<{ ok: true; identity: Identity; siteName: string; name: string } | { ok: false; reason: 'invalid' | 'unavailable' }>
   ready(businessId: string): Promise<boolean>
   person(profileId: string): Promise<Person | null>
   sitesFor(profileId: string): Promise<SiteInfo[]>
@@ -215,18 +219,25 @@ export async function handleInbound(e: InboundEvent, deps: BotDeps): Promise<voi
   // before anything is consumed, recorded or sent.
   const claim = (business_id: string | null, profile_id: string | null, kind: string) =>
     d.log({ business_id, site_id: null, profile_id, direction: 'in', kind, billable: false, wa_message_id: waId })
-  const m = e.kind === 'text' ? e.text.match(/^\s*link\s*(\d{6})\s*$/i) : null
+  let m = e.kind === 'text' ? e.text.match(/^\s*link\s*(\d{6})\s*$/i) : null
+  // Telegram: a bare 6-digit message is a link code too (people type the code shown on the manager's screen) — unlinked users only.
+  let known: Identity | null | undefined
+  if (!m && e.kind === 'text' && d.ui.channel === 'telegram') {
+    const bare = e.text.match(/^\s*(\d{6})\s*$/)
+    if (bare) { known = await d.findIdentity(e.from); if (!known) m = bare }
+  }
   if (m) {
     if (!(await claim(null, null, 'link'))) return
     if (await d.linkFailures(e.from, new Date(now.getTime() - LINK_FAILURE_WINDOW_MS)) >= MAX_LINK_FAILURES) {
       return out(d, { business_id: null, profile_id: null }, reply(X.linkExpired), 'link')
     }
     const r = await d.consumeLinkCode(m[1], e.from, now)
+    if (!r.ok && r.reason === 'unavailable') return out(d, { business_id: null, profile_id: null }, reply(X.unavailable), 'link')
     if (!r.ok) await d.recordLinkFailure(e.from, now)
     return out(d, { business_id: r.ok ? r.identity.business_id : null, profile_id: r.ok ? r.identity.profile_id : null },
       reply(r.ok ? X.linked(r.name, r.siteName) : X.linkExpired), 'link')
   }
-  const id = await d.findIdentity(e.from)
+  const id = known !== undefined ? known : await d.findIdentity(e.from)
   if (!(await claim(id?.business_id ?? null, id?.profile_id ?? null, e.kind))) return
   if (!id) return out(d, { business_id: null, profile_id: null }, reply(X.unknown), 'reply')
   await d.touchIdentity(id.id, now)
