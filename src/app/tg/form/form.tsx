@@ -20,6 +20,7 @@ interface TgWebApp {
   expand(): void
   close(): void
   MainButton: TgMainButton
+  HapticFeedback?: { notificationOccurred(type: 'error' | 'success' | 'warning'): void }
 }
 declare global { interface Window { Telegram?: { WebApp?: TgWebApp } } }
 
@@ -109,7 +110,14 @@ export function TgForm({ token }: { token: string }) {
   const submit = useCallback(async () => {
     const wa = webApp.current
     if (!wa || phase.kind !== 'form' || inFlight.current || done.current) return
-    if (!v.valid) { setShowRequired(true); return }
+    if (!v.valid) {
+      // Button stays enabled: show what's missing instead of a dead button.
+      setShowRequired(true)
+      wa.HapticFeedback?.notificationOccurred('error')
+      const first = items.find((i) => v.missing.includes(i.id) || v.invalid.includes(i.id) || v.needsAction.includes(i.id))
+      if (first) requestAnimationFrame(() => document.getElementById(`item-${first.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }))
+      return
+    }
     inFlight.current = true
     setSubmitting(true)
     setSubmitError(null)
@@ -146,7 +154,7 @@ export function TgForm({ token }: { token: string }) {
       wa.MainButton.hideProgress()
       setSubmitting(false)
     }
-  }, [phase, v.valid, token, items, answers, corrective])
+  }, [phase, v, token, items, answers, corrective])
 
   // Telegram MainButton: always calls the latest submit; visible only while the form is shown.
   const submitRef = useRef(submit)
@@ -162,8 +170,8 @@ export function TgForm({ token }: { token: string }) {
     const wa = webApp.current
     if (!wa) return
     if (phase.kind !== 'form') { wa.MainButton.hide(); return }
-    wa.MainButton.setParams({ text: 'Submit', is_visible: true, is_active: v.valid && !submitting })
-  }, [phase.kind, v.valid, submitting])
+    wa.MainButton.setParams({ text: 'Submit', is_visible: true, is_active: !submitting })
+  }, [phase.kind, submitting])
 
   const setAnswer = (id: string, value: string | boolean) => setAnswers((a) => ({ ...a, [id]: value }))
   const setCorr = (id: string, patch: Partial<{ action: string; details: string }>) =>
@@ -231,7 +239,7 @@ function ItemField({ item, value, invalid, missing, needsAction, flagged, correc
     : <label id={labelId} htmlFor={inputId} className="block text-sm font-medium">{item.name}{req}</label>
   const field = 'w-full rounded-md border border-[var(--input)] bg-[var(--tg-bg)] px-3 py-2 text-base text-[var(--tg-text)] outline-none focus:border-[var(--tg-accent)]'
   return (
-    <div className={`rounded-lg bg-[var(--tg-card)] p-3 ${flagged ? 'ring-2 ring-[var(--tg-warn)]' : ''}`}>
+    <div id={`item-${item.id}`} className={`rounded-lg bg-[var(--tg-card)] p-3 ${flagged ? 'ring-2 ring-[var(--tg-warn)]' : ''}`}>
       {item.type === 'tick' ? (
         <label htmlFor={inputId} className="flex items-center gap-3 text-sm font-medium">
           <input id={inputId} type="checkbox" className="size-5 accent-[var(--tg-accent)]" checked={value === true} aria-describedby={describedBy} onChange={(e) => onChange(e.target.checked)} />
