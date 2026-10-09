@@ -71,3 +71,23 @@ export function buildPayload(token: string, items: FormItem[], answers: Answers,
   }
   return { t: token, answers: out, corrective: corr }
 }
+
+/** Mini App page copy. */
+export const FORM_MSG = {
+  outside: 'Open this form from Telegram.',
+  expired: 'This form has expired — send /checks for a new one.',
+  changed: 'This checklist was updated — send /checks for a new form.',
+  used: 'Already submitted ✓',
+  forbidden: "You don't have access to this form.",
+  unauthorized: "Couldn't verify your Telegram session. Close and open the form again from Telegram.",
+  generic: 'Something went wrong. Please try again.',
+  retry: "Couldn't save your answers. Please press Submit again.",
+}
+
+/** Page message for a non-OK channel-form response. */
+export function statusMessage(status: number, error: unknown): string {
+  if (status === 401) return FORM_MSG.unauthorized
+  if (status === 403) return FORM_MSG.forbidden
+  if (status === 410) return error === 'changed' ? FORM_MSG.changed : error === 'used' ? FORM_MSG.used : FORM_MSG.expired
+  return FORM_MSG.generic
+}

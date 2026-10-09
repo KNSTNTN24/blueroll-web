@@ -29,6 +29,8 @@ export interface FormApiDeps {
   /** `corrective` maps flagged item id → notes; those responses are stored with corrective_status 'done'. */
   recordCompletionWithCorrective(a: { person: Person; siteId: string; template: Template; items: TemplateItem[]; answers: Answer[]; corrective: Record<string, string> }): Promise<{ completionId: string; flagged: { item: TemplateItem; value: string; notes: string }[] }>
   alert(businessId: string, a: { siteName: string; itemName: string; value: string; time: string; byName: string; action: string }): Promise<void>
+  /** Best-effort chat message to the submitting Telegram user (chat id = their user id in a private chat). */
+  notifyUser(chatId: string, text: string): Promise<void>
 }
 
 type Res = { status: number; body: unknown }
@@ -36,13 +38,15 @@ const res = (status: number, body: unknown): Res => ({ status, body })
 const UNAUTHORIZED = res(401, { error: 'unauthorized' })
 const FORBIDDEN = res(403, { error: 'forbidden' })
 const EXPIRED = res(410, { error: 'expired' })
+/** The owner already submitted this form (page shows "Already submitted", not "expired"). */
+const USED = res(410, { error: 'used' })
 const CHANGED = res(410, { error: 'changed' })
 const DETAILS_MAX = 300
 
 const isObj = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x)
 const own = (o: Record<string, unknown>, k: string) => Object.prototype.hasOwnProperty.call(o, k) ? o[k] : undefined
 
-type Ctx = { tok: FormToken; person: Person; site: SiteInfo; template: Template; items: TemplateItem[]; itemIds: string[] }
+type Ctx = { userId: string; tok: FormToken; person: Person; site: SiteInfo; template: Template; items: TemplateItem[]; itemIds: string[] }
 
 /** Shared checks for GET and POST. Never consumes the token. */
 async function authorize(d: FormApiDeps, token: string, initData: string): Promise<Res | Ctx> {
@@ -52,8 +56,9 @@ async function authorize(d: FormApiDeps, token: string, initData: string): Promi
   if (!ident) return FORBIDDEN
   const tok = /^[A-Za-z0-9_-]{1,128}$/.test(token) ? await d.peekToken(token) : null
   if (tok && tok.profile_id !== ident.profile_id) return FORBIDDEN   // not the owner: nothing about the token is used
+  if (tok?.used_at) return USED
   const now = d.now()
-  if (!tok || tok.used_at || new Date(tok.expires_at).getTime() <= now.getTime() || tok.kind !== 'checklist' || !tok.template_id) return EXPIRED
+  if (!tok || new Date(tok.expires_at).getTime() <= now.getTime() || tok.kind !== 'checklist' || !tok.template_id) return EXPIRED
   if (!(await d.ready(tok.business_id))) return FORBIDDEN
   const person = await d.person(tok.profile_id)
   if (!person || person.business_id !== tok.business_id) return FORBIDDEN
@@ -66,7 +71,7 @@ async function authorize(d: FormApiDeps, token: string, initData: string): Promi
   const known = new Set(items.map((i) => i.id))
   // Editors delete + re-insert items on save: stale ids can't be mapped safely → the page asks for a fresh /checks.
   if (!itemIds.length || itemIds.some((x) => !known.has(x))) return CHANGED
-  return { tok, person, site, template, items, itemIds }
+  return { userId: v.userId, tok, person, site, template, items, itemIds }
 }
 
 export async function handleFormGet(d: FormApiDeps, token: string, initData: string): Promise<Res> {
@@ -112,7 +117,7 @@ export async function handleFormPost(d: FormApiDeps, body: unknown, initData: st
 
   const now = d.now()
   const taken = await d.takeToken(a.tok.token, now, a.person.profile_id)
-  if (!taken) return EXPIRED   // replay / concurrent submit: nothing recorded twice
+  if (!taken) return USED   // concurrent submit won the take (peek saw it unused): nothing recorded twice
 
   let rec: Awaited<ReturnType<FormApiDeps['recordCompletionWithCorrective']>>
   try {
@@ -134,6 +139,11 @@ export async function handleFormPost(d: FormApiDeps, body: unknown, initData: st
     } catch (err) {
       console.error('form alert failed', String((err as Error)?.message ?? err).slice(0, 200))   // recorded already; don't fail the submit
     }
+  }
+  try {
+    await d.notifyUser(a.userId, `Recorded ✓ ${a.template.name} at ${a.site.name}`)
+  } catch (err) {
+    console.error('form confirmation failed', String((err as Error)?.message ?? err).slice(0, 200))   // recorded already
   }
   return res(200, { ok: true })
 }

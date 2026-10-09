@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { normaliseTemp, isFlagged, validateForm, buildPayload, type FormItem } from '../tg-form'
+import { normaliseTemp, isFlagged, validateForm, buildPayload, statusMessage, FORM_MSG, type FormItem } from '../tg-form'
 
 const temp: FormItem = { id: 'a', name: 'Fridge 1', type: 'temperature', required: true, min: 0, max: 5, unit: '°C' }
 const frz: FormItem = { id: 'f', name: 'Freezer', type: 'temperature', required: false, min: -25, max: -18, unit: null }
@@ -57,5 +57,19 @@ describe('buildPayload', () => {
     expect(p).toEqual({ t: 'tok', answers: { a: '9.5', b: 'yes', d: 'hi' }, corrective: { a: { action: 'moved', details: 'd' } } })
     expect(buildPayload('tok', items, { c: true }, {}).answers).toEqual({ c: true })
     expect(buildPayload('tok', items, { f: '\u221219' }, {}).answers).toEqual({ f: '-19' })
+  })
+})
+
+describe('statusMessage', () => {
+  it('410 used → "Already submitted ✓" (not expired)', () => {
+    expect(statusMessage(410, 'used')).toBe('Already submitted ✓')
+    expect(statusMessage(410, 'used')).not.toMatch(/expired/i)
+  })
+  it('other statuses', () => {
+    expect(statusMessage(410, 'expired')).toBe(FORM_MSG.expired)
+    expect(statusMessage(410, 'changed')).toBe(FORM_MSG.changed)
+    expect(statusMessage(401, 'unauthorized')).toBe(FORM_MSG.unauthorized)
+    expect(statusMessage(403, 'forbidden')).toBe(FORM_MSG.forbidden)
+    expect(statusMessage(500, 'server')).toBe(FORM_MSG.generic)
   })
 })

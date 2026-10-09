@@ -24,7 +24,7 @@ function token(over: Partial<FormToken> = {}): FormToken {
 
 function fake(over: Partial<FormApiDeps> = {}, tok: FormToken = token()) {
   const tokens = new Map<string, FormToken>([[tok.token, tok]])
-  const state: { recorded: any[]; alerts: any[] } = { recorded: [], alerts: [] }
+  const state: { recorded: any[]; alerts: any[]; notes: any[] } = { recorded: [], alerts: [], notes: [] }
   const d: FormApiDeps = {
     now: () => NOW,
     // 'good-init' → user 111 (linked to p1); 'other-init' → user 222 (linked to p2); 'stranger-init' → 333 (not linked).
@@ -48,6 +48,7 @@ function fake(over: Partial<FormApiDeps> = {}, tok: FormToken = token()) {
       return { completionId: 'c1', flagged: a.answers.filter((x) => x.flagged).map((x) => ({ item: byId.get(x.item_id)!, value: x.value, notes: a.corrective[x.item_id] })) }
     },
     alert: async (b, a) => { state.alerts.push({ b, ...a }) },
+    notifyUser: async (chatId, text) => { state.notes.push({ chatId, text }) },
     ...over,
   }
   return { d, tokens, state }
@@ -86,7 +87,7 @@ describe('form api GET', () => {
   })
   it('expired, used, unknown or non-checklist token → 410', async () => {
     expect((await handleFormGet(fake({}, token({ expires_at: '2026-10-14T09:00:00Z' })).d, 'tok1', INIT))).toEqual({ status: 410, body: { error: 'expired' } })
-    expect((await handleFormGet(fake({}, token({ used_at: '2026-10-14T09:00:00Z' })).d, 'tok1', INIT)).status).toBe(410)
+    expect((await handleFormGet(fake({}, token({ used_at: '2026-10-14T09:00:00Z' })).d, 'tok1', INIT))).toEqual({ status: 410, body: { error: 'used' } })
     expect((await handleFormGet(fake().d, 'nope', INIT)).status).toBe(410)
     expect((await handleFormGet(fake({}, token({ kind: 'corrective' })).d, 'tok1', INIT)).status).toBe(410)
   })
@@ -119,8 +120,32 @@ describe('form api POST', () => {
   it('replay → 410 and nothing recorded twice', async () => {
     const f = fake()
     await handleFormPost(f.d, ok, INIT)
-    expect(await handleFormPost(f.d, ok, INIT)).toEqual({ status: 410, body: { error: 'expired' } })
+    expect(await handleFormPost(f.d, ok, INIT)).toEqual({ status: 410, body: { error: 'used' } })
     expect(f.state.recorded).toHaveLength(1)
+  })
+  it('a used token of someone else is still 403 (ownership first, "used" not revealed)', async () => {
+    const r = await handleFormGet(fake({}, token({ used_at: '2026-10-14T09:00:00Z' })).d, 'tok1', 'other-init')
+    expect(r).toEqual({ status: 403, body: { error: 'forbidden' } })
+  })
+  it('lost the race to a concurrent submit (take fails after the peek) → 410 used', async () => {
+    const f = fake({ takeToken: async () => null })
+    expect(await handleFormPost(f.d, ok, INIT)).toEqual({ status: 410, body: { error: 'used' } })
+    expect(f.state.recorded).toHaveLength(0)
+  })
+  it('after a successful submit the user gets a short Telegram confirmation', async () => {
+    const f = fake()
+    expect((await handleFormPost(f.d, ok, INIT)).status).toBe(200)
+    expect(f.state.notes).toEqual([{ chatId: '111', text: 'Recorded ✓ Fridge temps at Wharf Side' }])
+  })
+  it('a failing confirmation never fails the submit', async () => {
+    const f = fake({ notifyUser: async () => { throw new Error('telegram down') } })
+    expect(await handleFormPost(f.d, ok, INIT)).toEqual({ status: 200, body: { ok: true } })
+    expect(f.state.recorded).toHaveLength(1)
+  })
+  it('no confirmation when the submit is refused', async () => {
+    const f = fake()
+    await handleFormPost(f.d, { t: 'tok1', answers: { i1: '3' }, corrective: {} }, INIT)
+    expect(f.state.notes).toEqual([])
   })
   it('missing required → 400 with names, token still usable', async () => {
     const f = fake()

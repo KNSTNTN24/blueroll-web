@@ -2,7 +2,7 @@
 
 import Script from 'next/script'
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import { buildPayload, isFlagged, validateForm, type Answers, type Corrective, type FormData, type FormItem } from '@/lib/whatsapp/tg-form'
+import { buildPayload, FORM_MSG, isFlagged, statusMessage, validateForm, type Answers, type Corrective, type FormData, type FormItem } from '@/lib/whatsapp/tg-form'
 
 // Minimal typing of the Telegram WebApp surface we use (https://core.telegram.org/bots/webapps).
 interface TgMainButton {
@@ -26,28 +26,13 @@ declare global { interface Window { Telegram?: { WebApp?: TgWebApp } } }
 
 const API = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/channel-form`
 
-const MSG = {
-  outside: 'Open this form from Telegram.',
-  expired: 'This form has expired — send /checks for a new one.',
-  changed: 'This checklist was updated — send /checks for a new form.',
-  forbidden: "You don't have access to this form.",
-  unauthorized: "Couldn't verify your Telegram session. Close and open the form again from Telegram.",
-  generic: 'Something went wrong. Please try again.',
-  retry: "Couldn't save your answers. Please press Submit again.",
-}
+const MSG = FORM_MSG
 
 type Phase =
   | { kind: 'loading' }
   | { kind: 'message'; text: string }
   | { kind: 'form'; data: FormData }
   | { kind: 'done' }
-
-function statusMessage(status: number, error: unknown): string {
-  if (status === 401) return MSG.unauthorized
-  if (status === 403) return MSG.forbidden
-  if (status === 410) return error === 'changed' ? MSG.changed : MSG.expired
-  return MSG.generic
-}
 
 const rangeHint = (i: FormItem) => {
   const u = i.unit ?? '°C'

@@ -5,7 +5,7 @@
 // _shared/channels/form-api.ts. CORS: https://app.blueroll.app and http://localhost:3001 (dev) only.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { handleFormGet, handleFormPost, type FormApiDeps } from "../_shared/channels/form-api.ts";
-import { verifyInitData, makeTelegramSender } from "../_shared/channels/telegram.ts";
+import { verifyInitData, makeTelegramSender, tgText } from "../_shared/channels/telegram.ts";
 import { makeSender } from "../_shared/channels/whatsapp.ts";
 import { telegramUI } from "../_shared/channels/ui.ts";
 import { TG_MINI_APP_URL, alertManagers, makeAlertDeps, type Senders } from "../_shared/channels/alerts.ts";
@@ -47,6 +47,10 @@ const deps: FormApiDeps = {
     return { completionId: r.completionId, flagged: r.flagged.map((f) => ({ item: f.item, value: f.value, notes: f.notes ?? "" })) };
   },
   alert: (b, a) => alertManagers(alertDeps, senders, b, a, new Date()),
+  notifyUser: async (chatId, text) => {
+    const r = await tgSend(tgText(chatId, text));
+    if (!r.ok) console.error("form confirmation send failed", r.status);
+  },
 };
 
 function cors(origin: string | null): Record<string, string> {
