@@ -11,7 +11,8 @@ export function AddWhatsAppMemberDialog({ roles, sites, defaultSiteId, onCreated
   onCreated: (profileId: string, name: string) => void; onClose: () => void
 }) {
   const [name, setName] = useState('')
-  const [roleId, setRoleId] = useState(roles.find((r) => r.base_tier === 'kitchen_staff')?.id ?? roles[0]?.id ?? '')
+  const assignable = roles.filter((r) => r.base_tier !== 'owner')
+  const [roleId, setRoleId] = useState(assignable.find((r) => r.base_tier === 'kitchen_staff')?.id ?? assignable[0]?.id ?? '')
   const [siteId, setSiteId] = useState(defaultSiteId ?? sites[0]?.id ?? '')
   const [busy, setBusy] = useState(false)
   const submit = async () => {
@@ -27,7 +28,7 @@ export function AddWhatsAppMemberDialog({ roles, sites, defaultSiteId, onCreated
         <div className="mt-4 flex flex-col gap-3">
           <Input aria-label="Name" placeholder="Full name" value={name} onChange={(e) => setName(e.target.value)} />
           <select aria-label="Role" className="h-10 rounded-md border px-2 text-[14px]" value={roleId} onChange={(e) => setRoleId(e.target.value)}>
-            {roles.filter((r) => r.base_tier !== 'owner').map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+            {assignable.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
           </select>
           {sites.length > 1 && (
             <select aria-label="Site" className="h-10 rounded-md border px-2 text-[14px]" value={siteId} onChange={(e) => setSiteId(e.target.value)}>

@@ -5,7 +5,7 @@ import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { Switch } from '@/components/ui/switch'
-import type { Channel } from '@/lib/whatsapp/client'
+import { syncAllFlows, type Channel } from '@/lib/whatsapp/client'
 
 interface ChannelToggleProps {
   channel: Channel
@@ -28,6 +28,8 @@ export function ChannelToggle({ channel, column, title, description }: ChannelTo
       if (error) { toast.error(error.message); return }
       setBusiness({ ...business, [column]: v })
       toast.success(v ? `${title} turned on` : `${title} turned off`)
+      // Publish a WhatsApp form for every checklist now, not at the nightly sync (fire-and-forget, best effort).
+      if (v && channel === 'whatsapp') void syncAllFlows()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Could not update setting')
     } finally {

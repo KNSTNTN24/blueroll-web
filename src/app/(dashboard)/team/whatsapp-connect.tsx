@@ -31,6 +31,8 @@ export function ChannelConnectDialog({ channel, member, siteId, onClose }: {
   const [qr, setQr] = useState<string | null>(null)
   const [notConfigured, setNotConfigured] = useState(false)
   const [left, setLeft] = useState(15 * 60)
+  const [error, setError] = useState<string | null>(null)
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     let alive = true
@@ -43,14 +45,30 @@ export function ChannelConnectDialog({ channel, member, siteId, onClose }: {
         const url = await QRCode.toDataURL(link, { margin: 1, width: 240 })
         if (alive) setQr(url)
       })
-      .catch((e: unknown) => toast.error(e instanceof Error ? e.message : String(e)))
+      .catch((e: unknown) => { if (alive) setError(e instanceof Error ? e.message : String(e)) })
     const t = setInterval(() => setLeft((s) => Math.max(0, s - 1)), 1000)
     return () => { alive = false; clearInterval(t) }
-  }, [cfg, member.id, siteId])
+  }, [cfg, member.id, siteId, attempt])
 
+  if (error) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+        <div role="alertdialog" aria-labelledby="channel-connect-error" className="w-[360px] rounded-2xl bg-card p-6 text-center shadow-xl">
+          <h2 id="channel-connect-error" className="text-[17px] font-semibold">Couldn&apos;t create a {cfg.label} code</h2>
+          <p className="mt-2 text-[13px] text-muted-foreground">{error}</p>
+          <div className="mt-4 flex justify-center gap-2">
+            <Button variant="outline" onClick={onClose}>Cancel</Button>
+            <Button onClick={() => { setError(null); setCode(null); setQr(null); setNotConfigured(false); setLeft(15 * 60); setAttempt((n) => n + 1) }}>Retry</Button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // No backdrop close: a stray click must not lose the QR code mid-scan — only Done closes it.
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
-      <div className="w-[360px] rounded-2xl bg-card p-6 text-center shadow-xl" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div role="dialog" aria-modal="true" className="w-[360px] rounded-2xl bg-card p-6 text-center shadow-xl">
         <h2 className="text-[17px] font-semibold">Connect {member.full_name || 'team member'} to {cfg.label}</h2>
         <p className="mt-1 text-[13px] text-muted-foreground">
           {notConfigured ? `Send this code to Blueroll on ${cfg.label} from their phone.` : `Ask them to scan this with their phone camera and press Send in ${cfg.label}.`}

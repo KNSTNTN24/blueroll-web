@@ -2,7 +2,8 @@
 // Publishes one WhatsApp Flow per (checklist template, site) and records it in channel_flows.
 //   - x-cron-secret (WA_CRON_SECRET): sync every active template of every WhatsApp-ready business;
 //     body { corrective: true } instead creates + publishes the generic corrective Flow once and returns its id.
-//   - user JWT of an active owner/manager + body { template_id }: sync that template for all its sites.
+//   - user JWT of an active owner/manager + body { template_id }: sync that template for all its sites;
+//     body { all: true } instead syncs every active template of the caller's own business (called when WhatsApp is enabled).
 // Meta Flows API (developers.facebook.com/docs/whatsapp/flows/reference/flowsapi, checked 2026-10-09):
 //   POST /{WABA}/flows {name, categories, flow_json(string)} → {id, success, validation_errors[]};
 //   POST /{flow}/publish; POST /{flow}/deprecate; DELETE /{flow} (DRAFT only).
@@ -286,9 +287,29 @@ Deno.serve(async (req) => {
   if (!jwt) return json(401, { error: "auth" });
   const { data: u } = await admin.auth.getUser(jwt);
   if (!u?.user) return json(401, { error: "auth" });
-  if (typeof body.template_id !== "string") return json(400, { error: "template_id" });
+  const all = body.all === true;
+  if (!all && typeof body.template_id !== "string") return json(400, { error: "template_id" });
   const { data: me } = await admin.from("profiles").select("business_id, role").eq("id", u.user.id).is("removed_at", null).maybeSingle();
   if (!me?.business_id || !["owner", "manager"].includes(me.role)) return json(403, { error: "forbidden" });
+  if (all) {
+    const { data: ready, error: rErr } = await admin.rpc("whatsapp_ready", { b: me.business_id });
+    if (rErr) return json(500, { error: "ready" });
+    if (!ready) return json(200, { ok: true, skipped: "not enabled", templates: [] });
+    const { data: ts, error: tErr } = await admin.from("checklist_templates").select("id, business_id, site_id, name")
+      .eq("business_id", me.business_id).eq("active", true);
+    if (tErr) return json(500, { error: "templates" });
+    const out: { template_id: string; sites: SiteResult[] }[] = [];
+    let failed = 0;
+    for (const t of (ts ?? []) as TemplateRow[]) {
+      try {
+        out.push({ template_id: t.id, sites: await syncTemplate(t) });
+      } catch (e) {
+        failed++;
+        console.error("whatsapp sync-flows: template sync failed", t.id, errMsg(e));
+      }
+    }
+    return json(200, { ok: true, failed, templates: out });
+  }
   const { data: t } = await admin.from("checklist_templates").select("id, business_id, site_id, name, active")
     .eq("id", body.template_id).eq("business_id", me.business_id).maybeSingle();
   if (!t) return json(404, { error: "template" });

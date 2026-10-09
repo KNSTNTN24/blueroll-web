@@ -61,3 +61,8 @@ export async function createWhatsAppMember(a: { full_name: string; role_id: stri
 export async function syncTemplateFlows(templateId: string): Promise<void> {
   try { await callFn('whatsapp-sync-flows', { template_id: templateId }) } catch { /* best effort; nightly sync catches up */ }
 }
+
+/** Publish Flows for every active checklist of the caller's business (right after WhatsApp is turned on). */
+export async function syncAllFlows(): Promise<void> {
+  try { await callFn('whatsapp-sync-flows', { all: true }) } catch { /* best effort; nightly sync catches up */ }
+}
