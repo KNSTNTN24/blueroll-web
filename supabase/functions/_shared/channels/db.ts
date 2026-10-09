@@ -34,6 +34,19 @@ export async function pageAll<T>(fetchPage: (from: number, to: number) => Promis
   }
 }
 
+const TOKEN_COLS = 'token, kind, business_id, profile_id, site_id, template_id, item_ids, response_id, expires_at, used_at'
+
+/**
+ * Read-only form-token lookup (never consumes). Returns the row in any state — the caller checks ownership FIRST,
+ * then used/expired/kind (form-api.ts), so a non-owner learns nothing about the token.
+ */
+// deno-lint-ignore no-explicit-any
+export async function peekToken(admin: any, token: string): Promise<FormToken | null> {
+  const { data, error } = await admin.from('channel_form_tokens').select(TOKEN_COLS).eq('token', token).maybeSingle()
+  if (error) throw error
+  return (data as FormToken | null) ?? null
+}
+
 export interface DepsConfig {
   channel: Channel
   ui: ChannelUI
@@ -164,7 +177,7 @@ export function makeDeps(admin: any, cfg: DepsConfig): BotDeps {
       const nowIso = now.toISOString()
       const rows = await one(admin.from('channel_form_tokens').update({ used_at: nowIso })
         .eq('token', token).eq('profile_id', profileId).is('used_at', null).gt('expires_at', nowIso)
-        .select('token, kind, business_id, profile_id, site_id, template_id, item_ids, response_id, expires_at, used_at'))
+        .select(TOKEN_COLS))
       return (rows?.[0] as FormToken | undefined) ?? null
     },
 
