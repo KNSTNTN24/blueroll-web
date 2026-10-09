@@ -40,4 +40,18 @@ describe('parseFormAnswers', () => {
   it('rejects unexpected yes_no values', () => {
     expect(parseFormAnswers(['b'], items, { f0: 'maybe' }).answers).toEqual([])
   })
+  it('treats hostile temperature input as missing', () => {
+    for (const bad of ['abc', 'NaN', 'Infinity', '5abc', '1e9', '1,2,3', {}, ['5']]) {
+      const r = parseFormAnswers(['a'], items, { f0: bad })
+      expect(r.answers).toEqual([])
+      expect(r.missingRequired).toEqual(['A'])
+    }
+  })
+  it('accepts numeric temperature and caps text', () => {
+    expect(parseFormAnswers(['a'], items, { f0: 7.5 }).answers).toEqual([{ item_id: 'a', value: '7.5', flagged: true }])
+    const r = parseFormAnswers(['d'], items, { f0: 'x'.repeat(10000) })
+    expect(r.answers[0].value).toHaveLength(500)
+    expect(parseFormAnswers(['d'], items, { f0: { a: 1 } }).answers).toEqual([])
+    expect(parseFormAnswers(['d'], items, { f0: ['x'] }).answers).toEqual([])
+  })
 })

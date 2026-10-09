@@ -17,11 +17,13 @@ function normalise(item: TemplateItem, raw: unknown): string | null {
     case 'tick': return raw === true || raw === 'true' ? 'true' : null
     case 'yes_no': return raw === 'yes' || raw === 'no' ? raw : null
     case 'temperature': {
-      const s = String(raw).trim().replace(',', '.')
-      return s === '' ? null : s
+      if (typeof raw !== 'string' && typeof raw !== 'number') return null
+      const s = String(raw).trim().replace(/,/g, '.')
+      return /^-?\d{1,3}(\.\d{1,2})?$/.test(s) ? s : null
     }
     case 'text': {
-      const s = String(raw).trim()
+      if (typeof raw !== 'string') return null
+      const s = raw.trim().slice(0, 500)
       return s === '' ? null : s
     }
     default: return null
