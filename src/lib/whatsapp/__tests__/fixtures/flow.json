@@ -1,0 +1,5 @@
+{ "object": "whatsapp_business_account", "entry": [{ "id": "WABA", "changes": [{ "field": "messages", "value": {
+  "messaging_product": "whatsapp", "metadata": { "phone_number_id": "PNID" },
+  "messages": [{ "from": "447700900123", "id": "wamid.F1", "timestamp": "1760436000", "type": "interactive",
+    "interactive": { "type": "nfm_reply", "nfm_reply": { "name": "flow", "body": "Sent",
+      "response_json": "{\"flow_token\":\"tok123\",\"f0\":\"4.5\",\"f1\":\"yes\"}" } } }] } }] }] }

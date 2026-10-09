@@ -1,0 +1,81 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`buildChecklistFlow > builds one screen with a component per supported item and a complete payload 1`] = `
+{
+  "screens": [
+    {
+      "id": "CHECKLIST",
+      "layout": {
+        "children": [
+          {
+            "children": [
+              {
+                "helper-text": "0–5 °C",
+                "input-type": "number",
+                "label": "Item a",
+                "name": "f0",
+                "required": true,
+                "type": "TextInput",
+              },
+              {
+                "data-source": [
+                  {
+                    "id": "yes",
+                    "title": "Yes",
+                  },
+                  {
+                    "id": "no",
+                    "title": "No",
+                  },
+                ],
+                "label": "Item b",
+                "name": "f1",
+                "required": true,
+                "type": "RadioButtonsGroup",
+              },
+              {
+                "data-source": [
+                  {
+                    "id": "true",
+                    "title": "Done",
+                  },
+                ],
+                "label": "Item c",
+                "name": "f2",
+                "required": true,
+                "type": "RadioButtonsGroup",
+              },
+              {
+                "label": "Item d",
+                "name": "f3",
+                "required": false,
+                "type": "TextArea",
+              },
+              {
+                "label": "Submit",
+                "on-click-action": {
+                  "name": "complete",
+                  "payload": {
+                    "f0": "\${form.f0}",
+                    "f1": "\${form.f1}",
+                    "f2": "\${form.f2}",
+                    "f3": "\${form.f3}",
+                  },
+                },
+                "type": "Footer",
+              },
+            ],
+            "name": "form",
+            "type": "Form",
+          },
+        ],
+        "type": "SingleColumnLayout",
+      },
+      "success": true,
+      "terminal": true,
+      "title": "Fridge temps",
+    },
+  ],
+  "version": "7.3",
+}
+`;

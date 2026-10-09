@@ -1,0 +1,6 @@
+{ "object": "whatsapp_business_account", "entry": [{ "id": "WABA", "changes": [{ "field": "messages", "value": {
+  "messaging_product": "whatsapp", "metadata": { "phone_number_id": "PNID" },
+  "messages": [
+    { "from": "447700900123", "id": "wamid.B1", "timestamp": "1760436000", "type": "button", "button": { "payload": "fill:t1:s1", "text": "Fill in" } },
+    { "from": "447700900123", "id": "wamid.B2", "timestamp": "1760436001", "type": "interactive", "interactive": { "type": "button_reply", "button_reply": { "id": "checks", "title": "My checks" } } }
+  ] } }] }] }

@@ -1,0 +1,4 @@
+{ "object": "whatsapp_business_account", "entry": [{ "id": "WABA", "changes": [{ "field": "messages", "value": {
+  "messaging_product": "whatsapp", "metadata": { "display_phone_number": "447000000000", "phone_number_id": "PNID" },
+  "contacts": [{ "profile": { "name": "Anna" }, "wa_id": "447700900123" }],
+  "messages": [{ "from": "447700900123", "id": "wamid.T1", "timestamp": "1760436000", "type": "text", "text": { "body": "LINK 482913" } }] } }] }] }
