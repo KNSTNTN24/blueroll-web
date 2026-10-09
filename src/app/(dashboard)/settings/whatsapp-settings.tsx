@@ -51,11 +51,19 @@ export function ChannelToggle({ channel, column, title, description }: ChannelTo
 
 export function WhatsAppSettings() {
   return (
-    <ChannelToggle
-      channel="whatsapp"
-      column="whatsapp_enabled"
-      title="WhatsApp checks"
-      description="Staff get reminders before their checks are due and complete temperatures and opening/closing checks in WhatsApp. Connect people from the Team page."
-    />
+    <div className="flex flex-col gap-4">
+      <ChannelToggle
+        channel="whatsapp"
+        column="whatsapp_enabled"
+        title="WhatsApp checks"
+        description="Staff get reminders before their checks are due and complete temperatures and opening/closing checks in WhatsApp. Connect people from the Team page."
+      />
+      <ChannelToggle
+        channel="telegram"
+        column="telegram_enabled"
+        title="Telegram checks"
+        description="Staff get reminders and fill in checks in Telegram. Free."
+      />
+    </div>
   )
 }

@@ -4,9 +4,9 @@ import { useEffect, useState } from 'react'
 import QRCode from 'qrcode'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { CHANNELS, issueLinkCode, revokeIdentity, maskNumber } from '@/lib/whatsapp/client'
+import { CHANNELS, issueLinkCode, revokeIdentity, maskNumber, type Channel } from '@/lib/whatsapp/client'
 
-type ChannelProp = keyof typeof CHANNELS
+type ChannelProp = Channel
 
 export function ChannelStatus({ channel, identity, onChanged, onConnect }: {
   channel: ChannelProp; identity: { id: string; external_id: string } | undefined; onChanged: () => void; onConnect: () => void
@@ -71,7 +71,7 @@ export function ChannelConnectDialog({ channel, member, siteId, onClose }: {
       <div role="dialog" aria-modal="true" className="w-[360px] rounded-2xl bg-card p-6 text-center shadow-xl">
         <h2 className="text-[17px] font-semibold">Connect {member.full_name || 'team member'} to {cfg.label}</h2>
         <p className="mt-1 text-[13px] text-muted-foreground">
-          {notConfigured ? `Send this code to Blueroll on ${cfg.label} from their phone.` : `Ask them to scan this with their phone camera and press Send in ${cfg.label}.`}
+          {notConfigured ? cfg.codeInstruction : cfg.scanInstruction}
         </p>
         {qr ? <img src={qr} alt={`${cfg.label} connect QR code`} className="mx-auto my-4 h-[240px] w-[240px]" /> : notConfigured ? <div className="my-4" /> : <div className="my-4 h-[240px]" />}
         {code && <p className="font-mono text-[15px]">{cfg.codeText(code)}</p>}

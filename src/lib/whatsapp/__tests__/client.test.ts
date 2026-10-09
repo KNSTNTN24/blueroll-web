@@ -9,4 +9,9 @@ describe('whatsapp client helpers', () => {
     // number is unset in tests -> no link (dialog shows the code only)
     expect(CHANNELS.whatsapp.buildLink('012345')).toBeNull()
   })
+  it('telegram channel builds a t.me deep link and is never null', () => {
+    expect(CHANNELS.telegram.label).toBe('Telegram')
+    expect(CHANNELS.telegram.buildLink('012345')).toBe('https://t.me/BluerollChecksBot?start=012345')
+    expect(CHANNELS.telegram.scanInstruction).toBe('Scan with the phone camera, then tap Start in Telegram.')
+  })
 })

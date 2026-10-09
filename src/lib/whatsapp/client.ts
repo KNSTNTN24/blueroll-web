@@ -11,15 +11,26 @@ export function maskNumber(e164: string): string {
   return d.length < 6 ? '+••' : `+${d.slice(0, 2)} ${d.slice(2, 3)}••• ••${d.slice(-2)}`
 }
 
-// Per-channel config. Only WhatsApp for now; Telegram will add
-// `https://t.me/BluerollChecksBot?start=<code>`. buildLink returns null when the
-// channel's destination is not configured (dialog then shows the code only).
-export const CHANNELS: Record<'whatsapp', { label: string; buildLink: (code: string) => string | null; codeText: (code: string) => string; notConfiguredNote: string }> = {
+export const TELEGRAM_BOT = 'BluerollChecksBot'
+
+// Per-channel config. buildLink returns null when the channel's destination is
+// not configured (dialog then shows the code only). Telegram is never null.
+export const CHANNELS: Record<Channel, { label: string; buildLink: (code: string) => string | null; codeText: (code: string) => string; notConfiguredNote: string; scanInstruction: string; codeInstruction: string }> = {
   whatsapp: {
     label: 'WhatsApp',
     buildLink: (code) => (WA_NUMBER ? waLink(WA_NUMBER, code) : null),
     codeText: (code) => `LINK ${code}`,
     notConfiguredNote: 'WhatsApp number not configured yet',
+    scanInstruction: 'Ask them to scan this with their phone camera and press Send in WhatsApp.',
+    codeInstruction: 'Send this code to Blueroll on WhatsApp from their phone.',
+  },
+  telegram: {
+    label: 'Telegram',
+    buildLink: (code) => `https://t.me/${TELEGRAM_BOT}?start=${code}`,
+    codeText: (code) => `/start ${code}`,
+    notConfiguredNote: 'Telegram bot not configured yet',
+    scanInstruction: 'Scan with the phone camera, then tap Start in Telegram.',
+    codeInstruction: 'Send this code to Blueroll on Telegram from their phone.',
   },
 }
 
