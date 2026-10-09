@@ -2483,7 +2483,7 @@ git commit -m "feat(whatsapp): settings toggle, via-WhatsApp badge, sync Flows a
 
 - [ ] **Step 1: Write the setup doc** with: Meta Business + WABA under Cherrypicked Design Ltd (D-U-N-S 225604652); business verification; dedicated number; display name "Blueroll"; system user token with `whatsapp_business_messaging` + `whatsapp_business_management`; webhook URL `https://rszrggreuarvodcqeqrj.supabase.co/functions/v1/whatsapp-webhook` subscribed to `messages`; template texts (category UTILITY, language en_GB):
   - `checklist_reminder` — body: `{{1}} is due at {{2}} at {{3}}.` · button QUICK_REPLY `Fill in`
-  - `checklist_reminder_list` — body: `{{1}} checks are due soon at {{2}}: {{3}}.` · up to 3 QUICK_REPLY buttons `Fill in`
+  - `checklist_reminder_list` — body: `{{1}} checks are due soon at {{2}}: {{3}}.` · one QUICK_REPLY button `Show checks` (payload `checks`; the bot replies with named Fill-in buttons)
   - `manager_alert` — body: `⚠ {{1}} · {{2}} {{3}} at {{4}} ({{5}}). Action: {{6}}.` · footer `via Blueroll`
   - `corrective_nudge` — body: `A check at {{1}} still needs a corrective action. Tap below to add it.` · QUICK_REPLY `My checks`
   Secrets list (Supabase + `~/Secrets/blueroll/`): `WA_TOKEN`, `WA_PHONE_NUMBER_ID`, `WA_WABA_ID`, `WA_APP_SECRET`, `WA_VERIFY_TOKEN`, `WA_CRON_SECRET`, `WA_CORRECTIVE_FLOW_ID`; vault secret `whatsapp_cron_secret`; Vercel env `NEXT_PUBLIC_WHATSAPP_NUMBER`.

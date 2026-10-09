@@ -4,15 +4,18 @@
 // Never log raw phone numbers — use maskPhone.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { makeSender, templateMessage } from "../_shared/channels/whatsapp.ts";
-import { makeDeps } from "../_shared/channels/db.ts";
-import { isBillable, sendManagerAlert } from "../_shared/channels/bot.ts";
+import { makeDeps, pageAll } from "../_shared/channels/db.ts";
+import { isBillable, sendManagerAlert, withUnit } from "../_shared/channels/bot.ts";
 import { maskPhone } from "../_shared/channels/mask.ts";
 import { planCorrective, planReminders, reminderKey, type Recipient } from "../_shared/checklists-core/reminders.ts";
+import { completionsWindowStart } from "../_shared/checklists-core/due.ts";
 
 const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
 const CRON_SECRET = Deno.env.get("WA_CRON_SECRET") ?? "";
 const send = makeSender({ token: Deno.env.get("WA_TOKEN") ?? "", phoneNumberId: Deno.env.get("WA_PHONE_NUMBER_ID") ?? "" });
-const deps = makeDeps(admin, { send, correctiveFlowId: Deno.env.get("WA_CORRECTIVE_FLOW_ID") ?? "" });
+const CORRECTIVE_FLOW_ID = Deno.env.get("WA_CORRECTIVE_FLOW_ID") ?? "";
+if (!CORRECTIVE_FLOW_ID) console.error("whatsapp-reminders: WA_CORRECTIVE_FLOW_ID is not set — corrective forms will be skipped");
+const deps = makeDeps(admin, { send, correctiveFlowId: CORRECTIVE_FLOW_ID });
 
 const DAY_MS = 86400_000;
 const REMINDER_KEY_COLS = "profile_id,template_id,site_id,period_key";
@@ -43,7 +46,15 @@ async function claimStep(row: { business_id: string; site_id: string; profile_id
 }
 
 async function remindBusiness(biz: string, list: Ident[], sites: Map<string, SiteRow>, now: Date): Promise<number> {
-  const [templates, completions] = await Promise.all([deps.templates(biz), deps.completionsSince(biz, new Date(now.getTime() - 32 * DAY_MS))]);
+  const templates = await deps.templates(biz);
+  if (!templates.length) return 0;
+  // Only (template, site) pairs with a published Flow: a reminder for a checklist that can't be filled here is billable noise.
+  const { data: flowRows, error: flowErr } = await admin.from("channel_flows").select("template_id, site_id")
+    .eq("channel", "whatsapp").eq("status", "published").not("flow_id", "is", null).in("template_id", templates.map((t) => t.id));
+  if (flowErr) throw flowErr;
+  const withFlow = new Set((flowRows ?? []).map((f: Any) => `${f.template_id}:${f.site_id}`));
+  if (!withFlow.size) return 0;
+  const completions = await deps.completionsSince(biz, completionsWindowStart(templates, [...new Set([...sites.values()].map((s) => s.timezone))], now));
   const recipients: Recipient[] = [];
   for (const i of list) {
     const person = await deps.person(i.profile_id);
@@ -52,15 +63,16 @@ async function remindBusiness(biz: string, list: Ident[], sites: Map<string, Sit
   }
   if (!recipients.length) return 0;
 
-  const { data: sentRows, error: sentErr } = await admin.from("channel_reminders_sent").select("profile_id, template_id, site_id, period_key")
+  const sentRows = await pageAll<Any>((from, to) => admin.from("channel_reminders_sent").select("profile_id, template_id, site_id, period_key")
     .in("profile_id", list.map((i) => i.profile_id)).in("site_id", [...sites.keys()])
-    .gte("sent_at", new Date(now.getTime() - 40 * DAY_MS).toISOString());
-  if (sentErr) throw sentErr;
-  const already = new Set((sentRows ?? []).map((r: Any) => reminderKey(r.profile_id, r.template_id, r.site_id, r.period_key)));
+    .gte("sent_at", new Date(now.getTime() - 40 * DAY_MS).toISOString())
+    .order("profile_id").order("template_id").order("site_id").order("period_key").range(from, to));
+  const already = new Set(sentRows.map((r: Any) => reminderKey(r.profile_id, r.template_id, r.site_id, r.period_key)));
 
   let sent = 0;
   // planReminders returns several jobs per recipient (chunks of MAX_PER_MESSAGE) — every job is sent.
-  for (const job of planReminders({ now, recipients, templates, completions, alreadySent: already })) {
+  const hasFlow = (templateId: string, siteId: string) => withFlow.has(`${templateId}:${siteId}`);
+  for (const job of planReminders({ now, recipients, templates, completions, alreadySent: already, hasFlow })) {
     // Claim the keys before sending: the PK makes overlapping runs safe; conflicting keys are skipped.
     const { data: claimed, error: claimErr } = await admin.from("channel_reminders_sent")
       .upsert(job.items.map((it) => ({ profile_id: job.profile_id, template_id: it.template.id, site_id: job.site_id, period_key: it.period_key })),
@@ -80,7 +92,8 @@ async function remindBusiness(biz: string, list: Ident[], sites: Map<string, Sit
       ? templateMessage(job.external_id, "checklist_reminder", [items[0].template.name, hhmm(items[0].deadline_utc!, tz), siteName], [`fill:${items[0].template.id}:${job.site_id}`])
       : templateMessage(job.external_id, "checklist_reminder_list",
         [String(items.length), siteName, items.map((x) => `${x.template.name} (${hhmm(x.deadline_utc!, tz)})`).join(", ")],
-        items.map((x) => `fill:${x.template.id}:${job.site_id}`));
+        // One QUICK_REPLY "Show checks": the bot answers with named Fill-in buttons (a template can't label its buttons per send).
+        ["checks"]);
     const r = await send(msg);
     if (!r.ok) {
       // Give the keys back so the next run (still inside the lead window) retries.
@@ -102,7 +115,7 @@ async function remindBusiness(biz: string, list: Ident[], sites: Map<string, Sit
 async function correctiveBusiness(biz: string, list: Ident[], sites: Map<string, SiteRow>, now: Date): Promise<void> {
   // Only WhatsApp-recorded answers (app completions have their own corrective flow), last 2 days.
   const { data: needed, error } = await admin.from("checklist_responses")
-    .select("id, value, item:checklist_template_items(name), completion:checklist_completions!inner(business_id, site_id, completed_by, completed_at, source)")
+    .select("id, value, item:checklist_template_items(name, unit, item_type), completion:checklist_completions!inner(business_id, site_id, completed_by, completed_at, source)")
     .eq("corrective_status", "needed").eq("completion.business_id", biz).eq("completion.source", "whatsapp")
     .gte("completion.completed_at", new Date(now.getTime() - 2 * DAY_MS).toISOString());
   if (error) throw error;
@@ -140,7 +153,8 @@ async function correctiveBusiness(biz: string, list: Ident[], sites: Map<string,
       // Per-manager sends are logged separately by sendManagerAlert (kind 'alert').
       const { data: by } = await admin.from("profiles").select("full_name").eq("id", n.completion.completed_by).eq("business_id", biz).maybeSingle();
       await sendManagerAlert(deps, biz, {
-        siteName: site?.name ?? "", itemName: n.item?.name ?? "", value: n.value ?? "",
+        siteName: site?.name ?? "", itemName: n.item?.name ?? "",
+        value: withUnit(n.value ?? "", n.item?.unit ?? (n.item?.item_type === "temperature" ? "°C" : null)),
         time: hhmm(n.completion.completed_at, site?.timezone ?? "Europe/London"),
         byName: by?.full_name ?? "", action: "No corrective action recorded",
       });
@@ -162,12 +176,15 @@ async function housekeeping(now: Date): Promise<void> {
 Deno.serve(async (req) => {
   if (!CRON_SECRET || req.headers.get("x-cron-secret") !== CRON_SECRET) return new Response("forbidden", { status: 403 });
   const now = new Date();
-  const { data: idents, error } = await admin.from("channel_identities")
-    .select("id, business_id, profile_id, external_id, last_inbound_at").eq("channel", "whatsapp").is("revoked_at", null);
-  if (error) { console.error("whatsapp reminders: identities query failed", errMsg(error)); return new Response("error", { status: 500 }); }
+  let idents: Ident[];
+  try {
+    idents = await pageAll<Ident>((from, to) => admin.from("channel_identities")
+      .select("id, business_id, profile_id, external_id, last_inbound_at").eq("channel", "whatsapp").is("revoked_at", null)
+      .order("id").range(from, to));
+  } catch (error) { console.error("whatsapp reminders: identities query failed", errMsg(error)); return new Response("error", { status: 500 }); }
 
   const byBiz = new Map<string, Ident[]>();
-  for (const i of (idents ?? []) as Ident[]) {
+  for (const i of idents) {
     const l = byBiz.get(i.business_id) ?? [];
     l.push(i);
     byBiz.set(i.business_id, l);
