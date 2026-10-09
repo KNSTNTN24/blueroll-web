@@ -32,7 +32,7 @@ export interface BotDeps extends CoreDb {
   flowFor(templateId: string, siteId: string): Promise<{ flow_id: string; item_ids: string[] } | null>
   correctiveFlowId(): string
   saveToken(t: FormToken): Promise<void>
-  takeToken(token: string, now: Date): Promise<FormToken | null>
+  takeToken(token: string, now: Date, profileId: string): Promise<FormToken | null>   // marks used only if owned by profileId; null if unknown/foreign/used/expired
   setCorrective(responseId: string, notes: string): Promise<{ templateName: string; itemName: string; value: string; siteName: string; byName: string; businessId: string } | null>
   managerExternalIds(businessId: string): Promise<string[]>
   log(e: { business_id: string | null; site_id: string | null; profile_id: string | null; direction: 'in' | 'out'; kind: string; template_name?: string; billable: boolean; ref_id?: string; wa_message_id?: string | null }): Promise<void>
@@ -155,12 +155,17 @@ export async function handleInbound(e: InboundEvent, d: BotDeps): Promise<void> 
   }
 
   // flow reply
-  const tok = await d.takeToken(e.token, now)
+  const tok = await d.takeToken(e.token, now, id.profile_id)
   if (!tok) return out(d, ctx, textMessage(e.from, TEXT.formExpired), 'reply')
   if (tok.profile_id !== id.profile_id) return
+  const sites = await d.sitesFor(person.profile_id)
+  const site = sites.find((s) => s.id === tok.site_id)
   if (tok.kind === 'checklist') {
+    // Re-check authorization at submit: template still active/assigned at this site, site still the person's.
     const template = (await d.templates(person.business_id)).find((t) => t.id === tok.template_id)
-    if (!template) return out(d, ctx, textMessage(e.from, TEXT.formExpired), 'reply')
+    if (!template || !site || !availableChecklists([template], person, tok.site_id).length) {
+      return out(d, ctx, textMessage(e.from, TEXT.formExpired), 'reply')
+    }
     const items = await d.items(template.id)
     const parsed = parseFormAnswers(tok.item_ids ?? [], items, e.response)
     if (parsed.missingRequired.length) {
@@ -184,7 +189,7 @@ export async function handleInbound(e: InboundEvent, d: BotDeps): Promise<void> 
   const details = typeof e.response.details === 'string' && e.response.details.trim() ? `: ${e.response.details.trim()}` : ''
   const info = tok.response_id ? await d.setCorrective(tok.response_id, `${action}${details}`) : null
   if (info) {
-    const hhmm = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(now)
+    const hhmm = new Intl.DateTimeFormat('en-GB', { timeZone: site?.timezone ?? 'Europe/London', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(now)
     await sendManagerAlert(d, info.businessId, { siteName: info.siteName, itemName: info.itemName, value: info.value, time: hhmm, byName: info.byName, action: `${action}${details}` })
   }
   await out(d, ctx, textMessage(e.from, TEXT.correctiveThanks), 'reply')

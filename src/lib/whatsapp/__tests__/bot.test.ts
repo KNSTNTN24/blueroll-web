@@ -30,7 +30,7 @@ function fake(over: Partial<BotDeps> = {}) {
     flowFor: async () => ({ flow_id: 'F1', item_ids: ['i1', 'i2'] }),
     correctiveFlowId: () => 'FC',
     saveToken: async (t) => { tokens.set(t.token, t) },
-    takeToken: async (tok) => { const t = tokens.get(tok); if (!t || t.used_at) return null; t.used_at = 'x'; return t },
+    takeToken: async (tok, _now, profileId) => { const t = tokens.get(tok); if (!t || t.used_at || t.profile_id !== profileId) return null; t.used_at = 'x'; return t },
     setCorrective: async (rid, notes) => { state.corrective.push({ rid, notes }); return { templateName: 'Fridge temps', itemName: 'Walk-in fridge', value: '9', siteName: 'Wharf Side', byName: 'Anna', businessId: 'b' } },
     managerExternalIds: async () => ['447700900999'],
     log: async (e) => { state.logs.push(e) },
@@ -90,6 +90,9 @@ describe('bot', () => {
     const corr = f.sent.filter((m) => m.interactive?.action?.parameters?.flow_id === 'FC')
     expect(corr).toHaveLength(2)
     expect(corr[0].interactive.action.parameters.flow_action_payload.data).toEqual({ item_name: 'Walk-in fridge', value_text: '9 °C (limit 0–5 °C)' })
+    const corrTokens = corr.map((m) => f.tokens.get(m.interactive.action.parameters.flow_token)!)
+    expect(corrTokens.map((x) => [x.kind, x.response_id])).toEqual([['corrective', 'resp0'], ['corrective', 'resp1']])
+    expect(f.state.responses.map((r: any) => r.item_id)).toEqual(['i1', 'i2'])
   })
   it('a used or unknown token is refused', async () => {
     const f = fake()
@@ -117,6 +120,69 @@ describe('bot', () => {
     await f.d.saveToken({ token: 'ot', kind: 'checklist', business_id: 'b', profile_id: 'someone-else', site_id: 's1', template_id: 't1', item_ids: ['i1'], response_id: null, expires_at: '2099-01-01', used_at: null })
     await handleInbound({ kind: 'flow', from, token: 'ot', response: { f0: '3' }, id: 'z' }, f.d)
     expect(f.state.completions).toHaveLength(0)
+  })
+  it('a foreign submit does not burn the owner token', async () => {
+    const f = fake()
+    await f.d.saveToken({ token: 'ot', kind: 'checklist', business_id: 'b', profile_id: 'someone-else', site_id: 's1', template_id: 't1', item_ids: ['i1'], response_id: null, expires_at: '2099-01-01', used_at: null })
+    await handleInbound({ kind: 'flow', from, token: 'ot', response: { f0: '3' }, id: 'z' }, f.d)
+    expect(f.tokens.get('ot')!.used_at).toBeNull()
+    expect(await f.d.takeToken('ot', f.d.now(), 'someone-else')).toMatchObject({ token: 'ot' })
+  })
+  it('an already-linked number can re-link with a new code', async () => {
+    const seen: string[] = []
+    const f = fake()
+    const real = f.d.consumeLinkCode
+    f.d.consumeLinkCode = async (code, ext, now) => { seen.push(ext); return real(code, ext, now) }
+    await handleInbound({ kind: 'text', from, text: 'link 482913', id: 'x' }, f.d)
+    expect(seen).toEqual([from])
+    expect(textOf(f.sent[0])).toBe(TEXT.linked('Anna', 'Wharf Side'))
+  })
+  it('STOP then LINK reconnects', async () => {
+    let linked = true
+    const f = fake({
+      findIdentity: async (x) => (linked && x === from ? { id: 'id1', business_id: 'b', profile_id: 'p1', external_id: x } : null),
+      revokeIdentity: async () => { linked = false },
+    })
+    await handleInbound({ kind: 'text', from, text: 'stop', id: 'x' }, f.d)
+    expect(textOf(f.sent[0])).toBe(TEXT.stopped)
+    await handleInbound({ kind: 'text', from, text: 'checks', id: 'x1' }, f.d)
+    expect(textOf(f.sent[1])).toBe(TEXT.unknown)
+    await handleInbound({ kind: 'text', from, text: 'LINK 482913', id: 'x2' }, f.d)
+    expect(textOf(f.sent[2])).toBe(TEXT.linked('Anna', 'Wharf Side'))
+  })
+  it('submit is refused if the template was deactivated after the form was sent', async () => {
+    let active = true
+    const f = fake({ templates: async () => [{ ...T, active }] })
+    await handleInbound({ kind: 'button', from, payload: 'fill:t1:s1', id: 'x' }, f.d)
+    active = false
+    await handleInbound({ kind: 'flow', from, token: 'tok1', response: { f0: '3', f1: '-20' }, id: 'y' }, f.d)
+    expect(f.state.completions).toHaveLength(0)
+    expect(textOf(f.sent[1])).toBe(TEXT.formExpired)
+  })
+  it('submit is refused if the person was unassigned from the template', async () => {
+    let roles = ['r']
+    const f = fake({ templates: async () => [{ ...T, assigned_role_ids: roles }] })
+    await handleInbound({ kind: 'button', from, payload: 'fill:t1:s1', id: 'x' }, f.d)
+    roles = ['other']
+    await handleInbound({ kind: 'flow', from, token: 'tok1', response: { f0: '3', f1: '-20' }, id: 'y' }, f.d)
+    expect(f.state.completions).toHaveLength(0)
+    expect(textOf(f.sent[1])).toBe(TEXT.formExpired)
+  })
+  it('submit is refused if the person lost access to the site', async () => {
+    let sites = [{ id: 's1', name: 'Wharf Side', timezone: 'Europe/London' }]
+    const f = fake({ sitesFor: async () => sites })
+    await handleInbound({ kind: 'button', from, payload: 'fill:t1:s1', id: 'x' }, f.d)
+    sites = [{ id: 's2', name: 'Other', timezone: 'Europe/London' }]
+    await handleInbound({ kind: 'flow', from, token: 'tok1', response: { f0: '3', f1: '-20' }, id: 'y' }, f.d)
+    expect(f.state.completions).toHaveLength(0)
+    expect(textOf(f.sent[1])).toBe(TEXT.formExpired)
+  })
+  it('manager alert time uses the site timezone', async () => {
+    const f = fake({ sitesFor: async () => [{ id: 's1', name: 'Wharf Side', timezone: 'America/New_York' }] })
+    await f.d.saveToken({ token: 'ct', kind: 'corrective', business_id: 'b', profile_id: 'p1', site_id: 's1', template_id: 't1', item_ids: null, response_id: 'resp0', expires_at: '2099-01-01', used_at: null })
+    await handleInbound({ kind: 'flow', from, token: 'ct', response: { action: 'moved' }, id: 'z' }, f.d)
+    // 09:40Z = 05:40 in New York (EDT)
+    expect(f.sent[0].template.components[0].parameters[3].text).toBe('05:40')
   })
   it('a failed LINK code records a failure', async () => {
     const f = fake()
