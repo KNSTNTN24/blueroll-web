@@ -129,6 +129,13 @@ export function makeTelegramSender(cfg: { token: string; fetchFn?: typeof fetch 
   }
 }
 
+/** Best-effort answerCallbackQuery (stops the button spinner). Never throws. */
+export async function answerCallback(token: string, callbackId: string, fetchFn?: typeof fetch): Promise<void> {
+  try {
+    await (fetchFn ?? fetch)(`${TG_API}/bot${token}/answerCallbackQuery`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ callback_query_id: callbackId }) })
+  } catch { /* best-effort */ }
+}
+
 export async function setupBot(cfg: { token: string; webhookUrl: string; secret: string; fetchFn?: typeof fetch }): Promise<{ ok: boolean; errors: string[] }> {
   const f = cfg.fetchFn ?? fetch
   const errors: string[] = []

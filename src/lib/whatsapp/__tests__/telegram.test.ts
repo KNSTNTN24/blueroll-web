@@ -4,7 +4,7 @@ import start from './fixtures/tg-start.json'
 import command from './fixtures/tg-command.json'
 import callback from './fixtures/tg-callback.json'
 import group from './fixtures/tg-group.json'
-import { verifyWebhookSecret, parseUpdate, tgText, tgButtons, tgWebAppButton, verifyInitData, makeTelegramSender, setupBot, BOT_USERNAME } from '../../../../supabase/functions/_shared/channels/telegram'
+import { verifyWebhookSecret, parseUpdate, tgText, tgButtons, tgWebAppButton, verifyInitData, makeTelegramSender, answerCallback, setupBot, BOT_USERNAME } from '../../../../supabase/functions/_shared/channels/telegram'
 
 const priv = (text: unknown, extra: Record<string, unknown> = {}) => ({ update_id: 9, message: { from: { id: 42, is_bot: false }, chat: { id: 42, type: 'private' }, text, ...extra } })
 
@@ -107,6 +107,17 @@ describe('makeTelegramSender', () => {
     expect(await makeTelegramSender({ token: 'T', fetchFn: boom })({ chat_id: '1', text: 'x' })).toEqual({ id: null, ok: false, status: 0 })
     const bad = (async () => new Response('nope', { status: 403 })) as unknown as typeof fetch
     expect(await makeTelegramSender({ token: 'T', fetchFn: bad })({ chat_id: '1', text: 'x' })).toEqual({ id: null, ok: false, status: 403 })
+  })
+})
+
+describe('answerCallback', () => {
+  it('posts answerCallbackQuery and never throws', async () => {
+    const calls: { url: string; body: any }[] = []
+    const f = (async (url: string, init: any) => { calls.push({ url, body: JSON.parse(init.body) }); return new Response('{}') }) as unknown as typeof fetch
+    await answerCallback('T', 'cb1', f)
+    expect(calls).toEqual([{ url: 'https://api.telegram.org/botT/answerCallbackQuery', body: { callback_query_id: 'cb1' } }])
+    const boom = (async () => { throw new Error('net') }) as unknown as typeof fetch
+    await expect(answerCallback('T', 'cb1', boom)).resolves.toBeUndefined()
   })
 })
 
