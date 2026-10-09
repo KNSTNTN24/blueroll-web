@@ -13,9 +13,10 @@ export type Corrective = Record<string, { action: string; details: string } | un
 
 const TEMP_RE = /^-?\d{1,3}(\.\d{1,2})?$/
 
-/** Same as the server: trim, comma → dot, up to 3 integer and 2 decimal digits, optional minus. */
+/** Same as the server: trim, comma → dot, up to 3 integer and 2 decimal digits, optional minus. Unicode minus (U+2212)
+ *  and en dash (iOS keyboards / autocorrect) are read as '-' so the value we send is plain ASCII. */
 export function normaliseTemp(raw: string): string | null {
-  const s = raw.trim().replace(/,/g, '.')
+  const s = raw.trim().replace(/,/g, '.').replace(/[\u2212\u2013]/g, '-')
   return TEMP_RE.test(s) ? s : null
 }
 

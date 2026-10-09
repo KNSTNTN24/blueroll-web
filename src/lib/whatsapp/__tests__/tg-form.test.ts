@@ -9,7 +9,7 @@ const txt: FormItem = { id: 'd', name: 'Notes', type: 'text', required: false, m
 const items = [temp, frz, yn, tick, txt]
 
 describe('normaliseTemp', () => {
-  it.each([['3', '3'], [' -18,5 ', '-18.5'], ['-0.25', '-0.25'], ['', null], ['-', null], ['abc', null], ['1234', null], ['3.123', null]])(
+  it.each([['3', '3'], [' -18,5 ', '-18.5'], ['-0.25', '-0.25'], ['', null], ['-', null], ['abc', null], ['1234', null], ['3.123', null], ['\u221218', '-18'], ['\u201320,5', '-20.5']])(
     '%s → %s', (raw, exp) => expect(normaliseTemp(raw)).toBe(exp))
 })
 
@@ -20,6 +20,7 @@ describe('isFlagged', () => {
     expect(isFlagged(frz, '-20')).toBe(false)
     expect(isFlagged(frz, '-12')).toBe(true)
     expect(isFlagged(frz, '-12,0')).toBe(true)
+    expect(isFlagged(frz, '\u221212')).toBe(true)
     expect(isFlagged(yn, 'no')).toBe(true)
     expect(isFlagged(yn, 'yes')).toBe(false)
     expect(isFlagged(temp, 'x')).toBe(false)
@@ -55,5 +56,6 @@ describe('buildPayload', () => {
     const p = buildPayload('tok', items, { a: ' 9,5', f: '', b: 'yes', c: false, d: '  hi  ' }, { a: { action: 'moved', details: ' d ' }, b: { action: 'other', details: '' } })
     expect(p).toEqual({ t: 'tok', answers: { a: '9.5', b: 'yes', d: 'hi' }, corrective: { a: { action: 'moved', details: 'd' } } })
     expect(buildPayload('tok', items, { c: true }, {}).answers).toEqual({ c: true })
+    expect(buildPayload('tok', items, { f: '\u221219' }, {}).answers).toEqual({ f: '-19' })
   })
 })

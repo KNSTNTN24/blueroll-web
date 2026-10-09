@@ -63,8 +63,11 @@ export function TgForm({ token }: { token: string }) {
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<{ text: string; items?: string[] } | null>(null)
   const [theme, setTheme] = useState<CSSProperties>({})
+  const [showRequired, setShowRequired] = useState(false)
   const webApp = useRef<TgWebApp | null>(null)
   const started = useRef(false)
+  const inFlight = useRef(false)
+  const done = useRef(false)
 
   const init = useCallback(() => {
     if (started.current) return
@@ -105,7 +108,9 @@ export function TgForm({ token }: { token: string }) {
 
   const submit = useCallback(async () => {
     const wa = webApp.current
-    if (!wa || phase.kind !== 'form' || submitting || !v.valid) return
+    if (!wa || phase.kind !== 'form' || inFlight.current || done.current) return
+    if (!v.valid) { setShowRequired(true); return }
+    inFlight.current = true
     setSubmitting(true)
     setSubmitError(null)
     wa.MainButton.showProgress(false)
@@ -116,10 +121,13 @@ export function TgForm({ token }: { token: string }) {
         body: JSON.stringify(buildPayload(token, items, answers, corrective)),
       })
       const body = await r.json().catch(() => null)
+      if (done.current) return   // already recorded: a late reply (e.g. 410 replay) must not overwrite "Done"
       if (r.ok) {
+        done.current = true
         setPhase({ kind: 'done' })
         setTimeout(() => wa.close(), 1500)
       } else if (r.status === 400 && (body?.error === 'missing' || body?.error === 'corrective_required')) {
+        setShowRequired(true)
         setSubmitError({
           text: body.error === 'missing' ? 'Please answer:' : 'Choose an action taken for:',
           items: Array.isArray(body.items) ? body.items.map(String) : undefined,
@@ -132,12 +140,13 @@ export function TgForm({ token }: { token: string }) {
         setSubmitError({ text: MSG.generic })
       }
     } catch {
-      setSubmitError({ text: MSG.generic })
+      if (!done.current) setSubmitError({ text: MSG.generic })
     } finally {
+      inFlight.current = false
       wa.MainButton.hideProgress()
       setSubmitting(false)
     }
-  }, [phase, submitting, v.valid, token, items, answers, corrective])
+  }, [phase, v.valid, token, items, answers, corrective])
 
   // Telegram MainButton: always calls the latest submit; visible only while the form is shown.
   const submitRef = useRef(submit)
@@ -176,6 +185,8 @@ export function TgForm({ token }: { token: string }) {
                 <ItemField
                   key={i.id} item={i} value={answers[i.id]} invalid={v.invalid.includes(i.id)}
                   flagged={isFlagged(i, answers[i.id])} corrective={corrective[i.id]}
+                  missing={showRequired && v.missing.includes(i.id)}
+                  needsAction={showRequired && v.needsAction.includes(i.id)}
                   actions={phase.data.correctiveActions}
                   onChange={(val) => setAnswer(i.id, val)} onCorrective={(p) => setCorr(i.id, p)}
                 />
@@ -194,10 +205,12 @@ export function TgForm({ token }: { token: string }) {
   )
 }
 
-function ItemField({ item, value, invalid, flagged, corrective, actions, onChange, onCorrective }: {
+function ItemField({ item, value, invalid, missing, needsAction, flagged, corrective, actions, onChange, onCorrective }: {
   item: FormItem
   value: string | boolean | undefined
   invalid: boolean
+  missing: boolean
+  needsAction: boolean
   flagged: boolean
   corrective: { action: string; details: string } | undefined
   actions: FormData['correctiveActions']
@@ -205,36 +218,43 @@ function ItemField({ item, value, invalid, flagged, corrective, actions, onChang
   onCorrective: (p: Partial<{ action: string; details: string }>) => void
 }) {
   const inputId = `i-${item.id}`
-  const label = (
-    <label htmlFor={inputId} className="block text-sm font-medium">
-      {item.name}{item.required && <span className="text-[var(--tg-warn)]"> *</span>}
-    </label>
+  const labelId = `${inputId}-l`
+  const hintId = `${inputId}-h`
+  const reqId = `${inputId}-r`
+  const actionErrId = `${inputId}-ae`
+  const req = item.required && (
+    <span className="text-[var(--tg-warn)]"><span aria-hidden="true"> *</span><span className="sr-only"> (required)</span></span>
   )
+  const describedBy = [item.type === 'temperature' ? hintId : null, missing ? reqId : null].filter(Boolean).join(' ') || undefined
+  const label = item.type === 'yes_no'
+    ? <p id={labelId} className="block text-sm font-medium">{item.name}{req}</p>
+    : <label id={labelId} htmlFor={inputId} className="block text-sm font-medium">{item.name}{req}</label>
   const field = 'w-full rounded-md border border-[var(--input)] bg-[var(--tg-bg)] px-3 py-2 text-base text-[var(--tg-text)] outline-none focus:border-[var(--tg-accent)]'
   return (
     <div className={`rounded-lg bg-[var(--tg-card)] p-3 ${flagged ? 'ring-2 ring-[var(--tg-warn)]' : ''}`}>
       {item.type === 'tick' ? (
         <label htmlFor={inputId} className="flex items-center gap-3 text-sm font-medium">
-          <input id={inputId} type="checkbox" className="size-5 accent-[var(--tg-accent)]" checked={value === true} onChange={(e) => onChange(e.target.checked)} />
-          <span>{item.name}{item.required && <span className="text-[var(--tg-warn)]"> *</span>}</span>
+          <input id={inputId} type="checkbox" className="size-5 accent-[var(--tg-accent)]" checked={value === true} aria-describedby={describedBy} onChange={(e) => onChange(e.target.checked)} />
+          <span>{item.name}{req}</span>
         </label>
       ) : label}
 
       {item.type === 'temperature' && (
         <div className="mt-2">
           <input
-            id={inputId} type="text" inputMode="decimal" pattern="-?[0-9]{1,3}([.,][0-9]{1,2})?" autoComplete="off"
+            // iOS's decimal keypad has no minus key → plain text keyboard so freezer temps (-18) can be typed.
+            id={inputId} type="text" inputMode="text" enterKeyHint="next" pattern="(-|−|–)?[0-9]{1,3}([.,][0-9]{1,2})?" autoComplete="off"
             className={field} placeholder={rangeHint(item)} value={typeof value === 'string' ? value : ''}
-            aria-invalid={invalid} onChange={(e) => onChange(e.target.value)}
+            aria-invalid={invalid || missing} aria-describedby={describedBy} onChange={(e) => onChange(e.target.value)}
           />
-          <p className={`mt-1 text-xs ${invalid ? 'text-[var(--tg-warn)]' : 'text-[var(--tg-hint)]'}`}>
+          <p id={hintId} className={`mt-1 text-xs ${invalid ? 'text-[var(--tg-warn)]' : 'text-[var(--tg-hint)]'}`}>
             {invalid ? 'Enter a number, e.g. 3.5 or -18' : rangeHint(item)}
           </p>
         </div>
       )}
 
       {item.type === 'yes_no' && (
-        <div id={inputId} role="radiogroup" className="mt-2 grid grid-cols-2 gap-2">
+        <div id={inputId} role="radiogroup" aria-labelledby={labelId} aria-describedby={describedBy} className="mt-2 grid grid-cols-2 gap-2">
           {(['yes', 'no'] as const).map((opt) => (
             <button
               key={opt} type="button" role="radio" aria-checked={value === opt} onClick={() => onChange(opt)}
@@ -247,18 +267,21 @@ function ItemField({ item, value, invalid, flagged, corrective, actions, onChang
       )}
 
       {item.type === 'text' && (
-        <textarea id={inputId} rows={2} maxLength={500} className={`mt-2 ${field}`} value={typeof value === 'string' ? value : ''} onChange={(e) => onChange(e.target.value)} />
+        <textarea id={inputId} rows={2} maxLength={500} className={`mt-2 ${field}`} aria-invalid={missing} aria-describedby={describedBy} value={typeof value === 'string' ? value : ''} onChange={(e) => onChange(e.target.value)} />
       )}
+
+      {missing && <p id={reqId} className="mt-1 text-xs text-[var(--tg-warn)]">Required</p>}
 
       {flagged && (
         <div className="mt-3 space-y-2 border-t border-[var(--input)] pt-3">
-          <label htmlFor={`${inputId}-a`} className="block text-sm font-medium text-[var(--tg-warn)]">Out of range — action taken *</label>
-          <select id={`${inputId}-a`} required className={field} value={corrective?.action ?? ''} onChange={(e) => onCorrective({ action: e.target.value })}>
+          <label htmlFor={`${inputId}-a`} className="block text-sm font-medium text-[var(--tg-warn)]">Out of range — action taken<span aria-hidden="true"> *</span><span className="sr-only"> (required)</span></label>
+          <select id={`${inputId}-a`} required className={field} aria-invalid={needsAction} aria-describedby={needsAction ? actionErrId : undefined} value={corrective?.action ?? ''} onChange={(e) => onCorrective({ action: e.target.value })}>
             <option value="" disabled>Choose an action…</option>
             {actions.map((a) => <option key={a.id} value={a.id}>{a.title}</option>)}
           </select>
+          {needsAction && <p id={actionErrId} className="text-xs text-[var(--tg-warn)]">Required</p>}
           <textarea
-            rows={2} maxLength={300} placeholder="Details (optional)" className={field}
+            rows={2} maxLength={300} placeholder="Details (optional)" aria-label="What did you do — details" className={field}
             value={corrective?.details ?? ''} onChange={(e) => onCorrective({ details: e.target.value })}
           />
         </div>
