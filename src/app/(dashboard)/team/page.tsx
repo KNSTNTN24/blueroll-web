@@ -10,7 +10,7 @@ import { Plus, Copy, CheckCircle2, X, ShieldCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ROLE_LABELS, type UserRole } from '@/lib/constants'
 import { format } from 'date-fns'
-import { listIdentities, type Channel } from '@/lib/whatsapp/client'
+import { channelAvailable, listIdentities, type Channel } from '@/lib/whatsapp/client'
 import { ChannelStatus, ChannelConnectDialog } from './whatsapp-connect'
 import { AddWhatsAppMemberDialog } from './add-whatsapp-member'
 
@@ -68,7 +68,8 @@ export default function TeamPage() {
     },
   })
 
-  const waOn = isManager && !!business?.whatsapp_enabled
+  // WhatsApp UI only once the WhatsApp number is configured (otherwise nobody could link anyway).
+  const waOn = isManager && !!business?.whatsapp_enabled && channelAvailable('whatsapp')
   const { data: identities = [], refetch: refetchIds } = useQuery({
     queryKey: ['wa-identities', business?.id],
     enabled: !!business?.id && waOn,

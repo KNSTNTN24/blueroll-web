@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { waLink, maskNumber, CHANNELS } from '../client'
+import { waLink, maskNumber, CHANNELS, channelAvailable } from '../client'
 
 describe('whatsapp client helpers', () => {
   it('wa.me link pre-fills LINK code', () => expect(waLink('447000000000', '012345')).toBe('https://wa.me/447000000000?text=LINK%20012345'))
@@ -17,5 +17,11 @@ describe('whatsapp client helpers', () => {
   it('displayId is channel-aware', () => {
     expect(CHANNELS.whatsapp.displayId('447700900123')).toBe('+44 7••• ••23')
     expect(CHANNELS.telegram.displayId('123456789')).toBe('connected')
+  })
+  it('WhatsApp is offered only when the WhatsApp number is configured; Telegram always', () => {
+    expect(channelAvailable('whatsapp', '')).toBe(false)
+    expect(channelAvailable('whatsapp', '447000000000')).toBe(true)
+    expect(channelAvailable('whatsapp')).toBe(false)   // unset in tests
+    expect(channelAvailable('telegram', '')).toBe(true)
   })
 })

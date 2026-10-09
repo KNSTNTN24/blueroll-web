@@ -4,6 +4,9 @@ export type Channel = 'whatsapp' | 'telegram'
 
 export const WA_NUMBER = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER ?? ''   // E.164 without '+'
 
+/** Whether a channel can be offered in the UI: WhatsApp needs its number configured (NEXT_PUBLIC_WHATSAPP_NUMBER); Telegram always. */
+export const channelAvailable = (c: Channel, waNumber: string = WA_NUMBER) => c === 'telegram' || !!waNumber
+
 export const waLink = (number: string, code: string) => `https://wa.me/${number}?text=${encodeURIComponent(`LINK ${code}`)}`
 
 export function maskNumber(e164: string): string {

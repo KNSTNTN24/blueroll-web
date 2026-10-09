@@ -5,7 +5,7 @@ import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { Switch } from '@/components/ui/switch'
-import { syncAllFlows, type Channel } from '@/lib/whatsapp/client'
+import { channelAvailable, syncAllFlows, type Channel } from '@/lib/whatsapp/client'
 
 interface ChannelToggleProps {
   channel: Channel
@@ -52,12 +52,13 @@ export function ChannelToggle({ channel, column, title, description }: ChannelTo
 export function WhatsAppSettings() {
   return (
     <div className="flex flex-col gap-4">
-      <ChannelToggle
+      {/* Hidden until the WhatsApp number is configured (NEXT_PUBLIC_WHATSAPP_NUMBER). */}
+      {channelAvailable('whatsapp') && <ChannelToggle
         channel="whatsapp"
         column="whatsapp_enabled"
         title="WhatsApp checks"
         description="Staff get reminders before their checks are due and complete temperatures and opening/closing checks in WhatsApp. Connect people from the Team page."
-      />
+      />}
       <ChannelToggle
         channel="telegram"
         column="telegram_enabled"
