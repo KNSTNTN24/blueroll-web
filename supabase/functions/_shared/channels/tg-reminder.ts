@@ -36,3 +36,12 @@ export function buildTelegramReminder(job: TelegramReminderJob, tokens: Map<stri
   }
   return buttons.length ? tgWebAppButton(job.external_id, text, buttons) : tgText(job.external_id, text)
 }
+
+/**
+ * What to do after a failed reminder send. Telegram 403 = the person blocked the bot or deleted their account: retrying
+ * can never succeed, so the identity is revoked and the reminder keys are kept (no retry storm every 10 minutes).
+ * Anything else (rate limit, network, 5xx…) gives the keys back so the next run retries.
+ */
+export function reminderSendFailure(channel: 'whatsapp' | 'telegram', status: number): 'revoke' | 'release' {
+  return channel === 'telegram' && status === 403 ? 'revoke' : 'release'
+}

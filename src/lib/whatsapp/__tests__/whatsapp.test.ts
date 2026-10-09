@@ -5,7 +5,7 @@ import button from './fixtures/button.json'
 import flow from './fixtures/flow.json'
 import status from './fixtures/status.json'
 import { verifySignature, parseInbound, textMessage, buttonsMessage, templateMessage, flowMessage, makeSender } from '../../../../supabase/functions/_shared/channels/whatsapp'
-import { maskPhone } from '../../../../supabase/functions/_shared/channels/mask'
+import { maskPhone, maskId } from '../../../../supabase/functions/_shared/channels/mask'
 
 describe('verifySignature', () => {
   const body = '{"a":1}'
@@ -99,4 +99,12 @@ describe('makeSender', () => {
 
 describe('maskPhone', () => {
   it('keeps country code and last two digits', () => expect(maskPhone('447700900123')).toBe('+44 7••• ••23'))
+})
+
+describe('maskId', () => {
+  it('Telegram ids are not shown as phone numbers', () => {
+    expect(maskId('telegram', '123456789')).toBe('tg:••789')
+    expect(maskId('telegram', '12')).toBe('tg:••')
+  })
+  it('WhatsApp ids use maskPhone', () => expect(maskId('whatsapp', '447700900123')).toBe(maskPhone('447700900123')))
 })

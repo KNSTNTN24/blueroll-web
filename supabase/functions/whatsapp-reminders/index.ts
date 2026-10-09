@@ -3,7 +3,7 @@
 // Every 10 minutes (pg_cron → net.http_post with x-cron-secret): send due reminders (Telegram + WhatsApp), WhatsApp corrective
 // follow-ups, then tidy old link codes / form tokens / reminder keys / message log. Deployed with --no-verify-jwt; authenticity = x-cron-secret.
 // A channel runs only when its env is set: Telegram needs TG_BOT_TOKEN; WhatsApp needs WA_TOKEN + WA_PHONE_NUMBER_ID.
-// Never log raw phone numbers / chat ids — use maskPhone.
+// Never log raw phone numbers / chat ids — use maskId (maskPhone for WhatsApp-only paths).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { makeSender, templateMessage } from "../_shared/channels/whatsapp.ts";
 import { makeTelegramSender } from "../_shared/channels/telegram.ts";
@@ -11,8 +11,8 @@ import { makeDeps, pageAll } from "../_shared/channels/db.ts";
 import { isBillable, saveChecklistToken, telegramFormItemIds, withUnit, type BotDeps } from "../_shared/channels/bot.ts";
 import { alertManagers, makeAlertDeps, TG_MINI_APP_URL, type Senders } from "../_shared/channels/alerts.ts";
 import { telegramUI, whatsappUI, type Channel } from "../_shared/channels/ui.ts";
-import { buildTelegramReminder } from "../_shared/channels/tg-reminder.ts";
-import { maskPhone } from "../_shared/channels/mask.ts";
+import { buildTelegramReminder, reminderSendFailure } from "../_shared/channels/tg-reminder.ts";
+import { maskId, maskPhone } from "../_shared/channels/mask.ts";
 import { planCorrective, planReminders, reminderKey, type Recipient, type ReminderJob } from "../_shared/checklists-core/reminders.ts";
 import { completionsWindowStart } from "../_shared/checklists-core/due.ts";
 import type { Person } from "../_shared/checklists-core/types.ts";
@@ -64,11 +64,11 @@ async function claimStep(row: { business_id: string; site_id: string; profile_id
   return data.id as number;
 }
 
-async function releaseKeys(job: ReminderJob, items: ReminderJob["items"]): Promise<void> {
+async function releaseKeys(channel: Channel, job: ReminderJob, items: ReminderJob["items"]): Promise<void> {
   for (const it of items) {
     const { error: relErr } = await admin.from("channel_reminders_sent").delete()
       .eq("profile_id", job.profile_id).eq("template_id", it.template.id).eq("site_id", job.site_id).eq("period_key", it.period_key);
-    if (relErr) console.error("reminder key release failed", maskPhone(job.external_id), it.template.id, it.period_key, errMsg(relErr));
+    if (relErr) console.error("reminder key release failed", maskId(channel, job.external_id), it.template.id, it.period_key, errMsg(relErr));
   }
 }
 
@@ -152,7 +152,7 @@ async function remindBusiness(biz: string, byChannel: Map<Channel, Ident[]>, sit
           }
           r = await send(buildTelegramReminder({ external_id: job.external_id, siteName, tz, items }, tokens));
         } catch (err) {
-          console.error("telegram reminder build failed", maskPhone(job.external_id), errMsg(err));
+          console.error("telegram reminder build failed", maskId("telegram", job.external_id), errMsg(err));
           r = { id: null, ok: false, status: 0 };
         }
       } else {
@@ -165,9 +165,18 @@ async function remindBusiness(biz: string, byChannel: Map<Channel, Ident[]>, sit
         r = await send(msg);
       }
       if (!r.ok) {
-        // Give the keys back so the next run (still inside the lead window) retries.
-        console.error(`${channel} reminder send failed`, maskPhone(job.external_id), r.status);
-        await releaseKeys(job, items);
+        console.error(`${channel} reminder send failed`, maskId(channel, job.external_id), r.status);
+        if (reminderSendFailure(channel, r.status) === "revoke" && ident) {
+          // Bot blocked / account deleted: unlink (the person can reconnect with a new code); keys stay claimed.
+          console.error(`${channel} reminder: recipient blocked the bot or was deactivated (403) — revoking identity`, maskId(channel, job.external_id));
+          try {
+            await deps.revokeIdentity(ident.id);
+            await deps.log({ business_id: biz, site_id: job.site_id, profile_id: job.profile_id, direction: "out", kind: "revoked_blocked", billable: false, ref_id: ident.id });
+          } catch (err) { console.error(`${channel} identity revoke failed`, maskId(channel, job.external_id), errMsg(err)); }
+        } else {
+          // Give the keys back so the next run (still inside the lead window) retries.
+          await releaseKeys(channel, job, items);
+        }
       } else sent++;
       await deps.log({
         business_id: biz, site_id: job.site_id, profile_id: job.profile_id, direction: "out", kind: single ? "reminder" : "reminder_list",

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildTelegramReminder } from '../../../../supabase/functions/_shared/channels/tg-reminder'
+import { buildTelegramReminder, reminderSendFailure } from '../../../../supabase/functions/_shared/channels/tg-reminder'
 import type { DueChecklist, Template } from '../../../../supabase/functions/_shared/checklists-core/types'
 
 const tpl = (id: string, name: string): Template => ({
@@ -56,5 +56,17 @@ describe('buildTelegramReminder', () => {
   it('token is URL-encoded', () => {
     const m: Any = buildTelegramReminder(job([due('t1', 'A', '2026-10-14T09:00:00Z')]), new Map([['t1', 'a b']]))
     expect(m.reply_markup.inline_keyboard[0][0].web_app.url).toBe(`${URL}?t=a%20b`)
+  })
+})
+
+describe('reminderSendFailure', () => {
+  it('Telegram 403 (bot blocked / user deactivated) → revoke the identity, keep the keys', () => {
+    expect(reminderSendFailure('telegram', 403)).toBe('revoke')
+  })
+  it('anything else → release the keys for a retry', () => {
+    expect(reminderSendFailure('telegram', 429)).toBe('release')
+    expect(reminderSendFailure('telegram', 0)).toBe('release')
+    expect(reminderSendFailure('telegram', 400)).toBe('release')
+    expect(reminderSendFailure('whatsapp', 403)).toBe('release')
   })
 })
