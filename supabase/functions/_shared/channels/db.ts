@@ -13,6 +13,25 @@ export async function hashExternalId(externalId: string): Promise<string> {
   return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
+/** PostgREST caps a response at 1000 rows by default. */
+export const PAGE_SIZE = 1000
+
+/**
+ * Fetch every row of a query page by page. `fetchPage(from, to)` must apply a stable order and `.range(from, to)`.
+ * Stops at the first page shorter than PAGE_SIZE.
+ */
+// deno-lint-ignore no-explicit-any
+export async function pageAll<T>(fetchPage: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: any }>): Promise<T[]> {
+  const out: T[] = []
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await fetchPage(from, from + PAGE_SIZE - 1)
+    if (error) throw error
+    const rows = data ?? []
+    out.push(...rows)
+    if (rows.length < PAGE_SIZE) return out
+  }
+}
+
 // deno-lint-ignore no-explicit-any
 export function makeDeps(admin: any, cfg: { send: SendFn; correctiveFlowId: string }): BotDeps {
   // deno-lint-ignore no-explicit-any
@@ -108,12 +127,14 @@ export function makeDeps(admin: any, cfg: { send: SendFn; correctiveFlowId: stri
       .eq('business_id', b).eq('active', true))) ?? []).map((t: any) => ({ ...t, assigned_roles: t.assigned_roles ?? [], assigned_role_ids: t.assigned_role_ids ?? [] })),
     items: async (tid) => (await one(admin.from('checklist_template_items')
       .select('id, name, item_type, required, min_value, max_value, unit, sort_order').eq('template_id', tid))) ?? [],
-    completionsSince: async (b, since) => (await one(admin.from('checklist_completions')
-      .select('template_id, site_id, completed_at').eq('business_id', b).gte('completed_at', since.toISOString()))) ?? [],
+    // Paged: a busy business easily has >1000 completions in a month (PostgREST row cap).
+    completionsSince: (b, since) => pageAll((from, to) => admin.from('checklist_completions')
+      .select('template_id, site_id, completed_at').eq('business_id', b).gte('completed_at', since.toISOString())
+      .order('completed_at', { ascending: false }).order('id', { ascending: false }).range(from, to)),
     flowFor: async (tid, sid) => {
-      const f = await one(admin.from('channel_flows').select('flow_id, item_ids, status')
+      const f = await one(admin.from('channel_flows').select('flow_id, item_ids, items_hash, status')
         .eq('template_id', tid).eq('site_id', sid).eq('channel', 'whatsapp').maybeSingle())
-      return f && f.status === 'published' && f.flow_id ? { flow_id: f.flow_id, item_ids: f.item_ids } : null
+      return f && f.status === 'published' && f.flow_id ? { flow_id: f.flow_id, item_ids: f.item_ids ?? [], items_hash: f.items_hash } : null
     },
 
     saveToken: async (t: FormToken) => { await one(admin.from('channel_form_tokens').insert(t)) },
@@ -129,13 +150,14 @@ export function makeDeps(admin: any, cfg: { send: SendFn; correctiveFlowId: stri
     setCorrective: async (rid, notes) => {
       const r = await one(admin.from('checklist_responses').update({ notes, corrective_status: 'done' })
         .eq('id', rid).eq('corrective_status', 'needed')
-        .select('value, item:checklist_template_items(name), completion:checklist_completions(business_id, site_id, completed_by, template:checklist_templates(name))')
+        .select('value, item:checklist_template_items(name, unit, item_type), completion:checklist_completions(business_id, site_id, completed_by, template:checklist_templates(name))')
         .maybeSingle())
       if (!r || !r.completion) return null
       const site = r.completion.site_id ? await one(admin.from('sites').select('name').eq('id', r.completion.site_id).maybeSingle()) : null
       const by = r.completion.completed_by ? await one(admin.from('profiles').select('full_name').eq('id', r.completion.completed_by).maybeSingle()) : null
       return {
         templateName: r.completion.template?.name ?? '', itemName: r.item?.name ?? '', value: r.value ?? '',
+        unit: r.item?.unit ?? (r.item?.item_type === 'temperature' ? '°C' : null),
         siteName: site?.name ?? '', byName: by?.full_name ?? '', businessId: r.completion.business_id,
       }
     },
@@ -151,7 +173,11 @@ export function makeDeps(admin: any, cfg: { send: SendFn; correctiveFlowId: stri
 
     log: async (e) => {
       const { error } = await admin.from('channel_messages_log').insert({ ...e, channel: 'whatsapp' })
-      if (error) console.error('channel_messages_log insert failed', e.kind, (error.message ?? '').slice(0, 200))
+      if (!error) return true
+      // uq_channel_inbound_msg: this inbound message id was already logged → duplicate webhook delivery.
+      if (e.direction === 'in' && error.code === '23505') return false
+      console.error('channel_messages_log insert failed', e.kind, (error.message ?? '').slice(0, 200))
+      return true
     },
 
     linkFailures: async (externalId, since) => {

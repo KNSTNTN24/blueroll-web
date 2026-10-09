@@ -5,6 +5,11 @@
 create unique index if not exists uq_channel_messages_claim on public.channel_messages_log(ref_id, kind)
   where kind in ('corrective_nudge','alert_no_action');
 
+-- Inbound dedupe: Meta retries webhook deliveries; the bot logs each inbound message FIRST and treats a unique
+-- violation here as "already handled".
+create unique index if not exists uq_channel_inbound_msg on public.channel_messages_log(channel, wa_message_id)
+  where direction = 'in' and wa_message_id is not null;
+
 select cron.unschedule('whatsapp-reminders') where exists (select 1 from cron.job where jobname = 'whatsapp-reminders');
 select cron.schedule('whatsapp-reminders', '*/10 * * * *', $$
   select net.http_post(

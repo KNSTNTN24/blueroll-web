@@ -10,7 +10,9 @@ const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE
 const APP_SECRET = Deno.env.get("WA_APP_SECRET") ?? "";
 const VERIFY_TOKEN = Deno.env.get("WA_VERIFY_TOKEN") ?? "";
 const send = makeSender({ token: Deno.env.get("WA_TOKEN") ?? "", phoneNumberId: Deno.env.get("WA_PHONE_NUMBER_ID") ?? "" });
-const deps = makeDeps(admin, { send, correctiveFlowId: Deno.env.get("WA_CORRECTIVE_FLOW_ID") ?? "" });
+const CORRECTIVE_FLOW_ID = Deno.env.get("WA_CORRECTIVE_FLOW_ID") ?? "";
+if (!CORRECTIVE_FLOW_ID) console.error("whatsapp-webhook: WA_CORRECTIVE_FLOW_ID is not set — corrective forms will be skipped");
+const deps = makeDeps(admin, { send, correctiveFlowId: CORRECTIVE_FLOW_ID });
 
 Deno.serve(async (req) => {
   const url = new URL(req.url);

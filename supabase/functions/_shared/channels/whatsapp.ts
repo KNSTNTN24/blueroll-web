@@ -49,17 +49,29 @@ export function parseInbound(body: unknown): InboundEvent[] {
 export const textMessage = (to: string, body: string): OutboundMessage =>
   ({ messaging_product: 'whatsapp', to, type: 'text', text: { body, preview_url: false } })
 
+export const PARAM_MAX = 200
+
+/**
+ * Meta rejects template parameters containing newlines, tabs or runs of spaces, and empty parameters.
+ * Collapse all whitespace to single spaces, trim, use '—' when empty, cap at `max` chars.
+ */
+export function sanitizeParam(s: string | null | undefined, max: number = PARAM_MAX): string {
+  const t = String(s ?? '').replace(/\s+/g, ' ').trim()
+  if (!t) return '—'
+  return t.length > max ? t.slice(0, max - 1) + '…' : t
+}
+
 export const buttonsMessage = (to: string, body: string, buttons: { id: string; title: string }[]): OutboundMessage => ({
   messaging_product: 'whatsapp', to, type: 'interactive',
   interactive: { type: 'button', body: { text: body }, action: {
-    buttons: buttons.slice(0, 3).map((b) => ({ type: 'reply', reply: { id: b.id, title: b.title.length > 20 ? b.title.slice(0, 19) + '…' : b.title } })),
+    buttons: buttons.slice(0, 3).map((b) => ({ type: 'reply', reply: { id: b.id, title: sanitizeParam(b.title, 20) } })),
   } },
 })
 
 export const templateMessage = (to: string, name: string, bodyParams: string[], quickReplies: string[]): OutboundMessage => ({
   messaging_product: 'whatsapp', to, type: 'template',
   template: { name, language: { code: 'en_GB' }, components: [
-    { type: 'body', parameters: bodyParams.map((text) => ({ type: 'text', text })) },
+    { type: 'body', parameters: bodyParams.map((text) => ({ type: 'text', text: sanitizeParam(text) })) },
     ...quickReplies.map((payload, i) => ({ type: 'button', sub_type: 'quick_reply', index: String(i), parameters: [{ type: 'payload', payload }] })),
   ] },
 })

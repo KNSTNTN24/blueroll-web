@@ -15,9 +15,11 @@ const HELPER_MAX = 80
 
 const fit = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1) + '…' : s)
 
-// Hash of everything that shapes the generated Flow; a change means the published Flow must be rebuilt.
+// Hash of the form SHAPE (position, name, type, required, limits, unit + template name and versions); a change means
+// the published Flow must be rebuilt. Item ids are deliberately left out: the web and mobile editors delete and
+// re-insert every item on save, so ids churn without the form changing (the bot puts the current ids on the token).
 export async function itemsHash(templateName: string, items: TemplateItem[], builderVersion: number = FLOW_BUILDER_VERSION): Promise<string> {
-  const shape = formItems(items).supported.map((i) => [i.id, i.name, i.item_type, i.required, i.min_value, i.max_value, i.unit])
+  const shape = formItems(items).supported.map((i) => [i.name, i.item_type, i.required, i.min_value, i.max_value, i.unit])
   const payload = JSON.stringify({ v: FLOW_JSON_VERSION, b: builderVersion, name: templateName, items: shape })
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(payload))
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('')

@@ -13,13 +13,15 @@ export const reminderKey = (profileId: string, templateId: string, siteId: strin
 
 export function planReminders(args: {
   now: Date; recipients: Recipient[]; templates: Template[]; completions: CompletionLite[]; alreadySent: Set<string>
+  /** Only remind about (template, site) pairs that can actually be filled in WhatsApp (published Flow). Default: all. */
+  hasFlow?: (templateId: string, siteId: string) => boolean
 }): ReminderJob[] {
-  const { now, recipients, templates, completions, alreadySent } = args
+  const { now, recipients, templates, completions, alreadySent, hasFlow = () => true } = args
   const jobs: ReminderJob[] = []
   for (const r of recipients) {
     const due = dueChecklists({ templates, person: r.person, siteId: r.site_id, tz: r.tz, now, completions })
       .filter((d) => {
-        if (!d.deadline_utc) return false
+        if (!d.deadline_utc || !hasFlow(d.template.id, r.site_id)) return false
         const dl = new Date(d.deadline_utc).getTime()
         return now.getTime() >= dl - LEAD_MINUTES * 60_000 && now.getTime() < dl
           && !alreadySent.has(reminderKey(r.person.profile_id, d.template.id, r.site_id, d.period_key))

@@ -48,6 +48,16 @@ describe('planReminders', () => {
   })
 })
 
+describe('planReminders flow filter', () => {
+  it('skips (template, site) pairs without a published flow', () => {
+    const two = [...rec, { ...rec[0], site_id: 's2' }]
+    const t = [tpl('a', '10:00'), tpl('b', '10:05')]
+    const jobs = planReminders({ now: at('2026-10-14T08:40:00Z'), recipients: two, templates: t, completions: [], alreadySent: new Set(),
+      hasFlow: (tid, sid) => !(tid === 'b' && sid === 's1') && sid !== 's2' })
+    expect(jobs.map((j) => [j.site_id, j.items.map((i) => i.template.id)])).toEqual([['s1', ['a']]])
+  })
+})
+
 describe('planCorrective', () => {
   const n = [{ response_id: 'r1', completed_by: 'p1', business_id: 'b', site_id: 's1', created_at: '2026-10-14T09:00:00Z' }]
   it('nudge at 30 min, alert at 60 min, each once', () => {

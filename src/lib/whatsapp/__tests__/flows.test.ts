@@ -86,6 +86,15 @@ describe('itemsHash', () => {
     expect(await itemsHash('Freezer temps', a)).not.toBe(h)
     expect(await itemsHash('Fridge temps', a, FLOW_BUILDER_VERSION + 1)).not.toBe(h)
   })
+  it('ignores item ids (editors re-insert all items on save) but not order, type or required', async () => {
+    const two = [item('a', 'temperature', { sort_order: 0 }), item('b', 'yes_no', { name: 'Door shut', sort_order: 1 })]
+    const h = await itemsHash('Fridge temps', two)
+    const reinserted = [item('x1', 'temperature', { name: 'Item a', sort_order: 5 }), item('x2', 'yes_no', { name: 'Door shut', sort_order: 6 })]
+    expect(await itemsHash('Fridge temps', reinserted)).toBe(h)
+    expect(await itemsHash('Fridge temps', [{ ...two[0], sort_order: 2 }, two[1]])).not.toBe(h)
+    expect(await itemsHash('Fridge temps', [two[0], { ...two[1], item_type: 'tick' }])).not.toBe(h)
+    expect(await itemsHash('Fridge temps', [two[0], { ...two[1], required: false }])).not.toBe(h)
+  })
 })
 
 describe('corrective flow', () => {

@@ -30,3 +30,16 @@ export function dueChecklists(args: {
   }
   return out
 }
+
+/**
+ * Earliest instant any of these templates' current period starts, across the given site timezones
+ * (multi-per-day templates count per day). Completions before it can't affect what is due, so loading
+ * completions from here keeps the query small. No templates → now.
+ */
+export function completionsWindowStart(templates: Template[], tzs: string[], now: Date): Date {
+  let min = now.getTime()
+  for (const t of templates) for (const tz of tzs) {
+    min = Math.min(min, periodStartUtc(t.multi_per_day ? 'daily' : t.frequency, now, tz).getTime())
+  }
+  return new Date(min)
+}

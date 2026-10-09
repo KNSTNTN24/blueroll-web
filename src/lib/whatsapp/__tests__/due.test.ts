@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isAssigned, availableChecklists, dueChecklists } from '../../../../supabase/functions/_shared/checklists-core/due'
+import { isAssigned, availableChecklists, dueChecklists, completionsWindowStart } from '../../../../supabase/functions/_shared/checklists-core/due'
 import type { Template, Person } from '../../../../supabase/functions/_shared/checklists-core/types'
 
 const tpl = (o: Partial<Template>): Template => ({
@@ -52,5 +52,20 @@ describe('dueChecklists', () => {
     const late = new Date('2026-10-14T10:30:00Z')
     expect(dueChecklists({ templates: [tpl({})], person: anna, siteId: 's1', tz: L, now: late, completions: [] })[0].overdue).toBe(true)
     expect(dueChecklists({ templates: [tpl({ deadline_time: null })], person: anna, siteId: 's1', tz: L, now, completions: [] })[0].deadline_utc).toBeNull()
+  })
+})
+
+describe('completionsWindowStart', () => {
+  it('is the earliest period start any template needs (multi-per-day counts as daily)', () => {
+    expect(completionsWindowStart([tpl({})], [L], now).toISOString()).toBe('2026-10-13T23:00:00.000Z')
+    expect(completionsWindowStart([tpl({}), tpl({ id: 'w', frequency: 'weekly' })], [L], now).toISOString()).toBe('2026-10-11T23:00:00.000Z')
+    expect(completionsWindowStart([tpl({ frequency: 'monthly' })], [L], now).toISOString()).toBe('2026-09-30T23:00:00.000Z')
+    expect(completionsWindowStart([tpl({ frequency: 'monthly', multi_per_day: true, min_per_day: 2 })], [L], now).toISOString()).toBe('2026-10-13T23:00:00.000Z')
+  })
+  it('takes the earliest across site timezones; no templates → now', () => {
+    const ny = completionsWindowStart([tpl({})], [L, 'America/New_York'], now)
+    expect(ny.toISOString()).toBe('2026-10-13T23:00:00.000Z')
+    expect(completionsWindowStart([tpl({})], ['Asia/Tokyo'], now).toISOString()).toBe('2026-10-13T15:00:00.000Z')
+    expect(completionsWindowStart([], [L], now).getTime()).toBe(now.getTime())
   })
 })

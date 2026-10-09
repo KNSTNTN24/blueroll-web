@@ -63,6 +63,17 @@ describe('builders', () => {
       { type: 'button', sub_type: 'quick_reply', index: '0', parameters: [{ type: 'payload', payload: 'fill:t1:s1' }] },
     ])
   })
+  it('template params and button titles are sanitised for Meta', () => {
+    const long = 'x'.repeat(250)
+    const t = templateMessage('44', 'manager_alert', ['Walk-in\nfridge\t  door', '   ', long, ''], []) as any
+    const texts = t.template.components[0].parameters.map((p: any) => p.text)
+    expect(texts[0]).toBe('Walk-in fridge door')
+    expect(texts[1]).toBe('—')
+    expect(texts[2].length).toBe(200)
+    expect(texts[3]).toBe('—')
+    const b = buttonsMessage('44', 'Pick', [{ id: 'a', title: 'Fridge\n\ntemps' }, { id: 'b', title: '  ' }]) as any
+    expect(b.interactive.action.buttons.map((x: any) => x.reply.title)).toEqual(['Fridge temps', '—'])
+  })
   it('flow message', () => {
     const f = flowMessage('44', { flowId: 'F', token: 'tok', cta: 'Fill in', body: 'Fridge temps', screen: 'CHECKLIST' }) as any
     expect(f.interactive.type).toBe('flow')
