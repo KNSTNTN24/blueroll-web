@@ -5,6 +5,7 @@ import { verifySignature, parseInbound, makeSender } from "../_shared/channels/w
 import { handleInbound } from "../_shared/channels/bot.ts";
 import { makeDeps } from "../_shared/channels/db.ts";
 import { maskPhone } from "../_shared/channels/mask.ts";
+import { whatsappUI } from "../_shared/channels/ui.ts";
 
 const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
 const APP_SECRET = Deno.env.get("WA_APP_SECRET") ?? "";
@@ -12,7 +13,8 @@ const VERIFY_TOKEN = Deno.env.get("WA_VERIFY_TOKEN") ?? "";
 const send = makeSender({ token: Deno.env.get("WA_TOKEN") ?? "", phoneNumberId: Deno.env.get("WA_PHONE_NUMBER_ID") ?? "" });
 const CORRECTIVE_FLOW_ID = Deno.env.get("WA_CORRECTIVE_FLOW_ID") ?? "";
 if (!CORRECTIVE_FLOW_ID) console.error("whatsapp-webhook: WA_CORRECTIVE_FLOW_ID is not set — corrective forms will be skipped");
-const deps = makeDeps(admin, { send, correctiveFlowId: CORRECTIVE_FLOW_ID });
+// Manager alerts reach WhatsApp-linked managers from here (Telegram sender is added with the Telegram webhook).
+const deps = makeDeps(admin, { channel: "whatsapp", ui: whatsappUI(), send, correctiveFlowId: CORRECTIVE_FLOW_ID, senders: { whatsapp: send } });
 
 Deno.serve(async (req) => {
   const url = new URL(req.url);

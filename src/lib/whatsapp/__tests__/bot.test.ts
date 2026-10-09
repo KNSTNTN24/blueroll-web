@@ -5,6 +5,7 @@ import type { Template, TemplateItem } from '../../../../supabase/functions/_sha
 import { itemsHash } from '../../../../supabase/functions/_shared/channels/whatsapp-flows'
 import { whatsappUI, telegramUI } from '../../../../supabase/functions/_shared/channels/ui'
 import { parseUpdate } from '../../../../supabase/functions/_shared/channels/telegram'
+import { alertManagers, type AlertRecipient } from '../../../../supabase/functions/_shared/channels/alerts'
 
 const T: Template = { id: 't1', business_id: 'b', site_id: null, name: 'Fridge temps', frequency: 'daily', deadline_time: '11:00',
   multi_per_day: false, min_per_day: null, assigned_roles: [], assigned_role_ids: ['r'], active: true }
@@ -13,7 +14,9 @@ const ITEMS: TemplateItem[] = [
   { id: 'i2', name: 'Freezer', item_type: 'temperature', required: true, min_value: -30, max_value: -18, unit: '°C', sort_order: 1 },
 ]
 
-function fake(over: Partial<BotDeps> = {}) {
+type Recipients = () => Promise<(Omit<AlertRecipient, 'channel'> & { channel?: AlertRecipient['channel'] })[]>
+function fake(overAll: Partial<BotDeps> & { managerRecipients?: Recipients } = {}) {
+  const { managerRecipients = async () => [{ external_id: '447700900999', last_inbound_at: null }], ...over } = overAll
   const sent: any[] = []; const tokens = new Map<string, FormToken>(); const state: any = { completions: [], responses: [], notifs: [], corrective: [], revoked: [], logs: [], linkFails: [] }
   let n = 0
   const d: BotDeps = {
@@ -37,7 +40,12 @@ function fake(over: Partial<BotDeps> = {}) {
     saveToken: async (t) => { tokens.set(t.token, t) },
     takeToken: async (tok, _now, profileId) => { const t = tokens.get(tok); if (!t || t.used_at || t.profile_id !== profileId) return null; t.used_at = 'x'; return t },
     setCorrective: async (rid, notes) => { state.corrective.push({ rid, notes }); return { templateName: 'Fridge temps', itemName: 'Walk-in fridge', value: '9', unit: '°C', siteName: 'Wharf Side', byName: 'Anna', businessId: 'b' } },
-    managerRecipients: async () => [{ external_id: '447700900999', last_inbound_at: null }],
+    // Cross-channel alert path with fake AlertDeps; recipients default to WhatsApp; every channel sends via d.send (unwrapped).
+    alertManagers: (b, a) => alertManagers({
+      managerRecipients: async () => (await managerRecipients()).map((r) => ({ channel: 'whatsapp' as const, ...r })),
+      ready: async () => true,
+      log: async (e) => { state.logs.push(e) },
+    }, { whatsapp: (m) => d.send(m), telegram: (m) => d.send(m) }, b, a, d.now()),
     log: async (e) => {
       if (e.direction === 'in' && e.wa_message_id && state.logs.some((l: any) => l.direction === 'in' && l.wa_message_id === e.wa_message_id)) return false
       state.logs.push(e); return true
@@ -330,6 +338,18 @@ describe('bot', () => {
     expect(f.state.completions).toHaveLength(1)
     expect(f.state.notifs).toHaveLength(2)
     expect(f.sent.filter((m) => m.interactive?.type === 'flow' && m.interactive.action.parameters.flow_id !== 'F1')).toHaveLength(0)
+  })
+  it('corrective alert reaches a Telegram manager as text and a WhatsApp manager as the template', async () => {
+    const f = fake({ managerRecipients: async () => [
+      { channel: 'telegram', external_id: '555', last_inbound_at: null },
+      { channel: 'whatsapp', external_id: '447700900999', last_inbound_at: null },
+    ] })
+    await f.d.saveToken({ token: 'ct', kind: 'corrective', business_id: 'b', profile_id: 'p1', site_id: 's1', template_id: 't1', item_ids: null, response_id: 'resp0', expires_at: '2099-01-01', used_at: null })
+    await handleInbound({ kind: 'flow', from, token: 'ct', response: { action: 'moved' }, id: 'z' }, f.d)
+    expect(f.sent[0]).toEqual({ chat_id: '555', text: '⚠ Wharf Side · Walk-in fridge 9 °C at 10:40 (Anna). Action: Moved food to another fridge. — via Blueroll' })
+    expect(f.sent[1]).toMatchObject({ to: '447700900999', template: { name: 'manager_alert' } })
+    expect(textOf(f.sent[2])).toBe(TEXT.correctiveThanks)
+    expect(f.state.logs.filter((l: any) => l.kind === 'alert').map((l: any) => [l.channel, l.billable])).toEqual([['telegram', false], ['whatsapp', true]])
   })
   it('manager alert value carries the unit', async () => {
     const f = fake()

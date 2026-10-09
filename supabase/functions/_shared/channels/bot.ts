@@ -7,7 +7,7 @@ import { recordCompletion } from '../checklists-core/record.ts'
 import { availableChecklists, completionsWindowStart, dueChecklists } from '../checklists-core/due.ts'
 import { formItems, parseFormAnswers } from '../checklists-core/answers.ts'
 import { CORRECTIVE_ACTIONS, itemsHash } from './whatsapp-flows.ts'
-import { whatsappUI, type Channel, type ChannelUI } from './ui.ts'
+import { whatsappUI, type Channel, type ChannelUI, type ManagerAlert } from './ui.ts'
 
 export interface Identity { id: string; business_id: string; profile_id: string; external_id: string }
 export interface SiteInfo { id: string; name: string; timezone: string }
@@ -38,8 +38,8 @@ export interface BotDeps extends CoreDb {
   saveToken(t: FormToken): Promise<void>
   takeToken(token: string, now: Date, profileId: string): Promise<FormToken | null>   // marks used only if owned by profileId; null if unknown/foreign/used/expired
   setCorrective(responseId: string, notes: string): Promise<{ templateName: string; itemName: string; value: string; unit: string | null; siteName: string; byName: string; businessId: string } | null>
-  /** Linked WhatsApp identities of active owners/managers, with their last inbound time (for the 24h billing window). */
-  managerRecipients(businessId: string): Promise<{ external_id: string; last_inbound_at: string | null }[]>
+  /** Alert every active owner/manager on each channel they are linked on (see alerts.ts alertManagers). */
+  alertManagers(businessId: string, a: ManagerAlert): Promise<void>
   /**
    * Message-log row. Returns false only for an inbound row whose wa_message_id was already logged
    * (unique index uq_channel_inbound_msg → duplicate webhook delivery); true otherwise, including on other log errors.
@@ -100,17 +100,6 @@ function valueText(item: TemplateItem, value: string): string {
   const lim = item.min_value != null && item.max_value != null ? `limit ${item.min_value}–${item.max_value} ${u}`
     : item.min_value != null ? `limit ${item.min_value} ${u} or above` : `limit ${item.max_value} ${u} or below`
   return `${value} ${u} (${lim})`
-}
-
-export async function sendManagerAlert(d: BotDeps, businessId: string, a: { siteName: string; itemName: string; value: string; time: string; byName: string; action: string }) {
-  const now = d.now()
-  for (const m of await d.managerRecipients(businessId)) {
-    const { msg, templateName } = d.ui.managerAlert(m.external_id, a)
-    const r = await d.send(msg)
-    // Only WhatsApp templates outside the 24h service window cost money; Telegram never does.
-    await d.log({ business_id: businessId, site_id: null, profile_id: null, direction: 'out', kind: 'alert', template_name: templateName,
-      billable: d.ui.channel === 'whatsapp' && !!templateName && r.ok && isBillable(m.last_inbound_at, now), wa_message_id: r.id })
-  }
 }
 
 async function sendCorrectiveForm(d: BotDeps, from: string, person: Person, c: { site_id: string; template_id: string; response_id: string; item: TemplateItem; value: string }) {
@@ -280,7 +269,7 @@ export async function handleInbound(e: InboundEvent, deps: BotDeps): Promise<voi
   const info = tok.response_id ? await d.setCorrective(tok.response_id, `${action}${details}`) : null
   if (info) {
     const hhmm = new Intl.DateTimeFormat('en-GB', { timeZone: site?.timezone ?? 'Europe/London', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(now)
-    await sendManagerAlert(d, info.businessId, { siteName: info.siteName, itemName: info.itemName, value: withUnit(info.value, info.unit), time: hhmm, byName: info.byName, action: `${action}${details}` })
+    await d.alertManagers(info.businessId, { siteName: info.siteName, itemName: info.itemName, value: withUnit(info.value, info.unit), time: hhmm, byName: info.byName, action: `${action}${details}` })
   }
   await out(d, ctx, reply(X.correctiveThanks), 'reply')
 }

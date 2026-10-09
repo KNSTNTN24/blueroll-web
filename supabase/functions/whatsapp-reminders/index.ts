@@ -5,7 +5,9 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { makeSender, templateMessage } from "../_shared/channels/whatsapp.ts";
 import { makeDeps, pageAll } from "../_shared/channels/db.ts";
-import { isBillable, sendManagerAlert, withUnit } from "../_shared/channels/bot.ts";
+import { isBillable, withUnit } from "../_shared/channels/bot.ts";
+import { alertManagers, makeAlertDeps, type Senders } from "../_shared/channels/alerts.ts";
+import { whatsappUI } from "../_shared/channels/ui.ts";
 import { maskPhone } from "../_shared/channels/mask.ts";
 import { planCorrective, planReminders, reminderKey, type Recipient } from "../_shared/checklists-core/reminders.ts";
 import { completionsWindowStart } from "../_shared/checklists-core/due.ts";
@@ -15,7 +17,9 @@ const CRON_SECRET = Deno.env.get("WA_CRON_SECRET") ?? "";
 const send = makeSender({ token: Deno.env.get("WA_TOKEN") ?? "", phoneNumberId: Deno.env.get("WA_PHONE_NUMBER_ID") ?? "" });
 const CORRECTIVE_FLOW_ID = Deno.env.get("WA_CORRECTIVE_FLOW_ID") ?? "";
 if (!CORRECTIVE_FLOW_ID) console.error("whatsapp-reminders: WA_CORRECTIVE_FLOW_ID is not set — corrective forms will be skipped");
-const deps = makeDeps(admin, { send, correctiveFlowId: CORRECTIVE_FLOW_ID });
+const senders: Senders = { whatsapp: send };
+const deps = makeDeps(admin, { channel: "whatsapp", ui: whatsappUI(), send, correctiveFlowId: CORRECTIVE_FLOW_ID, senders });
+const alertDeps = makeAlertDeps(admin);
 
 const DAY_MS = 86400_000;
 const REMINDER_KEY_COLS = "profile_id,template_id,site_id,period_key";
@@ -150,14 +154,14 @@ async function correctiveBusiness(biz: string, list: Ident[], sites: Map<string,
     } else {
       const logId = await claimStep({ business_id: biz, site_id: n.completion.site_id, profile_id: null, kind: "alert_no_action", ref_id: a.response_id });
       if (logId === null) continue;
-      // Per-manager sends are logged separately by sendManagerAlert (kind 'alert').
+      // Per-manager sends are logged separately by alertManagers (kind 'alert', one row per channel send).
       const { data: by } = await admin.from("profiles").select("full_name").eq("id", n.completion.completed_by).eq("business_id", biz).maybeSingle();
-      await sendManagerAlert(deps, biz, {
+      await alertManagers(alertDeps, senders, biz, {
         siteName: site?.name ?? "", itemName: n.item?.name ?? "",
         value: withUnit(n.value ?? "", n.item?.unit ?? (n.item?.item_type === "temperature" ? "°C" : null)),
         time: hhmm(n.completion.completed_at, site?.timezone ?? "Europe/London"),
         byName: by?.full_name ?? "", action: "No corrective action recorded",
-      });
+      }, now);
     }
   }
 }

@@ -4,7 +4,8 @@
 import type { BotDeps, FormToken, Identity } from './bot.ts'
 import type { SendFn } from './types.ts'
 import { maskPhone } from './mask.ts'
-import { whatsappUI } from './ui.ts'
+import type { Channel, ChannelUI } from './ui.ts'
+import { alertManagers, makeAlertDeps, type Senders } from './alerts.ts'
 
 const IDENTITY_COLS = 'id, business_id, profile_id, external_id'
 
@@ -33,8 +34,19 @@ export async function pageAll<T>(fetchPage: (from: number, to: number) => Promis
   }
 }
 
+export interface DepsConfig {
+  channel: Channel
+  ui: ChannelUI
+  /** Replies on `channel`. */
+  send: SendFn
+  /** WhatsApp corrective Flow id (unused on Telegram). */
+  correctiveFlowId?: string
+  /** Senders for cross-channel manager alerts; defaults to `{ [channel]: send }`. */
+  senders?: Senders
+}
+
 // deno-lint-ignore no-explicit-any
-export function makeDeps(admin: any, cfg: { send: SendFn; correctiveFlowId: string }): BotDeps {
+export function makeDeps(admin: any, cfg: DepsConfig): BotDeps {
   // deno-lint-ignore no-explicit-any
   const one = async (q: any) => { const { data, error } = await q; if (error) throw error; return data }
 
@@ -45,18 +57,21 @@ export function makeDeps(admin: any, cfg: { send: SendFn; correctiveFlowId: stri
       .map((p: any) => p.id)
 
   const clock = () => new Date()
+  const ch = cfg.channel
+  const channelReady = async (b: string) => !!(await one(admin.rpc('channel_ready', { b, ch })))
+  const alertDeps = makeAlertDeps(admin)
+  const senders: Senders = cfg.senders ?? { [ch]: cfg.send }
 
   return {
-    // WhatsApp only for now; Task 4 makes makeDeps channel-aware.
-    channel: 'whatsapp',
-    ui: whatsappUI(),
+    channel: ch,
+    ui: cfg.ui,
     now: clock,
     send: cfg.send,
     newToken: () => crypto.randomUUID().replace(/-/g, ''),
-    correctiveFlowId: () => cfg.correctiveFlowId,
+    correctiveFlowId: () => cfg.correctiveFlowId ?? '',
 
     findIdentity: async (x) => (await one(admin.from('channel_identities').select(IDENTITY_COLS)
-      .eq('channel', 'whatsapp').eq('external_id', x).is('revoked_at', null).maybeSingle())) ?? null,
+      .eq('channel', ch).eq('external_id', x).is('revoked_at', null).maybeSingle())) ?? null,
     touchIdentity: async (id, at) => { await one(admin.from('channel_identities').update({ last_inbound_at: at.toISOString() }).eq('id', id)) },
     revokeIdentity: async (id) => {
       await one(admin.from('channel_identities').update({ revoked_at: new Date().toISOString() }).eq('id', id).is('revoked_at', null))
@@ -70,35 +85,35 @@ export function makeDeps(admin: any, cfg: { send: SendFn; correctiveFlowId: stri
         .select('code, business_id, profile_id, site_id, issued_by'))
       const c = claimed?.[0]
       if (!c) return { ok: false }
-      // Give the code back if the team can't use WhatsApp yet (manager can enable it and the worker retries).
+      // Give the code back if the team can't use this channel yet (manager can enable it and the worker retries).
       const release = async () => {
         await one(admin.from('channel_link_codes').update({ used_at: null }).eq('code', code).eq('used_at', nowIso))
       }
       let ready: boolean
-      try { ready = !!(await one(admin.rpc('whatsapp_ready', { b: c.business_id }))) }
+      try { ready = await channelReady(c.business_id) }
       catch (err) { await release(); throw err }   // transient failure: don't burn the worker's code
       if (!ready) { await release(); return { ok: false } }
       const prof = await one(admin.from('profiles').select('full_name, site_id')
         .eq('id', c.profile_id).eq('business_id', c.business_id).is('removed_at', null).maybeSingle())
       if (!prof) return { ok: false }   // member removed after the code was issued — code stays burnt
-      // One active identity per number and per profile: revoke both before linking (two queries, no filter-string interpolation).
+      // One active identity per external id and per profile on this channel: revoke both before linking (two queries, no filter-string interpolation).
       await one(admin.from('channel_identities').update({ revoked_at: nowIso })
-        .eq('channel', 'whatsapp').eq('external_id', externalId).is('revoked_at', null))
+        .eq('channel', ch).eq('external_id', externalId).is('revoked_at', null))
       await one(admin.from('channel_identities').update({ revoked_at: nowIso })
-        .eq('channel', 'whatsapp').eq('profile_id', c.profile_id).is('revoked_at', null))
+        .eq('channel', ch).eq('profile_id', c.profile_id).is('revoked_at', null))
       const identity: Identity = await one(admin.from('channel_identities').insert({
-        business_id: c.business_id, profile_id: c.profile_id, channel: 'whatsapp', external_id: externalId,
+        business_id: c.business_id, profile_id: c.profile_id, channel: ch, external_id: externalId,
         consent_source: 'qr_code', consent_text_version: 1, linked_by: c.issued_by, last_inbound_at: nowIso,
       }).select(IDENTITY_COLS).single())
       const siteId = c.site_id ?? prof.site_id
       const site = siteId
         ? await one(admin.from('sites').select('name').eq('id', siteId).eq('business_id', c.business_id).is('removed_at', null).maybeSingle())
         : null
-      console.log('whatsapp linked', maskPhone(externalId))
+      console.log(`${ch} linked`, maskPhone(externalId))
       return { ok: true, identity, name: (prof.full_name ?? '').split(' ')[0] || 'there', siteName: site?.name ?? 'your team' }
     },
 
-    ready: async (b) => !!(await one(admin.rpc('whatsapp_ready', { b }))),
+    ready: channelReady,
 
     person: async (pid) => {
       const p = await one(admin.from('profiles').select('id, business_id, full_name, role, role_id')
@@ -135,9 +150,11 @@ export function makeDeps(admin: any, cfg: { send: SendFn; correctiveFlowId: stri
     completionsSince: (b, since) => pageAll((from, to) => admin.from('checklist_completions')
       .select('template_id, site_id, completed_at').eq('business_id', b).gte('completed_at', since.toISOString())
       .order('completed_at', { ascending: false }).order('id', { ascending: false }).range(from, to)),
+    // WhatsApp Flows only; Telegram renders the Mini App form from the current items.
     flowFor: async (tid, sid) => {
+      if (ch !== 'whatsapp') return null
       const f = await one(admin.from('channel_flows').select('flow_id, item_ids, items_hash, status')
-        .eq('template_id', tid).eq('site_id', sid).eq('channel', 'whatsapp').maybeSingle())
+        .eq('template_id', tid).eq('site_id', sid).eq('channel', ch).maybeSingle())
       return f && f.status === 'published' && f.flow_id ? { flow_id: f.flow_id, item_ids: f.item_ids ?? [], items_hash: f.items_hash } : null
     },
 
@@ -166,17 +183,10 @@ export function makeDeps(admin: any, cfg: { send: SendFn; correctiveFlowId: stri
       }
     },
 
-    managerRecipients: async (b) => {
-      const mgr = await activeManagerIds(b)
-      if (!mgr.length) return []
-      const ids = await one(admin.from('channel_identities').select('external_id, last_inbound_at')
-        .eq('channel', 'whatsapp').eq('business_id', b).is('revoked_at', null).in('profile_id', mgr))
-      // deno-lint-ignore no-explicit-any
-      return (ids ?? []).map((i: any) => ({ external_id: i.external_id, last_inbound_at: i.last_inbound_at ?? null }))
-    },
+    alertManagers: (b, a) => alertManagers(alertDeps, senders, b, a, clock()),
 
     log: async (e) => {
-      const { error } = await admin.from('channel_messages_log').insert({ ...e, channel: 'whatsapp' })
+      const { error } = await admin.from('channel_messages_log').insert({ ...e, channel: ch })
       if (!error) return true
       // uq_channel_inbound_msg: this inbound message id was already logged → duplicate webhook delivery.
       if (e.direction === 'in' && error.code === '23505') return false
@@ -192,7 +202,7 @@ export function makeDeps(admin: any, cfg: { send: SendFn; correctiveFlowId: stri
     },
     recordLinkFailure: async (externalId, at) => {
       await one(admin.from('channel_messages_log').insert({
-        business_id: null, site_id: null, profile_id: null, channel: 'whatsapp', direction: 'in', kind: 'link_fail',
+        business_id: null, site_id: null, profile_id: null, channel: ch, direction: 'in', kind: 'link_fail',
         billable: false, ref_id: await hashExternalId(externalId), created_at: at.toISOString(),
       }))
     },
@@ -201,7 +211,7 @@ export function makeDeps(admin: any, cfg: { send: SendFn; correctiveFlowId: stri
       const since = new Date(clock().getTime() - 2 * 86400_000).toISOString()
       const rows = await one(admin.from('checklist_responses')
         .select('id, value, item:checklist_template_items(id, name, item_type, required, min_value, max_value, unit, sort_order), completion:checklist_completions!inner(site_id, template_id, completed_by, completed_at, source)')
-        .eq('corrective_status', 'needed').eq('completion.completed_by', pid).eq('completion.source', 'whatsapp')
+        .eq('corrective_status', 'needed').eq('completion.completed_by', pid).eq('completion.source', ch)
         .gte('completion.completed_at', since))
       // deno-lint-ignore no-explicit-any
       return ((rows ?? []) as any[])
