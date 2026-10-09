@@ -26,6 +26,7 @@ export interface Business {
   stripe_customer_id: string | null
   haccp_auto_fill: boolean
   whatsapp_enabled?: boolean
+  telegram_enabled?: boolean
   haccp_last_reviewed_at: string | null
   equipment: string[]
   created_at: string

@@ -20,23 +20,28 @@ export function ChannelToggle({ channel, column, title, description }: ChannelTo
   const setBusiness = useAuthStore((s) => s.setBusiness)
   const [busy, setBusy] = useState(false)
   if (!business) return null
-  const on = !!(business as unknown as Record<string, unknown>)[column]
+  const on = !!business[column]
   const toggle = async (v: boolean) => {
     setBusy(true)
-    const { error } = await supabase.from('businesses').update({ [column]: v }).eq('id', business.id)
-    setBusy(false)
-    if (error) { toast.error(error.message); return }
-    setBusiness({ ...business, [column]: v })
-    toast.success(v ? `${title} turned on` : `${title} turned off`)
+    try {
+      const { error } = await supabase.from('businesses').update({ [column]: v }).eq('id', business.id)
+      if (error) { toast.error(error.message); return }
+      setBusiness({ ...business, [column]: v })
+      toast.success(v ? `${title} turned on` : `${title} turned off`)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not update setting')
+    } finally {
+      setBusy(false)
+    }
   }
   return (
     <section data-channel={channel} className="rounded-xl border p-5">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-[15px] font-semibold">{title}</h2>
-          <p className="mt-1 text-[13px] text-muted-foreground">{description}</p>
+          <h2 id={`${channel}-toggle-title`} className="text-[15px] font-semibold">{title}</h2>
+          <p id={`${channel}-toggle-desc`} className="mt-1 text-[13px] text-muted-foreground">{description}</p>
         </div>
-        <Switch checked={on} disabled={busy} onCheckedChange={toggle} />
+        <Switch checked={on} disabled={busy} onCheckedChange={toggle} aria-labelledby={`${channel}-toggle-title`} aria-describedby={`${channel}-toggle-desc`} />
       </div>
     </section>
   )
