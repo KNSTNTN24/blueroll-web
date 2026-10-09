@@ -40,6 +40,7 @@ function fake(over: Partial<BotDeps> = {}) {
     insertNotifications: async (rows) => { state.notifs.push(...rows) },
     linkFailures: async (x, since) => state.linkFails.filter((f: any) => f.x === x && f.at >= since).length,
     recordLinkFailure: async (x, at) => { state.linkFails.push({ x, at }) },
+    pendingCorrective: async () => [],
     ...over,
   }
   return { d, sent, tokens, state }
@@ -215,5 +216,22 @@ describe('bot', () => {
     await handleInbound({ kind: 'button', from, payload: 'checks', id: 'x3' }, f.d)
     expect(asked).toBe(0)
     expect(textOf(f.sent[1])).toBe(TEXT.help)
+  })
+  it('CHECKS re-sends a corrective Flow for each pending out-of-range answer before the due list', async () => {
+    const f = fake({ pendingCorrective: async () => [
+      { response_id: 'r9', item: ITEMS[0], value: '9', site_id: 's1', template_id: 't1' },
+    ] })
+    await handleInbound({ kind: 'text', from, text: 'checks', id: 'x' }, f.d)
+    expect(f.sent[0].interactive.action.parameters).toMatchObject({ flow_id: 'FC', flow_token: 'tok1' })
+    expect(f.sent[0].interactive.action.parameters.flow_action_payload.data).toEqual({ item_name: 'Walk-in fridge', value_text: '9 °C (limit 0–5 °C)' })
+    expect(f.tokens.get('tok1')).toMatchObject({ kind: 'corrective', response_id: 'r9', site_id: 's1', template_id: 't1', profile_id: 'p1' })
+    expect(f.sent[1].interactive.action.buttons[0].reply.id).toBe('fill:t1:s1')
+  })
+  it('pending corrective Flows are capped at 3 and skip sites the person no longer has', async () => {
+    const mk = (i: number, site = 's1') => ({ response_id: 'r' + i, item: ITEMS[0], value: '9', site_id: site, template_id: 't1' })
+    const f = fake({ pendingCorrective: async () => [mk(0, 'gone'), mk(1), mk(2), mk(3), mk(4)] })
+    await handleInbound({ kind: 'text', from, text: 'checks', id: 'x' }, f.d)
+    const corr = f.sent.filter((m) => m.interactive?.action?.parameters?.flow_id === 'FC')
+    expect(corr.map((m) => f.tokens.get(m.interactive.action.parameters.flow_token)!.response_id)).toEqual(['r1', 'r2', 'r3'])
   })
 })

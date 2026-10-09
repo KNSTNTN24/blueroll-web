@@ -38,7 +38,10 @@ export interface BotDeps extends CoreDb {
   log(e: { business_id: string | null; site_id: string | null; profile_id: string | null; direction: 'in' | 'out'; kind: string; template_name?: string; billable: boolean; ref_id?: string; wa_message_id?: string | null }): Promise<void>
   linkFailures(externalId: string, since: Date): Promise<number>
   recordLinkFailure(externalId: string, at: Date): Promise<void>
+  /** This person's WhatsApp-recorded answers still awaiting a corrective action (last 2 days), oldest first. */
+  pendingCorrective(profileId: string): Promise<PendingCorrective[]>
 }
+export interface PendingCorrective { response_id: string; item: TemplateItem; value: string; site_id: string; template_id: string }
 
 export const TEXT = {
   linked: (name: string, site: string) => `Hi ${name} 👋 You're connected to ${site}. I'll remind you before your checks are due. Reply STOP anytime.`,
@@ -58,6 +61,7 @@ export const TEXT = {
 }
 
 const TOKEN_TTL_MS = 24 * 3600 * 1000
+const MAX_PENDING_CORRECTIVE = 3
 // Brute-force guard on 6-digit LINK codes: at most 5 failed attempts per number per hour.
 const MAX_LINK_FAILURES = 5
 const LINK_FAILURE_WINDOW_MS = 3600 * 1000
@@ -82,6 +86,16 @@ export async function sendManagerAlert(d: BotDeps, businessId: string, a: { site
   }
 }
 
+async function sendCorrectiveForm(d: BotDeps, from: string, person: Person, c: { site_id: string; template_id: string; response_id: string; item: TemplateItem; value: string }) {
+  const token = d.newToken()
+  await d.saveToken({ token, kind: 'corrective', business_id: person.business_id, profile_id: person.profile_id, site_id: c.site_id,
+    template_id: c.template_id, item_ids: null, response_id: c.response_id, expires_at: new Date(d.now().getTime() + TOKEN_TTL_MS).toISOString(), used_at: null })
+  await out(d, { business_id: person.business_id, profile_id: person.profile_id, site_id: c.site_id }, flowMessage(from, {
+    flowId: d.correctiveFlowId(), token, cta: 'Add action', body: TEXT.correctiveBody(c.item.name), screen: 'CORRECTIVE',
+    data: { item_name: c.item.name, value_text: valueText(c.item, c.value) },
+  }), 'corrective_flow')
+}
+
 async function sendChecklistForm(d: BotDeps, from: string, person: Person, templateId: string, siteId: string) {
   const ctx = { business_id: person.business_id, profile_id: person.profile_id, site_id: siteId }
   const sites = await d.sitesFor(person.profile_id)
@@ -101,6 +115,9 @@ async function sendDueList(d: BotDeps, from: string, person: Person) {
   const [sites, templates, completions] = await Promise.all([
     d.sitesFor(person.profile_id), d.templates(person.business_id), d.completionsSince(person.business_id, new Date(now.getTime() - 32 * 86400_000)),
   ])
+  // Out-of-range answers still waiting for an action: re-offer the corrective form first (only for sites the person still has).
+  const pending = (await d.pendingCorrective(person.profile_id)).filter((p) => sites.some((s) => s.id === p.site_id))
+  for (const p of pending.slice(0, MAX_PENDING_CORRECTIVE)) await sendCorrectiveForm(d, from, person, p)
   let any = false
   for (const s of sites) {
     const due = dueChecklists({ templates, person, siteId: s.id, tz: s.timezone, now, completions })
@@ -174,13 +191,7 @@ export async function handleInbound(e: InboundEvent, d: BotDeps): Promise<void> 
     }
     const rec = await recordCompletion(d, { person, siteId: tok.site_id, template, items, answers: parsed.answers, source: 'whatsapp', now })
     for (const fl of rec.flagged) {
-      const token = d.newToken()
-      await d.saveToken({ token, kind: 'corrective', business_id: person.business_id, profile_id: person.profile_id, site_id: tok.site_id,
-        template_id: template.id, item_ids: null, response_id: fl.responseId, expires_at: new Date(now.getTime() + TOKEN_TTL_MS).toISOString(), used_at: null })
-      await out(d, { ...ctx, site_id: tok.site_id }, flowMessage(e.from, {
-        flowId: d.correctiveFlowId(), token, cta: 'Add action', body: TEXT.correctiveBody(fl.item.name), screen: 'CORRECTIVE',
-        data: { item_name: fl.item.name, value_text: valueText(fl.item, fl.value) },
-      }), 'corrective_flow')
+      await sendCorrectiveForm(d, e.from, person, { site_id: tok.site_id, template_id: template.id, response_id: fl.responseId, item: fl.item, value: fl.value })
     }
     return
   }

@@ -49,7 +49,10 @@ export function makeDeps(admin: any, cfg: { send: SendFn; correctiveFlowId: stri
       const release = async () => {
         await one(admin.from('channel_link_codes').update({ used_at: null }).eq('code', code).eq('used_at', nowIso))
       }
-      if (!(await one(admin.rpc('whatsapp_ready', { b: c.business_id })))) { await release(); return { ok: false } }
+      let ready: boolean
+      try { ready = !!(await one(admin.rpc('whatsapp_ready', { b: c.business_id }))) }
+      catch (err) { await release(); throw err }   // transient failure: don't burn the worker's code
+      if (!ready) { await release(); return { ok: false } }
       const prof = await one(admin.from('profiles').select('full_name, site_id')
         .eq('id', c.profile_id).eq('business_id', c.business_id).is('removed_at', null).maybeSingle())
       if (!prof) return { ok: false }   // member removed after the code was issued — code stays burnt
@@ -64,7 +67,7 @@ export function makeDeps(admin: any, cfg: { send: SendFn; correctiveFlowId: stri
       }).select(IDENTITY_COLS).single())
       const siteId = c.site_id ?? prof.site_id
       const site = siteId
-        ? await one(admin.from('sites').select('name').eq('id', siteId).is('removed_at', null).maybeSingle())
+        ? await one(admin.from('sites').select('name').eq('id', siteId).eq('business_id', c.business_id).is('removed_at', null).maybeSingle())
         : null
       console.log('whatsapp linked', maskPhone(externalId))
       return { ok: true, identity, name: (prof.full_name ?? '').split(' ')[0] || 'there', siteName: site?.name ?? 'your team' }
@@ -160,6 +163,19 @@ export function makeDeps(admin: any, cfg: { send: SendFn; correctiveFlowId: stri
         business_id: null, site_id: null, profile_id: null, channel: 'whatsapp', direction: 'in', kind: 'link_fail',
         billable: false, ref_id: await hashExternalId(externalId), created_at: at.toISOString(),
       }))
+    },
+
+    pendingCorrective: async (pid) => {
+      const since = new Date(Date.now() - 2 * 86400_000).toISOString()
+      const rows = await one(admin.from('checklist_responses')
+        .select('id, value, item:checklist_template_items(id, name, item_type, required, min_value, max_value, unit, sort_order), completion:checklist_completions!inner(site_id, template_id, completed_by, completed_at, source)')
+        .eq('corrective_status', 'needed').eq('completion.completed_by', pid).eq('completion.source', 'whatsapp')
+        .gte('completion.completed_at', since))
+      // deno-lint-ignore no-explicit-any
+      return ((rows ?? []) as any[])
+        .filter((r) => r.item && r.completion?.site_id)
+        .sort((a, b) => String(a.completion.completed_at).localeCompare(String(b.completion.completed_at)))
+        .map((r) => ({ response_id: r.id, item: r.item, value: r.value ?? '', site_id: r.completion.site_id, template_id: r.completion.template_id }))
     },
 
     insertCompletion: async (row) => await one(admin.from('checklist_completions').insert(row).select('id').single()),
