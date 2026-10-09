@@ -25,7 +25,9 @@ export function planReminders(args: {
           && !alreadySent.has(reminderKey(r.person.profile_id, d.template.id, r.site_id, d.period_key))
       })
       .sort((a, b) => a.deadline_utc!.localeCompare(b.deadline_utc!))
-    if (due.length) jobs.push({ profile_id: r.person.profile_id, external_id: r.external_id, site_id: r.site_id, items: due.slice(0, MAX_PER_MESSAGE) })
+    for (let i = 0; i < due.length; i += MAX_PER_MESSAGE) {
+      jobs.push({ profile_id: r.person.profile_id, external_id: r.external_id, site_id: r.site_id, items: due.slice(i, i + MAX_PER_MESSAGE) })
+    }
   }
   return jobs
 }
