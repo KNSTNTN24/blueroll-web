@@ -32,7 +32,7 @@ function fake(over: Partial<BotDeps> = {}) {
     saveToken: async (t) => { tokens.set(t.token, t) },
     takeToken: async (tok, _now, profileId) => { const t = tokens.get(tok); if (!t || t.used_at || t.profile_id !== profileId) return null; t.used_at = 'x'; return t },
     setCorrective: async (rid, notes) => { state.corrective.push({ rid, notes }); return { templateName: 'Fridge temps', itemName: 'Walk-in fridge', value: '9', siteName: 'Wharf Side', byName: 'Anna', businessId: 'b' } },
-    managerExternalIds: async () => ['447700900999'],
+    managerRecipients: async () => [{ external_id: '447700900999', last_inbound_at: null }],
     log: async (e) => { state.logs.push(e) },
     insertCompletion: async (row) => { state.completions.push({ ...row }); return { id: 'c1' } },
     insertResponses: async (rows) => { state.responses.push(...rows); return rows.map((r, i) => ({ id: 'resp' + i, item_id: r.item_id })) },
@@ -233,5 +233,17 @@ describe('bot', () => {
     await handleInbound({ kind: 'text', from, text: 'checks', id: 'x' }, f.d)
     const corr = f.sent.filter((m) => m.interactive?.action?.parameters?.flow_id === 'FC')
     expect(corr.map((m) => f.tokens.get(m.interactive.action.parameters.flow_token)!.response_id)).toEqual(['r1', 'r2', 'r3'])
+  })
+  it('manager alerts are billable only outside the manager 24h window', async () => {
+    const f = fake({ managerRecipients: async () => [
+      { external_id: '447700900901', last_inbound_at: '2026-10-14T01:00:00Z' },   // 8h40m ago → free
+      { external_id: '447700900902', last_inbound_at: '2026-10-13T09:00:00Z' },   // >24h ago → billable
+      { external_id: '447700900903', last_inbound_at: null },                     // never wrote → billable
+    ] })
+    await f.d.saveToken({ token: 'ct', kind: 'corrective', business_id: 'b', profile_id: 'p1', site_id: 's1', template_id: 't1', item_ids: null, response_id: 'resp0', expires_at: '2099-01-01', used_at: null })
+    await handleInbound({ kind: 'flow', from, token: 'ct', response: { action: 'moved' }, id: 'z' }, f.d)
+    const alerts = f.state.logs.filter((l: any) => l.kind === 'alert')
+    expect(alerts.map((l: any) => l.billable)).toEqual([false, true, true])
+    expect(f.sent.slice(0, 3).map((m: any) => m.to)).toEqual(['447700900901', '447700900902', '447700900903'])
   })
 })

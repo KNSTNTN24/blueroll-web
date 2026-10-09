@@ -34,7 +34,8 @@ export interface BotDeps extends CoreDb {
   saveToken(t: FormToken): Promise<void>
   takeToken(token: string, now: Date, profileId: string): Promise<FormToken | null>   // marks used only if owned by profileId; null if unknown/foreign/used/expired
   setCorrective(responseId: string, notes: string): Promise<{ templateName: string; itemName: string; value: string; siteName: string; byName: string; businessId: string } | null>
-  managerExternalIds(businessId: string): Promise<string[]>
+  /** Linked WhatsApp identities of active owners/managers, with their last inbound time (for the 24h billing window). */
+  managerRecipients(businessId: string): Promise<{ external_id: string; last_inbound_at: string | null }[]>
   log(e: { business_id: string | null; site_id: string | null; profile_id: string | null; direction: 'in' | 'out'; kind: string; template_name?: string; billable: boolean; ref_id?: string; wa_message_id?: string | null }): Promise<void>
   linkFailures(externalId: string, since: Date): Promise<number>
   recordLinkFailure(externalId: string, at: Date): Promise<void>
@@ -61,6 +62,10 @@ export const TEXT = {
 }
 
 const TOKEN_TTL_MS = 24 * 3600 * 1000
+/** WhatsApp customer-service window: a business-initiated template is free within 24h of the person's last inbound message. */
+export const SERVICE_WINDOW_MS = 24 * 3600 * 1000
+export const isBillable = (lastInboundAt: string | null | undefined, now: Date) =>
+  !lastInboundAt || now.getTime() - new Date(lastInboundAt).getTime() >= SERVICE_WINDOW_MS
 const MAX_PENDING_CORRECTIVE = 3
 // Brute-force guard on 6-digit LINK codes: at most 5 failed attempts per number per hour.
 const MAX_LINK_FAILURES = 5
@@ -80,9 +85,11 @@ function valueText(item: TemplateItem, value: string): string {
 }
 
 export async function sendManagerAlert(d: BotDeps, businessId: string, a: { siteName: string; itemName: string; value: string; time: string; byName: string; action: string }) {
-  for (const to of await d.managerExternalIds(businessId)) {
-    const r = await d.send(templateMessage(to, 'manager_alert', [a.siteName, a.itemName, a.value, a.time, a.byName, a.action], []))
-    await d.log({ business_id: businessId, site_id: null, profile_id: null, direction: 'out', kind: 'alert', template_name: 'manager_alert', billable: true, wa_message_id: r.id })
+  const now = d.now()
+  for (const m of await d.managerRecipients(businessId)) {
+    const r = await d.send(templateMessage(m.external_id, 'manager_alert', [a.siteName, a.itemName, a.value, a.time, a.byName, a.action], []))
+    await d.log({ business_id: businessId, site_id: null, profile_id: null, direction: 'out', kind: 'alert', template_name: 'manager_alert',
+      billable: r.ok && isBillable(m.last_inbound_at, now), wa_message_id: r.id })
   }
 }
 

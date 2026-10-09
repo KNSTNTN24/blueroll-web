@@ -24,8 +24,10 @@ export function makeDeps(admin: any, cfg: { send: SendFn; correctiveFlowId: stri
       // deno-lint-ignore no-explicit-any
       .map((p: any) => p.id)
 
+  const clock = () => new Date()
+
   return {
-    now: () => new Date(),
+    now: clock,
     send: cfg.send,
     newToken: () => crypto.randomUUID().replace(/-/g, ''),
     correctiveFlowId: () => cfg.correctiveFlowId,
@@ -138,13 +140,13 @@ export function makeDeps(admin: any, cfg: { send: SendFn; correctiveFlowId: stri
       }
     },
 
-    managerExternalIds: async (b) => {
+    managerRecipients: async (b) => {
       const mgr = await activeManagerIds(b)
       if (!mgr.length) return []
-      const ids = await one(admin.from('channel_identities').select('external_id')
+      const ids = await one(admin.from('channel_identities').select('external_id, last_inbound_at')
         .eq('channel', 'whatsapp').eq('business_id', b).is('revoked_at', null).in('profile_id', mgr))
       // deno-lint-ignore no-explicit-any
-      return (ids ?? []).map((i: any) => i.external_id)
+      return (ids ?? []).map((i: any) => ({ external_id: i.external_id, last_inbound_at: i.last_inbound_at ?? null }))
     },
 
     log: async (e) => {
@@ -166,7 +168,7 @@ export function makeDeps(admin: any, cfg: { send: SendFn; correctiveFlowId: stri
     },
 
     pendingCorrective: async (pid) => {
-      const since = new Date(Date.now() - 2 * 86400_000).toISOString()
+      const since = new Date(clock().getTime() - 2 * 86400_000).toISOString()
       const rows = await one(admin.from('checklist_responses')
         .select('id, value, item:checklist_template_items(id, name, item_type, required, min_value, max_value, unit, sort_order), completion:checklist_completions!inner(site_id, template_id, completed_by, completed_at, source)')
         .eq('corrective_status', 'needed').eq('completion.completed_by', pid).eq('completion.source', 'whatsapp')

@@ -1,11 +1,11 @@
 // supabase/functions/whatsapp-reminders/index.ts
 // Every 10 minutes (pg_cron → net.http_post with x-cron-secret): send due reminders and corrective follow-ups,
-// then tidy old link codes / form tokens. Deployed with --no-verify-jwt; authenticity = x-cron-secret.
+// then tidy old link codes / form tokens / reminder keys. Deployed with --no-verify-jwt; authenticity = x-cron-secret.
 // Never log raw phone numbers — use maskPhone.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { makeSender, templateMessage } from "../_shared/channels/whatsapp.ts";
 import { makeDeps } from "../_shared/channels/db.ts";
-import { sendManagerAlert } from "../_shared/channels/bot.ts";
+import { isBillable, sendManagerAlert } from "../_shared/channels/bot.ts";
 import { maskPhone } from "../_shared/channels/mask.ts";
 import { planCorrective, planReminders, reminderKey, type Recipient } from "../_shared/checklists-core/reminders.ts";
 
@@ -15,7 +15,6 @@ const send = makeSender({ token: Deno.env.get("WA_TOKEN") ?? "", phoneNumberId: 
 const deps = makeDeps(admin, { send, correctiveFlowId: Deno.env.get("WA_CORRECTIVE_FLOW_ID") ?? "" });
 
 const DAY_MS = 86400_000;
-const WINDOW_MS = 24 * 3600 * 1000; // WhatsApp customer-service window: free-form/free within 24h of the person's last message
 const REMINDER_KEY_COLS = "profile_id,template_id,site_id,period_key";
 
 // deno-lint-ignore no-explicit-any
@@ -25,9 +24,23 @@ interface SiteRow { name: string; timezone: string }
 
 const hhmm = (iso: string, tz: string) =>
   new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(iso));
-const inWindow = (ident: Ident | undefined, now: Date) =>
-  !!ident?.last_inbound_at && now.getTime() - new Date(ident.last_inbound_at).getTime() < WINDOW_MS;
 const errMsg = (e: unknown) => String((e as Any)?.message ?? e).slice(0, 200);
+
+/**
+ * Claim a one-off corrective step (nudge / no-action alert) by inserting its log row FIRST.
+ * uq_channel_messages_claim (partial unique index on (ref_id, kind)) makes overlapping runs safe:
+ * a unique_violation (23505) means another run already claimed it. PostgREST onConflict can't target a
+ * partial index, hence a plain insert. Returns the log row id, or null if not claimed by this run.
+ */
+async function claimStep(row: { business_id: string; site_id: string; profile_id: string | null; kind: "corrective_nudge" | "alert_no_action"; template_name?: string; ref_id: string }): Promise<number | null> {
+  const { data, error } = await admin.from("channel_messages_log")
+    .insert({ ...row, channel: "whatsapp", direction: "out", billable: false }).select("id").single();
+  if (error) {
+    if (error.code !== "23505") console.error("whatsapp corrective claim failed", row.kind, errMsg(error));
+    return null;
+  }
+  return data.id as number;
+}
 
 async function remindBusiness(biz: string, list: Ident[], sites: Map<string, SiteRow>, now: Date): Promise<number> {
   const [templates, completions] = await Promise.all([deps.templates(biz), deps.completionsSince(biz, new Date(now.getTime() - 32 * DAY_MS))]);
@@ -73,13 +86,14 @@ async function remindBusiness(biz: string, list: Ident[], sites: Map<string, Sit
       // Give the keys back so the next run (still inside the lead window) retries.
       console.error("whatsapp reminder send failed", maskPhone(job.external_id), r.status);
       for (const it of items) {
-        await admin.from("channel_reminders_sent").delete()
+        const { error: relErr } = await admin.from("channel_reminders_sent").delete()
           .eq("profile_id", job.profile_id).eq("template_id", it.template.id).eq("site_id", job.site_id).eq("period_key", it.period_key);
+        if (relErr) console.error("whatsapp reminder key release failed", maskPhone(job.external_id), it.template.id, it.period_key, errMsg(relErr));
       }
     } else sent++;
     await deps.log({
       business_id: biz, site_id: job.site_id, profile_id: job.profile_id, direction: "out", kind: single ? "reminder" : "reminder_list",
-      template_name: single ? "checklist_reminder" : "checklist_reminder_list", billable: r.ok && !inWindow(ident, now), wa_message_id: r.id,
+      template_name: single ? "checklist_reminder" : "checklist_reminder_list", billable: r.ok && isBillable(ident?.last_inbound_at, now), wa_message_id: r.id,
     });
   }
   return sent;
@@ -111,23 +125,25 @@ async function correctiveBusiness(biz: string, list: Ident[], sites: Map<string,
     const site = sites.get(n.completion.site_id);
     if (a.action === "nudge") {
       const ident = list.find((i) => i.profile_id === n.completion.completed_by);
-      if (ident) {
-        const r = await send(templateMessage(ident.external_id, "corrective_nudge", [site?.name ?? ""], ["checks"]));
-        if (!r.ok) console.error("whatsapp nudge send failed", maskPhone(ident.external_id), r.status);
-        await deps.log({ business_id: biz, site_id: n.completion.site_id, profile_id: n.completion.completed_by, direction: "out", kind: "corrective_nudge",
-          template_name: "corrective_nudge", billable: r.ok && !inWindow(ident, now), ref_id: a.response_id, wa_message_id: r.id });
-      } else {
-        // Person no longer linked: record the step so it isn't retried; the 60-min manager alert still follows.
-        await deps.log({ business_id: biz, site_id: n.completion.site_id, profile_id: null, direction: "out", kind: "corrective_nudge", billable: false, ref_id: a.response_id });
-      }
+      // Claim first; if the person is no longer linked the claim alone records the step (the 60-min manager alert still follows).
+      const logId = await claimStep({ business_id: biz, site_id: n.completion.site_id, profile_id: ident ? n.completion.completed_by : null,
+        kind: "corrective_nudge", template_name: ident ? "corrective_nudge" : undefined, ref_id: a.response_id });
+      if (logId === null || !ident) continue;
+      const r = await send(templateMessage(ident.external_id, "corrective_nudge", [site?.name ?? ""], ["checks"]));
+      if (!r.ok) console.error("whatsapp nudge send failed", maskPhone(ident.external_id), r.status);
+      const { error: upErr } = await admin.from("channel_messages_log")
+        .update({ billable: r.ok && isBillable(ident.last_inbound_at, now), wa_message_id: r.id }).eq("id", logId);
+      if (upErr) console.error("whatsapp nudge log update failed", errMsg(upErr));
     } else {
+      const logId = await claimStep({ business_id: biz, site_id: n.completion.site_id, profile_id: null, kind: "alert_no_action", ref_id: a.response_id });
+      if (logId === null) continue;
+      // Per-manager sends are logged separately by sendManagerAlert (kind 'alert').
       const { data: by } = await admin.from("profiles").select("full_name").eq("id", n.completion.completed_by).eq("business_id", biz).maybeSingle();
       await sendManagerAlert(deps, biz, {
         siteName: site?.name ?? "", itemName: n.item?.name ?? "", value: n.value ?? "",
         time: hhmm(n.completion.completed_at, site?.timezone ?? "Europe/London"),
         byName: by?.full_name ?? "", action: "No corrective action recorded",
       });
-      await deps.log({ business_id: biz, site_id: n.completion.site_id, profile_id: null, direction: "out", kind: "alert_no_action", billable: false, ref_id: a.response_id });
     }
   }
 }
@@ -139,7 +155,8 @@ async function housekeeping(now: Date): Promise<void> {
   const a = await admin.from("channel_link_codes").delete().not("used_at", "is", null).lt("created_at", dayAgo);
   const b = await admin.from("channel_link_codes").delete().lt("expires_at", now.toISOString()).lt("created_at", dayAgo);
   const c = await admin.from("channel_form_tokens").delete().lt("expires_at", twoDaysAgo);
-  for (const r of [a, b, c]) if (r.error) console.error("whatsapp housekeeping failed", errMsg(r.error));
+  const d = await admin.from("channel_reminders_sent").delete().lt("sent_at", new Date(now.getTime() - 60 * DAY_MS).toISOString());
+  for (const r of [a, b, c, d]) if (r.error) console.error("whatsapp housekeeping failed", errMsg(r.error));
 }
 
 Deno.serve(async (req) => {
