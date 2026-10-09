@@ -5,10 +5,14 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { toast } from 'sonner'
+import { Button } from '@/components/ui/button'
 import { Plus, Copy, CheckCircle2, X, ShieldCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ROLE_LABELS, type UserRole } from '@/lib/constants'
 import { format } from 'date-fns'
+import { listIdentities } from '@/lib/whatsapp/client'
+import { ChannelStatus, ChannelConnectDialog } from './whatsapp-connect'
+import { AddWhatsAppMemberDialog } from './add-whatsapp-member'
 
 function getInitials(name: string | null, email: string): string {
   if (name) {
@@ -37,6 +41,8 @@ export default function TeamPage() {
   const [inviteSite, setInviteSite] = useState<string>('')
   const [generatedToken, setGeneratedToken] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const [connecting, setConnecting] = useState<{ id: string; full_name: string | null } | null>(null)
+  const [addingWa, setAddingWa] = useState(false)
   const [tab, setTab] = useState<string>('all') // 'all' or a site id (only used in the all-sites view)
 
   const { data: members = [], isLoading } = useQuery({
@@ -60,6 +66,13 @@ export default function TeamPage() {
       if (error) throw error
       return (data ?? []) as { id: string; name: string; base_tier: string; is_system: boolean }[]
     },
+  })
+
+  const waOn = isManager && !!business?.whatsapp_enabled
+  const { data: identities = [], refetch: refetchIds } = useQuery({
+    queryKey: ['wa-identities', business?.id],
+    enabled: !!business?.id && waOn,
+    queryFn: () => listIdentities(business!.id, 'whatsapp'),
   })
 
   const { data: checkins = [] } = useQuery({
@@ -137,6 +150,8 @@ export default function TeamPage() {
             {multiSite ? `People across ${business?.name ?? 'the group'} · ${sites.length} sites` : 'Manage your team members'}
           </p>
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+        {waOn && <Button variant="outline" onClick={() => setAddingWa(true)}>Add WhatsApp-only member</Button>}
         {isManager && (
           <button onClick={openInvite}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: '#1f9d63', border: 'none', color: '#fff', fontSize: 14, fontWeight: 600, padding: '11px 17px', borderRadius: 11, cursor: 'pointer', boxShadow: '0 1px 2px rgba(16,24,40,.1)' }}
@@ -145,6 +160,7 @@ export default function TeamPage() {
             <Plus className="h-4 w-4" strokeWidth={2} /> Invite member
           </button>
         )}
+        </div>
       </div>
 
       {/* Metric strip */}
@@ -271,6 +287,7 @@ export default function TeamPage() {
                   {multiSite && <th className="px-3 py-2.5">Site</th>}
                   <th className="px-3 py-2.5">Food-safety training</th>
                   <th className="px-3 py-2.5">Status</th>
+                  {waOn && <th className="px-3 py-2.5">WhatsApp</th>}
                   <th className="px-4 py-2.5">Last active</th>
                 </tr>
               </thead>
@@ -289,7 +306,7 @@ export default function TeamPage() {
                               <span className="truncate font-semibold text-foreground">{m.full_name || 'Unnamed'}</span>
                               {you && <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">YOU</span>}
                             </span>
-                            <span className="block text-[11.5px] text-muted-foreground">{ROLE_LABELS[m.role as UserRole] ?? m.role}</span>
+                            <span className="block text-[11.5px] text-muted-foreground">{ROLE_LABELS[m.role as UserRole] ?? m.role}{m.email?.endsWith('@noreply.blueroll.app') ? ' · WhatsApp only' : ''}</span>
                           </span>
                         </span>
                       </td>
@@ -314,6 +331,11 @@ export default function TeamPage() {
                           <span className="inline-flex items-center gap-1.5 text-[12.5px] text-muted-foreground"><span className="h-1.5 w-1.5 rounded-full bg-[#c2c6cc]" /> Off</span>
                         )}
                       </td>
+                      {waOn && (
+                        <td className="px-3 py-3">
+                          <ChannelStatus channel="whatsapp" identity={identities.find((x) => x.profile_id === m.id)} onChanged={refetchIds} onConnect={() => setConnecting(m)} />
+                        </td>
+                      )}
                       <td className="px-4 py-3 text-[12.5px] text-muted-foreground">
                         {onShift ? `Since ${format(new Date(ci.checked_in_at), 'HH:mm')}` : '—'}
                       </td>
@@ -325,6 +347,14 @@ export default function TeamPage() {
           </div>
         )}
       </div>
+
+      {connecting && business && (
+        <ChannelConnectDialog channel="whatsapp" member={connecting} siteId={currentSiteId} onClose={() => { setConnecting(null); refetchIds() }} />
+      )}
+      {addingWa && (
+        <AddWhatsAppMemberDialog roles={roles} sites={sites} defaultSiteId={currentSiteId} onClose={() => setAddingWa(false)}
+          onCreated={(id, name) => { setAddingWa(false); queryClient.invalidateQueries({ queryKey: ['team', business?.id] }); setConnecting({ id, full_name: name }) }} />
+      )}
     </div>
   )
 }
