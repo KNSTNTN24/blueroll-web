@@ -15,6 +15,7 @@ interface TgMainButton {
 }
 interface TgWebApp {
   initData: string
+  colorScheme?: 'light' | 'dark'
   themeParams: Partial<Record<'bg_color' | 'text_color' | 'hint_color' | 'button_color' | 'button_text_color' | 'secondary_bg_color' | 'destructive_text_color', string>>
   ready(): void
   expand(): void
@@ -72,6 +73,8 @@ export function TgForm({ token }: { token: string }) {
       '--tg-accent': tp.button_color ?? 'var(--primary)',
       '--tg-accent-text': tp.button_text_color ?? 'var(--primary-foreground)',
       '--tg-warn': tp.destructive_text_color ?? 'var(--warn)',
+      // Native controls (select, checkbox, scrollbars) follow Telegram's light/dark, not the OS.
+      ...(wa.colorScheme ? { colorScheme: wa.colorScheme } : {}),
     } as CSSProperties)
     if (!token) { setPhase({ kind: 'message', text: MSG.expired }); return }
     fetch(API, { method: 'GET', headers: { 'X-Telegram-Init-Data': wa.initData, 'X-Form-Token': token }, cache: 'no-store' })
