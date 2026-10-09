@@ -4,6 +4,7 @@
 import type { BotDeps, FormToken, Identity } from './bot.ts'
 import type { SendFn } from './types.ts'
 import { maskPhone } from './mask.ts'
+import { whatsappUI } from './ui.ts'
 
 const IDENTITY_COLS = 'id, business_id, profile_id, external_id'
 
@@ -46,6 +47,9 @@ export function makeDeps(admin: any, cfg: { send: SendFn; correctiveFlowId: stri
   const clock = () => new Date()
 
   return {
+    // WhatsApp only for now; Task 4 makes makeDeps channel-aware.
+    channel: 'whatsapp',
+    ui: whatsappUI(),
     now: clock,
     send: cfg.send,
     newToken: () => crypto.randomUUID().replace(/-/g, ''),
@@ -207,7 +211,7 @@ export function makeDeps(admin: any, cfg: { send: SendFn; correctiveFlowId: stri
     },
 
     insertCompletion: async (row) => await one(admin.from('checklist_completions').insert(row).select('id').single()),
-    insertResponses: async (rows) => (await one(admin.from('checklist_responses').insert(rows).select('id, item_id'))) ?? [],
+    insertResponses: async (rows) => rows.length ? ((await one(admin.from('checklist_responses').insert(rows).select('id, item_id'))) ?? []) : [],
     managerIds: activeManagerIds,
     insertNotifications: async (rows) => { if (rows.length) await one(admin.from('notifications').insert(rows)) },
   }

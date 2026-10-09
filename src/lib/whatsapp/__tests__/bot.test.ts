@@ -1,8 +1,10 @@
 // src/lib/whatsapp/__tests__/bot.test.ts
 import { describe, it, expect, beforeEach } from 'vitest'
-import { handleInbound, TEXT, type BotDeps, type FormToken } from '../../../../supabase/functions/_shared/channels/bot'
+import { handleInbound, TEXT, textsFor, type BotDeps, type FormToken } from '../../../../supabase/functions/_shared/channels/bot'
 import type { Template, TemplateItem } from '../../../../supabase/functions/_shared/checklists-core/types'
 import { itemsHash } from '../../../../supabase/functions/_shared/channels/whatsapp-flows'
+import { whatsappUI, telegramUI } from '../../../../supabase/functions/_shared/channels/ui'
+import { parseUpdate } from '../../../../supabase/functions/_shared/channels/telegram'
 
 const T: Template = { id: 't1', business_id: 'b', site_id: null, name: 'Fridge temps', frequency: 'daily', deadline_time: '11:00',
   multi_per_day: false, min_per_day: null, assigned_roles: [], assigned_role_ids: ['r'], active: true }
@@ -15,6 +17,8 @@ function fake(over: Partial<BotDeps> = {}) {
   const sent: any[] = []; const tokens = new Map<string, FormToken>(); const state: any = { completions: [], responses: [], notifs: [], corrective: [], revoked: [], logs: [], linkFails: [] }
   let n = 0
   const d: BotDeps = {
+    channel: 'whatsapp',
+    ui: whatsappUI(),
     now: () => new Date('2026-10-14T09:40:00Z'),
     send: async (m) => { sent.push(m); return { id: 'w' + sent.length, ok: true, status: 200 } },
     newToken: () => 'tok' + ++n,
@@ -275,13 +279,25 @@ describe('bot', () => {
     expect(f.sent[2].interactive.action.parameters.flow_token).toBe('tok2')
     expect(f.tokens.get('tok2')!.item_ids).toEqual(['n1', 'n2'])
   })
-  it('submit with no usable answers while the token has items → nothing recorded, fresh form', async () => {
+  it('submit with no usable answers while the token has required items → nothing recorded, "missing" and a fresh form', async () => {
     const f = fake()
     await handleInbound({ kind: 'button', from, payload: 'fill:t1:s1', id: 'x' }, f.d)
     await handleInbound({ kind: 'flow', from, token: 'tok1', response: {}, id: 'y' }, f.d)
     expect(f.state.completions).toHaveLength(0)
-    expect(textOf(f.sent[1])).toBe(TEXT.checklistChanged)
+    expect(textOf(f.sent[1])).toBe(TEXT.missing(['Walk-in fridge', 'Freezer']))
     expect(f.sent[2].interactive.action.parameters.flow_token).toBe('tok2')
+  })
+  it('all-optional ticks submitted blank → completion recorded, no re-send', async () => {
+    const OPT: TemplateItem[] = [
+      { id: 'o1', name: 'Bins emptied', item_type: 'tick', required: false, min_value: null, max_value: null, unit: null, sort_order: 0 },
+      { id: 'o2', name: 'Floor mopped', item_type: 'tick', required: false, min_value: null, max_value: null, unit: null, sort_order: 1 },
+    ]
+    const f = fake({ items: async () => OPT, flowFor: async () => ({ flow_id: 'F1', item_ids: ['o1', 'o2'], items_hash: await itemsHash(T.name, OPT) }) })
+    await handleInbound({ kind: 'button', from, payload: 'fill:t1:s1', id: 'x' }, f.d)
+    await handleInbound({ kind: 'flow', from, token: 'tok1', response: {}, id: 'y' }, f.d)
+    expect(f.state.completions).toHaveLength(1)
+    expect(f.state.responses).toHaveLength(0)
+    expect(f.sent).toHaveLength(1)
   })
   it('STOP and HELP work even when the business is not ready', async () => {
     const f = fake({ ready: async () => false })
@@ -326,5 +342,92 @@ describe('bot', () => {
     const f = fake({ completionsSince: async (_b, since) => { seen.push(since); return [] } })
     await handleInbound({ kind: 'text', from, text: 'checks', id: 'x' }, f.d)
     expect(seen.map((x) => x.toISOString())).toEqual(['2026-10-13T23:00:00.000Z'])
+  })
+})
+
+describe('bot on Telegram', () => {
+  const tgFrom = '123456789'
+  const tgUi = telegramUI('https://app.blueroll.app/tg/form')
+  const X = textsFor(tgUi)
+  const PHOTO_OPT: TemplateItem = { id: 'i3', name: 'Label photo', item_type: 'photo', required: false, min_value: null, max_value: null, unit: null, sort_order: 2 }
+  const INITIALS: TemplateItem = { id: 'i4', name: 'Initials', item_type: 'initials', required: false, min_value: null, max_value: null, unit: null, sort_order: 3 }
+  const tg = (over: Partial<BotDeps> = {}) => {
+    let flowAsked = 0
+    const f = fake({
+      channel: 'telegram', ui: tgUi,
+      findIdentity: async (x) => (x === tgFrom ? { id: 'tg1', business_id: 'b', profile_id: 'p1', external_id: x } : null),
+      consumeLinkCode: async (code, ext) => code === '482913' ? { ok: true, identity: { id: 'tg1', business_id: 'b', profile_id: 'p1', external_id: ext }, siteName: 'Wharf Side', name: 'Anna' } : { ok: false },
+      flowFor: async () => { flowAsked++; return null },
+      ...over,
+    })
+    return { ...f, flowAsked: () => flowAsked }
+  }
+
+  it('Telegram copy uses slash commands; WhatsApp copy is unchanged', () => {
+    expect(X.linked('Anna', 'Wharf Side')).toBe("Hi Anna 👋 You're connected to Wharf Side. I'll remind you before your checks are due. Send /stop anytime.")
+    expect(X.help).toBe('Blueroll checks: tap Fill in on a reminder, or type /checks to see what is due. Type /stop to disconnect.')
+    expect(X.fallback).toBe('I can help with your checks — tap Fill in or type /checks.')
+    expect(X.formExpired).toBe('This form has expired — type /checks to get a new one.')
+    expect(TEXT.linked('Anna', 'Wharf Side')).toBe("Hi Anna 👋 You're connected to Wharf Side. I'll remind you before your checks are due. Reply STOP anytime.")
+    expect(TEXT.help).toBe('Blueroll checks: tap Fill in on a reminder, or type CHECKS to see what is due. Type STOP to disconnect.')
+    expect(textsFor(whatsappUI())).toEqual(expect.objectContaining({ help: TEXT.help, fallback: TEXT.fallback, formExpired: TEXT.formExpired }))
+  })
+  it('LINK via /start deep link', async () => {
+    const f = tg()
+    const [ev] = parseUpdate({ update_id: 7, message: { message_id: 1, chat: { id: 555, type: 'private' }, from: { id: 555, is_bot: false }, text: '/start 482913' } })
+    await handleInbound(ev, f.d)
+    expect(f.sent[0]).toEqual({ chat_id: '555', text: X.linked('Anna', 'Wharf Side') })
+  })
+  it('/help and unknown text reply in Telegram copy', async () => {
+    const f = tg()
+    await handleInbound({ kind: 'text', from: tgFrom, text: 'help', id: '1' }, f.d)
+    await handleInbound({ kind: 'text', from: tgFrom, text: 'hello', id: '2' }, f.d)
+    expect(f.sent.map((m) => m.text)).toEqual([X.help, X.fallback])
+  })
+  it('/stop revokes with the Telegram reply', async () => {
+    const f = tg()
+    await handleInbound({ kind: 'text', from: tgFrom, text: 'stop', id: '1' }, f.d)
+    expect(f.state.revoked).toEqual(['tg1'])
+    expect(f.sent[0]).toEqual({ chat_id: tgFrom, text: X.stopped })
+  })
+  it('checks → inline choices with fill: ids', async () => {
+    const f = tg()
+    await handleInbound({ kind: 'text', from: tgFrom, text: 'checks', id: '1' }, f.d)
+    expect(f.sent[0]).toEqual({ chat_id: tgFrom, text: X.dueList('Wharf Side'),
+      reply_markup: { inline_keyboard: [[{ text: 'Fridge temps', callback_data: 'fill:t1:s1' }]] } })
+  })
+  it('fill: → web_app form with a checklist token of the supported items; answers the callback', async () => {
+    const f = tg({ items: async () => [...ITEMS, PHOTO_OPT, INITIALS] })
+    await handleInbound({ kind: 'button', from: tgFrom, payload: 'fill:t1:s1', id: '9', callbackId: 'cb1' }, f.d)
+    expect(f.flowAsked()).toBe(0)
+    expect(f.tokens.get('tok1')).toMatchObject({ kind: 'checklist', template_id: 't1', site_id: 's1', profile_id: 'p1', item_ids: ['i1', 'i2'] })
+    expect(f.sent).toEqual([{ chat_id: tgFrom, text: 'Fridge temps', callback_query_id: 'cb1',
+      reply_markup: { inline_keyboard: [[{ text: 'Fill in', web_app: { url: 'https://app.blueroll.app/tg/form?t=tok1' } }]] } }])
+  })
+  it('only the first reply to a callback carries callback_query_id', async () => {
+    const f = tg({ pendingCorrective: async () => [] })
+    await handleInbound({ kind: 'button', from: tgFrom, payload: 'checks', id: '9', callbackId: 'cb2' }, f.d)
+    expect(f.sent[0].callback_query_id).toBe('cb2')
+    const g = tg()
+    await handleInbound({ kind: 'text', from: tgFrom, text: 'checks', id: '10' }, g.d)
+    expect(g.sent[0].callback_query_id).toBeUndefined()
+  })
+  it('required photo → app-only text, no token', async () => {
+    const f = tg({ items: async () => [...ITEMS, { ...PHOTO_OPT, required: true }] })
+    await handleInbound({ kind: 'button', from: tgFrom, payload: 'fill:t1:s1', id: '9' }, f.d)
+    expect(f.sent[0]).toEqual({ chat_id: tgFrom, text: X.appOnly('Fridge temps') })
+    expect(f.tokens.size).toBe(0)
+  })
+  it('pending correctives are not re-sent as Flows on Telegram', async () => {
+    const f = tg({ pendingCorrective: async () => [{ response_id: 'r9', item: ITEMS[0], value: '9', site_id: 's1', template_id: 't1' }] })
+    await handleInbound({ kind: 'text', from: tgFrom, text: 'checks', id: '1' }, f.d)
+    expect(f.tokens.size).toBe(0)
+    expect(f.sent).toHaveLength(1)
+    expect(f.sent[0].reply_markup.inline_keyboard[0][0].callback_data).toBe('fill:t1:s1')
+  })
+  it('unknown Telegram user → Telegram text', async () => {
+    const f = tg()
+    await handleInbound({ kind: 'text', from: '999', text: 'hi', id: '1' }, f.d)
+    expect(f.sent[0]).toEqual({ chat_id: '999', text: X.unknown })
   })
 })
