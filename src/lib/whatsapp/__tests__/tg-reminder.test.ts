@@ -6,7 +6,7 @@ const tpl = (id: string, name: string): Template => ({
   id, business_id: 'b', site_id: null, name, frequency: 'daily', deadline_time: '10:00',
   multi_per_day: false, min_per_day: null, assigned_roles: [], assigned_role_ids: ['r'], active: true,
 })
-const due = (id: string, name: string, deadline: string): DueChecklist =>
+const due = (id: string, name: string, deadline: string | null): DueChecklist =>
   ({ template: tpl(id, name), site_id: 's1', deadline_utc: deadline, period_key: '2026-10-14', overdue: false })
 const URL = 'https://app.blueroll.app/tg/form'
 const job = (items: DueChecklist[]) => ({ external_id: '123456789', siteName: 'Wharf Side', tz: 'Europe/London', items })
@@ -14,6 +14,13 @@ const job = (items: DueChecklist[]) => ({ external_id: '123456789', siteName: 'W
 type Any = any
 
 describe('buildTelegramReminder', () => {
+  it('checklists without a deadline: no empty brackets or double spaces', () => {
+    const one: Any = buildTelegramReminder(job([due('t1', 'Fridge temps', null)]), new Map([['t1', 'a']]))
+    expect(one.text).toBe('Fridge temps is due today at Wharf Side.')
+    const many: Any = buildTelegramReminder(job([due('t1', 'Fridge temps', null), due('t2', 'Probe check', null)]), new Map([['t1', 'a']]))
+    expect(many.text).toBe('2 checks due at Wharf Side: Fridge temps, Probe check (app only)')
+  })
+
   it('single check: "<name> is due at <HH:MM> at <site>." with one Fill in web_app button', () => {
     const m: Any = buildTelegramReminder(job([due('t1', 'Fridge temps', '2026-10-14T09:00:00Z')]), new Map([['t1', 'tok1']]))
     expect(m.chat_id).toBe('123456789')

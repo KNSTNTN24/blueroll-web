@@ -28,10 +28,13 @@ export function buildTelegramReminder(job: TelegramReminderJob, tokens: Map<stri
   let text: string
   if (job.items.length === 1) {
     const d = job.items[0]
-    text = `${d.template.name} is due at ${time(d)} at ${job.siteName}.`
+    text = d.deadline_utc ? `${d.template.name} is due at ${time(d)} at ${job.siteName}.` : `${d.template.name} is due today at ${job.siteName}.`
     if (!tokens.get(d.template.id)) text += ' It can only be completed in the Blueroll app.'
   } else {
-    const names = job.items.map((d) => `${d.template.name} (${time(d)}${tokens.get(d.template.id) ? '' : ', app only'})`)
+    const names = job.items.map((d) => {
+      const notes = [time(d), tokens.get(d.template.id) ? '' : 'app only'].filter(Boolean)
+      return notes.length ? `${d.template.name} (${notes.join(', ')})` : d.template.name
+    })
     text = `${job.items.length} checks due at ${job.siteName}: ${names.join(', ')}`
   }
   return buttons.length ? tgWebAppButton(job.external_id, text, buttons) : tgText(job.external_id, text)
