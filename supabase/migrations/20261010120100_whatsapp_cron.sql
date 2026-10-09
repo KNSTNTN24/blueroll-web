@@ -14,3 +14,9 @@ select cron.schedule('whatsapp-reminders', '*/10 * * * *', $$
     body := '{}'::jsonb,
     timeout_milliseconds := 60000)
 $$);
+
+-- Deferred Flow deprecation: a replaced flow stays live 25h (form tokens live 24h), then whatsapp-sync-flows' cron
+-- path deprecates it and clears these columns.
+alter table public.channel_flows
+  add column if not exists prev_flow_id text,
+  add column if not exists prev_replaced_at timestamptz;
