@@ -71,4 +71,23 @@ describe('alertManagers (cross-channel)', () => {
     await alertManagers(f.deps, { whatsapp: async () => ({ id: null, ok: false, status: 500 }) }, 'b', A, NOW)
     expect(f.logs[0]).toMatchObject({ billable: false, wa_message_id: null })
   })
+  it('a throwing ready() for one channel does not stop the other channel', async () => {
+    const f = fakeAlerts([
+      { channel: 'telegram', external_id: '555', last_inbound_at: null },
+      { channel: 'whatsapp', external_id: '447700900999', last_inbound_at: null },
+    ])
+    f.deps.ready = async (_b, ch) => { if (ch === 'telegram') throw new Error('rpc down'); return true }
+    await alertManagers(f.deps, f.senders, 'b', A, NOW)
+    expect(f.sent.telegram).toHaveLength(0)
+    expect(f.sent.whatsapp).toHaveLength(1)
+  })
+  it('a throwing send for one recipient does not stop the next', async () => {
+    const f = fakeAlerts([
+      { channel: 'telegram', external_id: '555', last_inbound_at: null },
+      { channel: 'whatsapp', external_id: '447700900999', last_inbound_at: null },
+    ])
+    f.senders.telegram = async () => { throw new Error('boom') }
+    await alertManagers(f.deps, f.senders, 'b', A, NOW)
+    expect(f.sent.whatsapp).toHaveLength(1)
+  })
 })

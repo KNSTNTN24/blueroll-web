@@ -29,13 +29,20 @@ export async function alertManagers(deps: AlertDeps, senders: Senders, businessI
   for (const m of await deps.managerRecipients(businessId)) {
     const send = senders[m.channel]
     if (!send) continue   // this function can't reach that channel (e.g. no token configured here)
-    if (!ready.has(m.channel)) ready.set(m.channel, await deps.ready(businessId, m.channel))
-    if (!ready.get(m.channel)) continue
-    const { msg, templateName } = uiFor(m.channel).managerAlert(m.external_id, a)
-    const r = await send(msg)
-    // Only WhatsApp templates outside the 24h service window cost money; Telegram never does.
-    await deps.log({ business_id: businessId, site_id: null, profile_id: null, channel: m.channel, direction: 'out', kind: 'alert',
-      template_name: templateName, billable: m.channel === 'whatsapp' && !!templateName && r.ok && isBillable(m.last_inbound_at, now), wa_message_id: r.id })
+    try {
+      if (!ready.has(m.channel)) {
+        try { ready.set(m.channel, await deps.ready(businessId, m.channel)) }
+        catch (err) { ready.set(m.channel, false); console.error('alert ready check failed', m.channel, String((err as Error)?.message ?? err).slice(0, 200)) }
+      }
+      if (!ready.get(m.channel)) continue
+      const { msg, templateName } = uiFor(m.channel).managerAlert(m.external_id, a)
+      const r = await send(msg)
+      // Only WhatsApp templates outside the 24h service window cost money; Telegram never does.
+      await deps.log({ business_id: businessId, site_id: null, profile_id: null, channel: m.channel, direction: 'out', kind: 'alert',
+        template_name: templateName, billable: m.channel === 'whatsapp' && !!templateName && r.ok && isBillable(m.last_inbound_at, now), wa_message_id: r.id })
+    } catch (err) {
+      console.error('manager alert failed', m.channel, String((err as Error)?.message ?? err).slice(0, 200))   // one recipient must not abort the rest
+    }
   }
 }
 
