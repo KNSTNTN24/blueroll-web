@@ -15,11 +15,12 @@ export const TELEGRAM_BOT = 'BluerollChecksBot'
 
 // Per-channel config. buildLink returns null when the channel's destination is
 // not configured (dialog then shows the code only). Telegram is never null.
-export const CHANNELS: Record<Channel, { label: string; buildLink: (code: string) => string | null; codeText: (code: string) => string; notConfiguredNote: string; scanInstruction: string; codeInstruction: string }> = {
+export const CHANNELS: Record<Channel, { label: string; buildLink: (code: string) => string | null; codeText: (code: string) => string; displayId: (externalId: string) => string; notConfiguredNote: string; scanInstruction: string; codeInstruction: string }> = {
   whatsapp: {
     label: 'WhatsApp',
     buildLink: (code) => (WA_NUMBER ? waLink(WA_NUMBER, code) : null),
     codeText: (code) => `LINK ${code}`,
+    displayId: (id) => maskNumber(id),
     notConfiguredNote: 'WhatsApp number not configured yet',
     scanInstruction: 'Ask them to scan this with their phone camera and press Send in WhatsApp.',
     codeInstruction: 'Send this code to Blueroll on WhatsApp from their phone.',
@@ -28,6 +29,7 @@ export const CHANNELS: Record<Channel, { label: string; buildLink: (code: string
     label: 'Telegram',
     buildLink: (code) => `https://t.me/${TELEGRAM_BOT}?start=${code}`,
     codeText: (code) => `/start ${code}`,
+    displayId: () => 'connected',
     notConfiguredNote: 'Telegram bot not configured yet',
     scanInstruction: 'Scan with the phone camera, then tap Start in Telegram.',
     codeInstruction: 'Send this code to Blueroll on Telegram from their phone.',

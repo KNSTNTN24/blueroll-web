@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import QRCode from 'qrcode'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { CHANNELS, issueLinkCode, revokeIdentity, maskNumber, type Channel } from '@/lib/whatsapp/client'
+import { CHANNELS, issueLinkCode, revokeIdentity, type Channel } from '@/lib/whatsapp/client'
 
 type ChannelProp = Channel
 
@@ -15,7 +15,7 @@ export function ChannelStatus({ channel, identity, onChanged, onConnect }: {
   if (!identity) return <button className="text-[12px] font-medium text-primary underline" onClick={onConnect}>Connect {label}</button>
   return (
     <span className="inline-flex items-center gap-2 text-[12px]">
-      <span className="rounded-full bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700">{label} {maskNumber(identity.external_id)}</span>
+      <span className="rounded-full bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700">{label} {CHANNELS[channel].displayId(identity.external_id)}</span>
       <button className="text-muted-foreground underline" onClick={async () => {
         try { await revokeIdentity(identity.id); toast.success(`${label} disconnected`); onChanged() } catch (e) { toast.error(e instanceof Error ? e.message : String(e)) }
       }}>Disconnect</button>

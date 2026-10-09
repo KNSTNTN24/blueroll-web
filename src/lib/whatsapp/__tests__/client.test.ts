@@ -14,4 +14,8 @@ describe('whatsapp client helpers', () => {
     expect(CHANNELS.telegram.buildLink('012345')).toBe('https://t.me/BluerollChecksBot?start=012345')
     expect(CHANNELS.telegram.scanInstruction).toBe('Scan with the phone camera, then tap Start in Telegram.')
   })
+  it('displayId is channel-aware', () => {
+    expect(CHANNELS.whatsapp.displayId('447700900123')).toBe('+44 7••• ••23')
+    expect(CHANNELS.telegram.displayId('123456789')).toBe('connected')
+  })
 })
