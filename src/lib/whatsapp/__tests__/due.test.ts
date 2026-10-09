@@ -44,6 +44,10 @@ describe('dueChecklists', () => {
     expect(dueChecklists({ templates: [tpl({ multi_per_day: true, min_per_day: 2 })], person: anna, siteId: 's1', tz: L, now, completions: one })).toHaveLength(1)
     expect(dueChecklists({ templates: [tpl({ multi_per_day: true, min_per_day: 0 })], person: anna, siteId: 's1', tz: L, now, completions: [] })).toEqual([])
   })
+  it('multi-per-day counts today only, even if weekly', () => {
+    const yest = [{ template_id: 't1', site_id: 's1', completed_at: '2026-10-13T10:00:00Z' }]
+    expect(dueChecklists({ templates: [tpl({ frequency: 'weekly', multi_per_day: true, min_per_day: 1 })], person: anna, siteId: 's1', tz: L, now, completions: yest })).toHaveLength(1)
+  })
   it('overdue after the deadline; no deadline → deadline_utc null', () => {
     const late = new Date('2026-10-14T10:30:00Z')
     expect(dueChecklists({ templates: [tpl({})], person: anna, siteId: 's1', tz: L, now: late, completions: [] })[0].overdue).toBe(true)
