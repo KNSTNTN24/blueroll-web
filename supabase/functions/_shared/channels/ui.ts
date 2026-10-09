@@ -4,6 +4,8 @@
 import type { OutboundMessage } from './types.ts'
 import { buttonsMessage, flowMessage, templateMessage, textMessage } from './whatsapp.ts'
 import { tgButtons, tgText, tgWebAppButton } from './telegram.ts'
+import { buildTelegramReminder } from './tg-reminder.ts'
+import type { DueChecklist } from '../checklists-core/types.ts'
 
 export type Channel = 'whatsapp' | 'telegram'
 export interface FormRequest { templateName: string; token: string; flowId?: string }
@@ -20,6 +22,11 @@ export interface ChannelUI {
   /** WhatsApp only (corrective Flow); Telegram captures corrective actions inside the Mini App form → null. */
   corrective(to: string, c: { token: string; flowId: string; itemName: string; valueText: string }): OutboundMessage | null
   managerAlert(to: string, a: ManagerAlert): { msg: OutboundMessage; templateName?: string }
+  /**
+   * Telegram only: one message listing a site's due checklists with a Mini App "Fill in" button per checklist that has a
+   * token (null token = app only, listed as text). WhatsApp lists via `choices` (fill: buttons) instead → undefined.
+   */
+  dueForms?(to: string, d: { siteName: string; tz: string; items: DueChecklist[] }, tokens: Map<string, string | null>): OutboundMessage
   /** How the person types a command on this channel: 'CHECKS' (WhatsApp) vs '/checks' (Telegram). */
   commandWord(cmd: Command): string
 }
@@ -51,6 +58,7 @@ export function telegramUI(miniAppBaseUrl: string): ChannelUI {
     choices: (to, body, buttons) => tgButtons(to, body, buttons.slice(0, 3)),
     form: (to, f) => tgWebAppButton(to, f.templateName, [{ title: 'Fill in', url: `${miniAppBaseUrl}?t=${encodeURIComponent(f.token)}` }]),
     corrective: () => null,
+    dueForms: (to, d, tokens) => buildTelegramReminder({ external_id: to, ...d }, tokens, miniAppBaseUrl),
     managerAlert: (to, a) => ({
       msg: tgText(to, `⚠ ${a.siteName} · ${a.itemName} ${a.value} at ${a.time} (${a.byName}). Action: ${a.action}. — via Blueroll`),
     }),

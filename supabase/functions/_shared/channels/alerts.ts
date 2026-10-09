@@ -6,7 +6,8 @@ import type { SendFn } from './types.ts'
 import { isBillable } from './bot.ts'
 import { telegramUI, whatsappUI, type Channel, type ChannelUI, type ManagerAlert } from './ui.ts'
 
-export const TG_MINI_APP_URL = 'https://app.blueroll.app/tg/form'
+export { TG_MINI_APP_URL } from './telegram.ts'
+import { TG_MINI_APP_URL } from './telegram.ts'
 
 export interface AlertRecipient { channel: Channel; external_id: string; last_inbound_at: string | null }
 export interface AlertLogRow {

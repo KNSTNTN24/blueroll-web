@@ -410,11 +410,31 @@ describe('bot on Telegram', () => {
     expect(f.state.revoked).toEqual(['tg1'])
     expect(f.sent[0]).toEqual({ chat_id: tgFrom, text: X.stopped })
   })
-  it('checks → inline choices with fill: ids', async () => {
+  it('checks → one web_app Fill in button per due checklist, tokens minted now (no fill: callbacks)', async () => {
     const f = tg()
     await handleInbound({ kind: 'text', from: tgFrom, text: 'checks', id: '1' }, f.d)
-    expect(f.sent[0]).toEqual({ chat_id: tgFrom, text: X.dueList('Wharf Side'),
-      reply_markup: { inline_keyboard: [[{ text: 'Fridge temps', callback_data: 'fill:t1:s1' }]] } })
+    expect(f.tokens.get('tok1')).toMatchObject({ kind: 'checklist', template_id: 't1', site_id: 's1', profile_id: 'p1', item_ids: ['i1', 'i2'] })
+    expect(f.sent).toEqual([{ chat_id: tgFrom, text: 'Fridge temps is due at 11:00 at Wharf Side.',
+      reply_markup: { inline_keyboard: [[{ text: 'Fill in Fridge temps', web_app: { url: 'https://app.blueroll.app/tg/form?t=tok1' } }]] } }])
+  })
+  it('checks with real UUIDs: ALL due checklists get a button (no 3-cap), app-only ones listed as text, nothing over 64 bytes', async () => {
+    const SITE = '7a6b5c4d-3e2f-4a1b-9c8d-7e6f5a4b3c2d'
+    const ids = ['3f2b8c1e-9d4a-4b6e-8f1a-2c3d4e5f6a7b', '4e3c9d2f-0e5b-4c7f-9a2b-3d4e5f6a7b8c', '5f4d0e3a-1f6c-4d8a-8b3c-4e5f6a7b8c9d', '6a5e1f4b-2a7d-4e9b-9c4d-5f6a7b8c9d0e', '7b6f2a5c-3b8e-4fac-8d5e-6a7b8c9d0e1f']
+    const tpls = ids.map((id, n) => ({ ...T, id, name: `Check ${n + 1}` }))
+    const PHOTO_REQ: TemplateItem = { ...PHOTO_OPT, required: true }
+    const f = tg({
+      sitesFor: async () => [{ id: SITE, name: 'Wharf Side', timezone: 'Europe/London' }],
+      templates: async () => tpls,
+      items: async (tid) => (tid === ids[2] ? [...ITEMS, PHOTO_REQ] : ITEMS),
+    })
+    await handleInbound({ kind: 'text', from: tgFrom, text: 'checks', id: '1' }, f.d)
+    expect(f.sent).toHaveLength(1)
+    const m = f.sent[0]
+    expect(m.text).toBe('5 checks due at Wharf Side: Check 1 (11:00), Check 2 (11:00), Check 3 (11:00, app only), Check 4 (11:00), Check 5 (11:00)')
+    const kb = m.reply_markup.inline_keyboard
+    expect(kb.map((r: any) => r[0].text)).toEqual(['Fill in Check 1', 'Fill in Check 2', 'Fill in Check 4', 'Fill in Check 5'])
+    for (const r of kb) { expect(r[0].callback_data).toBeUndefined(); expect(r[0].web_app.url).toMatch(/^https:\/\/app\.blueroll\.app\/tg\/form\?t=tok\d$/) }
+    expect([...f.tokens.values()].map((t) => [t.template_id, t.site_id])).toEqual([ids[0], ids[1], ids[3], ids[4]].map((id) => [id, SITE]))
   })
   it('fill: → web_app form with a checklist token of the supported items; answers the callback', async () => {
     const f = tg({ items: async () => [...ITEMS, PHOTO_OPT, INITIALS] })
@@ -441,9 +461,9 @@ describe('bot on Telegram', () => {
   it('pending correctives are not re-sent as Flows on Telegram', async () => {
     const f = tg({ pendingCorrective: async () => [{ response_id: 'r9', item: ITEMS[0], value: '9', site_id: 's1', template_id: 't1' }] })
     await handleInbound({ kind: 'text', from: tgFrom, text: 'checks', id: '1' }, f.d)
-    expect(f.tokens.size).toBe(0)
+    expect([...f.tokens.values()].map((t) => t.kind)).toEqual(['checklist'])
     expect(f.sent).toHaveLength(1)
-    expect(f.sent[0].reply_markup.inline_keyboard[0][0].callback_data).toBe('fill:t1:s1')
+    expect(f.sent[0].reply_markup.inline_keyboard[0][0].web_app.url).toBe('https://app.blueroll.app/tg/form?t=tok1')
   })
   it('unknown Telegram user → Telegram text', async () => {
     const f = tg()

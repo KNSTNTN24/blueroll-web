@@ -4,6 +4,8 @@ import type { InboundEvent, OutboundMessage, SendFn } from './types.ts'
 
 export const TG_API = 'https://api.telegram.org'
 export const BOT_USERNAME = 'BluerollChecksBot'
+/** Telegram Mini App checklist form (web). */
+export const TG_MINI_APP_URL = 'https://app.blueroll.app/tg/form'
 
 // deno-lint-ignore no-explicit-any
 type Any = any
@@ -63,18 +65,15 @@ export function parseUpdate(update: unknown): InboundEvent[] {
 
 export const tgText = (chatId: string, text: string): OutboundMessage => ({ chat_id: chatId, text })
 
+/** Telegram rejects callback_data over 64 bytes; never truncate silently (a cut id can't be routed back). */
 const CB_MAX = 64
-const truncBytes = (s: string, max: number): string => {
-  const e = enc.encode(s)
-  if (e.length <= max) return s
-  let out = ''
-  for (const ch of s) { if (enc.encode(out + ch).length > max) break; out += ch }
-  return out
-}
 
 export const tgButtons = (chatId: string, text: string, buttons: { id: string; title: string }[]): OutboundMessage => ({
   chat_id: chatId, text,
-  reply_markup: { inline_keyboard: buttons.map((b) => [{ text: b.title, callback_data: truncBytes(b.id, CB_MAX) }]) },
+  reply_markup: { inline_keyboard: buttons.map((b) => {
+    if (enc.encode(b.id).length > CB_MAX) throw new Error(`telegram callback_data over ${CB_MAX} bytes`)
+    return [{ text: b.title, callback_data: b.id }]
+  }) },
 })
 
 export const tgWebAppButton = (chatId: string, text: string, buttons: { title: string; url: string }[]): OutboundMessage => ({

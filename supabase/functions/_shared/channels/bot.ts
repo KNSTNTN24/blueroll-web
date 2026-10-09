@@ -174,10 +174,23 @@ async function sendDueList(d: BotDeps, from: string, person: Person) {
   const pending = (await d.pendingCorrective(person.profile_id)).filter((p) => sites.some((s) => s.id === p.site_id))
   for (const p of pending.slice(0, MAX_PENDING_CORRECTIVE)) await sendCorrectiveForm(d, from, person, p)
   let any = false
+  const itemIdsCache = new Map<string, string[] | null>()
   for (const s of sites) {
     const due = dueChecklists({ templates, person, siteId: s.id, tz: s.timezone, now, completions })
     if (!due.length) continue
     any = true
+    if (d.ui.dueForms) {
+      // Telegram: callback_data is capped at 64 bytes (a `fill:<uuid>:<uuid>` id is 78), so mint the form tokens now and
+      // send one Mini App button per due checklist (all of them; app-only ones are named in the text).
+      const tokens = new Map<string, string | null>()
+      for (const x of due) {
+        if (!itemIdsCache.has(x.template.id)) itemIdsCache.set(x.template.id, telegramFormItemIds(await d.items(x.template.id)))
+        const ids = itemIdsCache.get(x.template.id)
+        tokens.set(x.template.id, ids ? await saveChecklistToken(d, { ...ctx, site_id: s.id, template_id: x.template.id }, ids) : null)
+      }
+      await out(d, { ...ctx, site_id: s.id }, d.ui.dueForms(from, { siteName: s.name, tz: s.timezone, items: due }, tokens), 'form')
+      continue
+    }
     await out(d, { ...ctx, site_id: s.id }, d.ui.choices(from, TEXT.dueList(s.name), due.slice(0, 3).map((x) => ({ id: `fill:${x.template.id}:${s.id}`, title: x.template.name }))), 'reply')
   }
   if (!any) await out(d, ctx, d.ui.text(from, TEXT.nothingDue), 'reply')

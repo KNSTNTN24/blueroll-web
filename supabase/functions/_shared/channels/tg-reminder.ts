@@ -3,8 +3,7 @@
 // A checklist without a token (e.g. a required photo item) gets no button and is marked "app only" in the text.
 import type { DueChecklist } from '../checklists-core/types.ts'
 import type { OutboundMessage } from './types.ts'
-import { tgText, tgWebAppButton } from './telegram.ts'
-import { TG_MINI_APP_URL } from './alerts.ts'
+import { TG_MINI_APP_URL, tgText, tgWebAppButton } from './telegram.ts'
 
 export interface TelegramReminderJob { external_id: string; siteName: string; tz: string; items: DueChecklist[] }
 

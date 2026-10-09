@@ -47,12 +47,19 @@ describe('parseUpdate', () => {
 
 describe('builders', () => {
   it('tgText', () => expect(tgText('1', 'hi')).toEqual({ chat_id: '1', text: 'hi' }))
-  it('tgButtons one per row, callback_data ≤ 64 bytes', () => {
-    const m = tgButtons('1', 'pick', [{ id: 'a', title: 'A' }, { id: 'x'.repeat(100), title: 'B' }, { id: 'é'.repeat(50), title: 'C' }]) as any
+  it('tgButtons one per row, callback_data kept verbatim up to 64 bytes', () => {
+    const m = tgButtons('1', 'pick', [{ id: 'a', title: 'A' }, { id: 'x'.repeat(64), title: 'B' }, { id: 'é'.repeat(32), title: 'C' }]) as any
     const kb = m.reply_markup.inline_keyboard
     expect(kb).toHaveLength(3)
     expect(kb[0]).toEqual([{ text: 'A', callback_data: 'a' }])
-    for (const row of kb) { expect(row).toHaveLength(1); expect(new TextEncoder().encode(row[0].callback_data).length).toBeLessThanOrEqual(64) }
+    expect(kb[1][0].callback_data).toBe('x'.repeat(64))
+    expect(kb[2][0].callback_data).toBe('é'.repeat(32))
+  })
+  it('tgButtons throws on callback_data over 64 bytes (no silent truncation)', () => {
+    const fill = 'fill:3f2b8c1e-9d4a-4b6e-8f1a-2c3d4e5f6a7b:7a6b5c4d-3e2f-4a1b-9c8d-7e6f5a4b3c2d'   // 78 bytes
+    expect(() => tgButtons('1', 'pick', [{ id: fill, title: 'Fridge temps' }])).toThrow(/64/)
+    expect(() => tgButtons('1', 'pick', [{ id: 'x'.repeat(65), title: 'B' }])).toThrow()
+    expect(() => tgButtons('1', 'pick', [{ id: 'é'.repeat(33), title: 'C' }])).toThrow()
   })
   it('tgWebAppButton', () => expect(tgWebAppButton('1', 't', [{ title: 'Open', url: 'https://x.y/z' }])).toEqual({
     chat_id: '1', text: 't', reply_markup: { inline_keyboard: [[{ text: 'Open', web_app: { url: 'https://x.y/z' } }]] },
