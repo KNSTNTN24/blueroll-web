@@ -13,6 +13,7 @@ import { toggleDemoMode } from '@/lib/demo'
 import { SitesSettings } from './sites-settings'
 import { MembersRoles } from './members-roles'
 import { NotificationsSettings } from './notifications-settings'
+import { WhatsAppSettings } from './whatsapp-settings'
 
 const CONTENT_WIDTH = 860
 const PRICE_PER_SITE = 24.99
@@ -138,6 +139,7 @@ export default function SettingsPage() {
       {tab === 'Sites' && <SitesSettings />}
       {tab === 'Team' && <MembersRoles />}
       {tab === 'Notifications' && <NotificationsSettings />}
+      {tab === 'Notifications' && showAdminTabs && <div className="mt-6"><WhatsAppSettings /></div>}
 
       {/* ── Profile ── */}
       {tab === 'Profile' && (
