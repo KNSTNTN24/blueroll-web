@@ -13,7 +13,11 @@ export async function recordCompletion(db: CoreDb, a: {
   /** Optional corrective notes per flagged item id (Telegram Mini App): stored as notes with corrective_status 'done'. */
   correctiveNotes?: Record<string, string>
 }) {
-  const noteFor = (x: Answer) => (x.flagged && a.correctiveNotes && Object.prototype.hasOwnProperty.call(a.correctiveNotes, x.item_id) ? a.correctiveNotes[x.item_id] : null)
+  const noteFor = (x: Answer): string | null => {
+    if (!x.flagged || !a.correctiveNotes || !Object.prototype.hasOwnProperty.call(a.correctiveNotes, x.item_id)) return null
+    const n = a.correctiveNotes[x.item_id]
+    return typeof n === 'string' && n.trim() ? n : null   // only a non-empty note marks the corrective 'done'
+  }
   const { id: completionId } = await db.insertCompletion({
     template_id: a.template.id, business_id: a.person.business_id, site_id: a.siteId,
     completed_by: a.person.profile_id, completed_at: a.now.toISOString(), source: a.source,

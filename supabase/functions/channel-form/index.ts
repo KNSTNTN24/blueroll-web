@@ -1,5 +1,5 @@
 // supabase/functions/channel-form/index.ts
-// Telegram Mini App form API: GET ?t=<token> → form JSON; POST {t, answers, corrective} → record the checklist.
+// Telegram Mini App form API: GET (header X-Form-Token, or ?t=<token>) → form JSON; POST {t, answers, corrective} → record the checklist.
 // Deploy with --no-verify-jwt: callers are Telegram users, not Supabase users. Authenticity = the Mini App's signed
 // initData (header X-Telegram-Init-Data, HMAC with TG_BOT_TOKEN) + the owner-scoped single-use form token; all rules in
 // _shared/channels/form-api.ts. CORS: https://app.blueroll.app and http://localhost:3001 (dev) only.
@@ -9,7 +9,7 @@ import { verifyInitData, makeTelegramSender } from "../_shared/channels/telegram
 import { makeSender } from "../_shared/channels/whatsapp.ts";
 import { telegramUI } from "../_shared/channels/ui.ts";
 import { TG_MINI_APP_URL, alertManagers, makeAlertDeps, type Senders } from "../_shared/channels/alerts.ts";
-import { makeDeps, peekToken } from "../_shared/channels/db.ts";
+import { makeDeps, peekToken, releaseToken } from "../_shared/channels/db.ts";
 import { recordCompletion } from "../_shared/checklists-core/record.ts";
 
 const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
@@ -35,6 +35,7 @@ const deps: FormApiDeps = {
   },
   peekToken: (t) => peekToken(admin, t),
   takeToken: bot.takeToken,
+  releaseToken: (t, at) => releaseToken(admin, t, at),
   ready: bot.ready,
   person: bot.person,
   sitesFor: bot.sitesFor,
@@ -53,7 +54,7 @@ function cors(origin: string | null): Record<string, string> {
   if (origin && ALLOWED_ORIGINS.has(origin)) {
     h["Access-Control-Allow-Origin"] = origin;
     h["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS";
-    h["Access-Control-Allow-Headers"] = "Content-Type, X-Telegram-Init-Data";
+    h["Access-Control-Allow-Headers"] = "Content-Type, X-Telegram-Init-Data, X-Form-Token";
     h["Access-Control-Max-Age"] = "600";
   }
   return h;
@@ -89,7 +90,9 @@ Deno.serve(async (req) => {
   const initData = req.headers.get("x-telegram-init-data") ?? "";
   try {
     if (req.method === "GET") {
-      const r = await handleFormGet(deps, new URL(req.url).searchParams.get("t") ?? "", initData);
+      // Token preferably in a header (kept out of URLs/logs); ?t= stays as a fallback.
+      const t = req.headers.get("x-form-token") || new URL(req.url).searchParams.get("t") || "";
+      const r = await handleFormGet(deps, t, initData);
       return json(r.status, r.body, h);
     }
     if (req.method === "POST") {

@@ -19,6 +19,8 @@ export interface FormApiDeps {
   /** Read-only lookup by token (any state); validity is checked here so ownership can be checked first. */
   peekToken(token: string): Promise<FormToken | null>
   takeToken(token: string, now: Date, profileId: string): Promise<FormToken | null>
+  /** Undo takeToken after a failed record: clears used_at only if it still equals usedAtIso. */
+  releaseToken(token: string, usedAtIso: string): Promise<void>
   ready(businessId: string): Promise<boolean>
   person(profileId: string): Promise<Person | null>
   sitesFor(profileId: string): Promise<SiteInfo[]>
@@ -112,7 +114,16 @@ export async function handleFormPost(d: FormApiDeps, body: unknown, initData: st
   const taken = await d.takeToken(a.tok.token, now, a.person.profile_id)
   if (!taken) return EXPIRED   // replay / concurrent submit: nothing recorded twice
 
-  const rec = await d.recordCompletionWithCorrective({ person: a.person, siteId: a.tok.site_id, template: a.template, items: a.items, answers: parsed.answers, corrective: notes })
+  let rec: Awaited<ReturnType<FormApiDeps['recordCompletionWithCorrective']>>
+  try {
+    rec = await d.recordCompletionWithCorrective({ person: a.person, siteId: a.tok.site_id, template: a.template, items: a.items, answers: parsed.answers, corrective: notes })
+  } catch (err) {
+    console.error('form record failed', String((err as Error)?.message ?? err).slice(0, 200))
+    // Give the token back so the same form can be resubmitted.
+    try { await d.releaseToken(taken.token, taken.used_at ?? now.toISOString()) }
+    catch (e2) { console.error('form token release failed', String((e2 as Error)?.message ?? e2).slice(0, 200)) }
+    return res(500, { error: 'retry' })
+  }
   const time = new Intl.DateTimeFormat('en-GB', { timeZone: a.site.timezone || 'Europe/London', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(now)
   for (const f of rec.flagged) {
     try {

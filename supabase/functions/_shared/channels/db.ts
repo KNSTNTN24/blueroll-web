@@ -47,6 +47,13 @@ export async function peekToken(admin: any, token: string): Promise<FormToken | 
   return (data as FormToken | null) ?? null
 }
 
+/** Undo a take after a failed record: only the exact take (same used_at) is released. */
+// deno-lint-ignore no-explicit-any
+export async function releaseToken(admin: any, token: string, usedAtIso: string): Promise<void> {
+  const { error } = await admin.from('channel_form_tokens').update({ used_at: null }).eq('token', token).eq('used_at', usedAtIso)
+  if (error) throw error
+}
+
 export interface DepsConfig {
   channel: Channel
   ui: ChannelUI

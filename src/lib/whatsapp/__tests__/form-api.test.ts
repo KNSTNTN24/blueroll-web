@@ -36,6 +36,7 @@ function fake(over: Partial<FormApiDeps> = {}, tok: FormToken = token()) {
       if (!r || r.used_at || r.profile_id !== pid || new Date(r.expires_at) <= now) return null
       r.used_at = now.toISOString(); return r
     },
+    releaseToken: async (t, at) => { const r = tokens.get(t); if (r && r.used_at === at) r.used_at = null },
     ready: async () => true,
     person: async (pid) => ({ profile_id: pid, business_id: 'b', full_name: 'Anna Smith', role: 'kitchen_staff', role_id: 'r' }),
     sitesFor: async () => [{ id: 's1', name: 'Wharf Side', timezone: 'Europe/London' }],
@@ -187,6 +188,26 @@ describe('form api POST', () => {
     expect((await handleFormPost(f.d, { t: 5 }, INIT)).status).toBe(400)
     expect((await handleFormPost(f.d, { t: 'tok1', answers: [] }, INIT)).status).toBe(400)
   })
+  it('record failure releases the token → 500 retry, same token resubmits', async () => {
+    let fail = true
+    const f = fake()
+    const real = f.d.recordCompletionWithCorrective
+    f.d.recordCompletionWithCorrective = async (a) => { if (fail) throw new Error('db down'); return real(a) }
+    expect(await handleFormPost(f.d, ok, INIT)).toEqual({ status: 500, body: { error: 'retry' } })
+    expect(f.tokens.get('tok1')!.used_at).toBeNull()
+    fail = false
+    expect(await handleFormPost(f.d, ok, INIT)).toEqual({ status: 200, body: { ok: true } })
+    expect(f.state.recorded).toHaveLength(1)
+  })
+  it('answers for ids not on the token and a __proto__ key are ignored', async () => {
+    const f = fake()
+    const answers = JSON.parse('{"i1":"3","i2":"yes","i4":"photo.jpg","zzz":"x","__proto__":{"i3":"polluted"}}')
+    expect((await handleFormPost(f.d, { t: 'tok1', answers, corrective: JSON.parse('{"__proto__":{"action":"moved"}}') }, INIT)).status).toBe(200)
+    expect(f.state.recorded[0].answers).toEqual([
+      { item_id: 'i1', value: '3', flagged: false }, { item_id: 'i2', value: 'yes', flagged: false },
+    ])
+    expect(f.state.recorded[0].corrective).toEqual({})
+  })
   it('a failing alert does not fail the submission', async () => {
     const f = fake({ alert: async () => { throw new Error('boom') } })
     const r = await handleFormPost(f.d, { t: 'tok1', answers: { i1: '9', i2: 'yes' }, corrective: { i1: { action: 'moved' } } }, INIT)
@@ -219,5 +240,10 @@ describe('recordCompletion corrective notes', () => {
     expect(s.responses.map((r: any) => [r.notes, r.corrective_status])).toEqual([['Discarded food', 'done'], [null, null]])
     expect(r.flagged[0].notes).toBe('Discarded food')
     expect(s.notifs).toHaveLength(1)
+  })
+  it('an empty or blank note does not mark the corrective done', async () => {
+    const { s, db: x } = db()
+    await recordCompletion(x, { person, siteId: 's1', template: T, items: ITEMS, answers, source: 'telegram', now: NOW, correctiveNotes: { i1: '  ' } })
+    expect(s.responses[0]).toMatchObject({ notes: null, corrective_status: 'needed' })
   })
 })
