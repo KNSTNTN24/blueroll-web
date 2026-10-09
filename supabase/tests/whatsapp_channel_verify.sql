@@ -9,9 +9,11 @@ declare
   res jsonb := '{}'; n int; v_code text;
 begin
   select id into other_biz_profile from profiles where business_id <> biz and removed_at is null limit 1;
-  select id into staff from profiles where business_id = biz and id <> owner and removed_at is null limit 1;
   select id into non_manager from profiles
    where business_id = biz and role not in ('owner','manager') and removed_at is null limit 1;
+  -- the profile that gets soft-removed is always distinct from the non-manager used for the toggle test
+  select id into staff from profiles
+   where business_id = biz and id <> owner and id is distinct from non_manager and removed_at is null limit 1;
 
   perform set_config('request.jwt.claims', json_build_object('sub', owner, 'role', 'authenticated')::text, true);
   execute 'set local role authenticated';
@@ -35,25 +37,6 @@ begin
   select count(*) into n from channel_form_tokens; res := res || jsonb_build_object('tokens_visible', n);
   execute 'reset role';
 
-  -- revoke_channel_identity as owner
-  if staff is null then
-    res := res || '{"revoke_rpc":"SKIPPED (no staff profile in demo business)","revoke_on_removal":"SKIPPED"}';
-  else
-    insert into channel_identities (business_id, profile_id, channel, external_id)
-      values (biz, staff, 'whatsapp', 'verify-000000001') returning id into ident;
-    execute 'set local role authenticated';
-    perform revoke_channel_identity(ident);
-    execute 'reset role';
-    res := res || jsonb_build_object('revoke_rpc',
-      case when (select revoked_at from channel_identities where id = ident) is not null then 'revoked' else 'NOT REVOKED (BAD)' end);
-    -- fresh identity + soft-removal of the staff profile → trigger revokes
-    insert into channel_identities (business_id, profile_id, channel, external_id)
-      values (biz, staff, 'whatsapp', 'verify-000000002') returning id into ident;
-    update profiles set removed_at = now() where id = staff;
-    res := res || jsonb_build_object('revoke_on_removal',
-      case when (select revoked_at from channel_identities where id = ident) is not null then 'revoked' else 'NOT REVOKED (BAD)' end);
-  end if;
-
   -- a non-manager cannot flip whatsapp_enabled
   if non_manager is null then
     res := res || '{"toggle_non_manager":"SKIPPED (no non-manager profile in demo business)"}';
@@ -67,6 +50,27 @@ begin
         case when found then 'ALLOWED (BAD)' else 'rejected (rls, 0 rows)' end);
     exception when others then res := res || jsonb_build_object('toggle_non_manager', 'rejected'); end;
     execute 'reset role';
+  end if;
+
+  -- revoke_channel_identity as owner
+  if staff is null then
+    res := res || '{"revoke_rpc":"SKIPPED (no staff profile in demo business)","revoke_on_removal":"SKIPPED"}';
+  else
+    insert into channel_identities (business_id, profile_id, channel, external_id)
+      values (biz, staff, 'whatsapp', 'verify-000000001') returning id into ident;
+    -- act as the owner again (the toggle test above switched the claims to the non-manager)
+    perform set_config('request.jwt.claims', json_build_object('sub', owner, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    perform revoke_channel_identity(ident);
+    execute 'reset role';
+    res := res || jsonb_build_object('revoke_rpc',
+      case when (select revoked_at from channel_identities where id = ident) is not null then 'revoked' else 'NOT REVOKED (BAD)' end);
+    -- fresh identity + soft-removal of the staff profile → trigger revokes
+    insert into channel_identities (business_id, profile_id, channel, external_id)
+      values (biz, staff, 'whatsapp', 'verify-000000002') returning id into ident;
+    update profiles set removed_at = now() where id = staff;
+    res := res || jsonb_build_object('revoke_on_removal',
+      case when (select revoked_at from channel_identities where id = ident) is not null then 'revoked' else 'NOT REVOKED (BAD)' end);
   end if;
 
   -- duplicate reminder key is rejected

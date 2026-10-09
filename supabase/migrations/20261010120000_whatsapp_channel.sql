@@ -132,8 +132,11 @@ declare
   v_biz     uuid;
   v_profile uuid;
 begin
+  if auth.uid() is null then
+    raise exception 'not allowed' using errcode = 'insufficient_privilege';
+  end if;
   select ci.business_id, ci.profile_id into v_biz, v_profile from channel_identities ci where ci.id = p_id;
-  if v_biz is null or not (public.is_active_business_manager(v_biz) or v_profile = auth.uid()) then
+  if v_biz is null or not (public.is_active_business_manager(v_biz) or coalesce(v_profile = auth.uid(), false)) then
     raise exception 'not allowed to revoke this identity' using errcode = 'insufficient_privilege';
   end if;
   update channel_identities set revoked_at = now() where id = p_id and revoked_at is null;
