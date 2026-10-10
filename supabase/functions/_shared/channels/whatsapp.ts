@@ -76,9 +76,18 @@ export const templateMessage = (to: string, name: string, bodyParams: string[], 
   ] },
 })
 
+/**
+ * WA_FLOWS_DRAFT=1: flows are created but never published (Meta blocks publishing until the number has an approved
+ * display name and message quality), and sent with mode "draft", which Meta allows for testing.
+ * Read at call time via globalThis so this module still loads under Node (vitest).
+ */
+// deno-lint-ignore no-explicit-any
+export const flowsDraftMode = (): boolean => (globalThis as any).Deno?.env?.get?.('WA_FLOWS_DRAFT') === '1'
+
 export const flowMessage = (to: string, o: { flowId: string; token: string; cta: string; body: string; screen: string; data?: Record<string, unknown> }): OutboundMessage => ({
   messaging_product: 'whatsapp', to, type: 'interactive',
   interactive: { type: 'flow', body: { text: o.body }, action: { name: 'flow', parameters: {
+    ...(flowsDraftMode() ? { mode: 'draft' } : {}),
     flow_message_version: '3', flow_id: o.flowId, flow_token: o.token, flow_cta: o.cta, flow_action: 'navigate',
     flow_action_payload: { screen: o.screen, ...(o.data ? { data: o.data } : {}) },
   } } },
