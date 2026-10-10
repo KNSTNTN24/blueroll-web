@@ -11,7 +11,7 @@
 // deprecates it after 25h, so forms already sent in chats keep working. A failed republish keeps the last good flow.
 // Never log the token or request headers.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { GRAPH_VERSION } from "../_shared/channels/whatsapp.ts";
+import { flowsDraftMode, GRAPH_VERSION } from "../_shared/channels/whatsapp.ts";
 import { buildChecklistFlow, CORRECTIVE_FLOW_JSON, itemsHash } from "../_shared/channels/whatsapp-flows.ts";
 import type { TemplateItem } from "../_shared/checklists-core/types.ts";
 
@@ -85,6 +85,8 @@ async function publishFlow(name: string, flowJson: unknown): Promise<string> {
   try {
     const errs = Array.isArray(created.validation_errors) ? created.validation_errors : [];
     if (errs.length) throw new GraphError(validationText(errs));
+    // Draft mode (WA_FLOWS_DRAFT=1): keep the flow as a DRAFT; messages send it with mode "draft".
+    if (flowsDraftMode()) return id;
     const pub = await graph(`/${id}/publish`, { method: "POST" });
     if (pub?.success === false) throw new GraphError("Flow publish returned success=false");
     return id;
@@ -97,7 +99,10 @@ async function publishFlow(name: string, flowJson: unknown): Promise<string> {
 // Best effort; true when Meta confirmed the deprecation.
 async function deprecate(flowId: string): Promise<boolean> {
   try {
-    const r = await graph(`/${flowId}/deprecate`, { method: "POST" });
+    // A draft can't be deprecated, only deleted.
+    const r = flowsDraftMode()
+      ? await graph(`/${flowId}`, { method: "DELETE" })
+      : await graph(`/${flowId}/deprecate`, { method: "POST" });
     return r?.success !== false;
   } catch (e) {
     console.error("whatsapp sync-flows: deprecate failed", flowId, errMsg(e));

@@ -78,6 +78,18 @@ describe('builders', () => {
     const f = flowMessage('44', { flowId: 'F', token: 'tok', cta: 'Fill in', body: 'Fridge temps', screen: 'CHECKLIST' }) as any
     expect(f.interactive.type).toBe('flow')
     expect(f.interactive.action.parameters).toMatchObject({ flow_message_version: '3', flow_id: 'F', flow_token: 'tok', flow_cta: 'Fill in', flow_action: 'navigate', flow_action_payload: { screen: 'CHECKLIST' } })
+    expect(f.interactive.action.parameters.mode).toBeUndefined()
+  })
+  it('flow message in draft mode (WA_FLOWS_DRAFT=1) sends mode: draft', () => {
+    const g = globalThis as any
+    const prev = g.Deno
+    g.Deno = { env: { get: (k: string) => (k === 'WA_FLOWS_DRAFT' ? '1' : undefined) } }
+    try {
+      const f = flowMessage('44', { flowId: 'F', token: 'tok', cta: 'Fill in', body: 'x', screen: 'CHECKLIST' }) as any
+      expect(f.interactive.action.parameters.mode).toBe('draft')
+    } finally {
+      g.Deno = prev
+    }
   })
 })
 
