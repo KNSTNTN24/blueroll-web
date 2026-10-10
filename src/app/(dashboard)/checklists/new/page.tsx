@@ -19,6 +19,7 @@ import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
 import { CHECKLIST_FREQUENCIES, CHECKLIST_ITEM_TYPES, ITEM_TYPE_LABELS, CHECKLIST_TYPES, DEFAULT_EQUIPMENT, USER_ROLES, type UserRole } from '@/lib/constants'
 import { useRoleLabel } from '@/hooks/use-role-label'
+import { syncTemplateFlows } from '@/lib/whatsapp/client'
 
 const itemSchema = z.object({
   name: z.string().min(1, 'Item name is required'),
@@ -293,6 +294,7 @@ export default function NewChecklistPage() {
       if (iErr) throw iErr
 
       toast.success('Template created')
+      if (business?.whatsapp_enabled) void syncTemplateFlows(tmpl.id)
       queryClient.invalidateQueries({ queryKey: ['all-checklists'] })
       queryClient.invalidateQueries({ queryKey: ['my-checklists'] })
       router.push('/checklists?tab=library')

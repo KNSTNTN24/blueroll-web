@@ -136,6 +136,11 @@ export default function ChecklistHistoryPage({ params }: { params: Promise<{ id:
                     </div>
                     <p className="mt-0.5 text-[12px] text-muted-foreground">
                       By {comp.completed_by_profile?.full_name ?? 'Unknown'}
+                      {(comp.source === 'whatsapp' || comp.source === 'telegram') && (
+                        <span className="ml-2 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-700">
+                          via {comp.source === 'whatsapp' ? 'WhatsApp' : 'Telegram'}
+                        </span>
+                      )}
                       {comp.signed_off_by_profile && (
                         <> &middot; Signed off by {comp.signed_off_by_profile.full_name}</>
                       )}

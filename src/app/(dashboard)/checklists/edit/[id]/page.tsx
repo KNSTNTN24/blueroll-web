@@ -8,6 +8,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
+import { syncTemplateFlows } from '@/lib/whatsapp/client'
 import { toast } from 'sonner'
 import {
   ArrowLeft, Plus, Trash2, ChevronUp, ChevronDown, Loader2,
@@ -202,6 +203,7 @@ export default function EditChecklistPage({ params }: { params: Promise<{ id: st
       if (iErr) throw iErr
 
       toast.success('Template updated')
+      if (business?.whatsapp_enabled) void syncTemplateFlows(id)
       queryClient.invalidateQueries({ queryKey: ['all-checklists'] })
       queryClient.invalidateQueries({ queryKey: ['my-checklists'] })
       queryClient.invalidateQueries({ queryKey: ['checklist-template', id] })

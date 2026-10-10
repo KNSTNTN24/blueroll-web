@@ -1,0 +1,19 @@
+# Only used to pin functions.verify_jwt for the chat functions. NEVER run `supabase config push` from this repo —
+# it would overwrite production auth/project settings with local defaults.
+# Supabase CLI config. Only the settings this repo relies on are set; everything else uses CLI defaults.
+# project_id is a local identifier (deploy target is still --project-ref).
+project_id = "blueroll-web"
+
+# Chat channels: callers are Meta / Telegram / pg_cron / the Telegram Mini App, never Supabase users.
+# Authenticity is checked inside each function (X-Hub-Signature-256, Telegram secret header, x-cron-secret, initData).
+[functions.telegram-webhook]
+verify_jwt = false
+
+[functions.channel-form]
+verify_jwt = false
+
+[functions.whatsapp-reminders]
+verify_jwt = false
+
+[functions.whatsapp-webhook]
+verify_jwt = false
