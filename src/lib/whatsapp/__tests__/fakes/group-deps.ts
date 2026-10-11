@@ -107,8 +107,16 @@ export function fakeGroupDeps(init: Partial<FakeState> = {}, over: Partial<Group
       const row = { id: i >= 0 ? s.lists[i].id : `l${++listN}`, ...r }
       if (i >= 0) s.lists[i] = row; else s.lists.push(row)
     },
-    updateLiveList: async (id, p) => { const l = s.lists.find((x) => x.id === id); if (l) Object.assign(l, p) },
-    deleteLiveList: async (id) => { s.lists = s.lists.filter((l) => l.id !== id) },
+    updateLiveList: async (r, p) => {
+      const l = s.lists.find((x) => x.id === r.id && x.message_id === r.message_id && x.rendered_hash === r.rendered_hash)
+      if (!l) return false
+      Object.assign(l, p); return true
+    },
+    deleteLiveList: async (id, mid) => {
+      const n = s.lists.length
+      s.lists = s.lists.filter((l) => !(l.id === id && l.message_id === mid))
+      return s.lists.length < n
+    },
     saveGroupToken: async (t) => { s.tokens.push({ ...t }) },
     peekGroupToken: async (tok) => { const t = s.tokens.find((x) => x.token === tok); return t ? { ...t } : null },
     takeGroupToken: async (tok, now, by) => {

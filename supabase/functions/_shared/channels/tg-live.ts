@@ -72,9 +72,11 @@ export async function deleteListMessage(api: TgApi, chatId: string, messageId: s
   await api('deleteMessage', { chat_id: chatId, message_id: Number(messageId) })   // best effort: result ignored
 }
 
-async function dropList(d: GroupDeps, api: TgApi, group: ChannelGroup, row: LiveListRow) {
+async function dropList(d: GroupDeps, api: TgApi, group: ChannelGroup, row: LiveListRow): Promise<boolean> {
+  // Row first (compare-and-set on message_id): if a repost replaced it, the new message must not be deleted.
+  if (!(await d.deleteLiveList(row.id, row.message_id))) return false
   await deleteListMessage(api, group.chat_id, row.message_id)
-  await d.deleteLiveList(row.id)
+  return true
 }
 
 export async function unlinkGroup(d: GroupDeps, api: TgApi, group: ChannelGroup, now: Date): Promise<void> {
@@ -124,16 +126,27 @@ export async function repostGroup(d: GroupDeps, api: TgApi, group: ChannelGroup,
 }
 
 /** Cron (every 10 min) and after a submit. `site` null = the site no longer exists or no longer has mapped checklists. */
-export async function refreshList(d: GroupDeps, api: TgApi, group: ChannelGroup, row: LiveListRow, site: SiteInfo | null, now: Date): Promise<ListOutcome> {
-  if (!site || row.list_date !== localDate(now, site.timezone)) { await dropList(d, api, group, row); return 'deleted' }
+export async function refreshList(d: GroupDeps, api: TgApi, group: ChannelGroup, row: LiveListRow, site: SiteInfo | null, now: Date, retried = false): Promise<ListOutcome> {
+  // Writes to the row are compare-and-set on (message_id, rendered_hash): if a repost or another refresh got there first,
+  // re-read the row once and redo the refresh against it; a second loss is left to the next run.
+  const lost = async (): Promise<ListOutcome> => {
+    if (retried) return 'failed'
+    const fresh = (await d.liveLists(group.id)).find((l) => l.id === row.id || l.site_id === row.site_id)
+    return fresh ? refreshList(d, api, group, fresh, site, now, true) : 'unchanged'
+  }
+  if (!site || row.list_date !== localDate(now, site.timezone)) { return (await dropList(d, api, group, row)) ? 'deleted' : lost() }
   const { rendered, tokens } = await buildList(d, group, site, now, row.tokens ?? {})
   const decision = refreshDecision({ listDate: row.list_date, today: localDate(now, site.timezone), openCount: rendered.openCount, storedHash: row.rendered_hash, newHash: rendered.hash })
-  if (decision === 'delete_stale' || decision === 'delete_done') { await dropList(d, api, group, row); return 'deleted' }
+  if (decision === 'delete_stale' || decision === 'delete_done') {
+    return (await dropList(d, api, group, row)) ? 'deleted' : lost()
+  }
   if (decision === 'unchanged') return 'unchanged'
   const r = await api('editMessageText', tgEditHtml(group.chat_id, row.message_id, rendered.text, rendered.keyboard))
   const o = tgOutcome(r)
-  if (o === 'ok' || o === 'not_modified') { await d.updateLiveList(row.id, { tokens, rendered_hash: rendered.hash }); return 'edited' }
-  if (o === 'gone') { await d.deleteLiveList(row.id); return 'deleted' }   // the next reminder or /checks posts a fresh list
+  if (o === 'ok' || o === 'not_modified') {
+    return (await d.updateLiveList(row, { tokens, rendered_hash: rendered.hash })) ? 'edited' : lost()
+  }
+  if (o === 'gone') return (await d.deleteLiveList(row.id, row.message_id)) ? 'deleted' : lost()   // the next reminder or /checks posts a fresh list
   if (o === 'kicked') { await unlinkGroup(d, api, group, now); return 'unlinked' }
   if (o === 'migrated' && r.migrateTo) await d.migrateGroupChat(group.chat_id, r.migrateTo)
   console.error('live list edit failed', group.chat_id, r.status, r.description.slice(0, 120))

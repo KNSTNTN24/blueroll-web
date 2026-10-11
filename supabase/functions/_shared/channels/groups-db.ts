@@ -51,8 +51,10 @@ export interface GroupDeps extends CoreDb {
   liveLists(groupId: string): Promise<LiveListRow[]>
   orphanLiveLists(): Promise<{ row: LiveListRow; chat_id: string }[]>
   saveLiveList(r: Omit<LiveListRow, 'id'>): Promise<void>
-  updateLiveList(id: string, patch: { tokens: Record<string, string>; rendered_hash: string }): Promise<void>
-  deleteLiveList(id: string): Promise<void>
+  /** Compare-and-set: applies only while the row still has the message_id and rendered_hash the caller read. Returns whether it applied. */
+  updateLiveList(row: Pick<LiveListRow, 'id' | 'message_id' | 'rendered_hash'>, patch: { tokens: Record<string, string>; rendered_hash: string }): Promise<boolean>
+  /** Deletes only while the row still points at `messageId` (a repost keeps the id but changes the message). Returns whether it applied. */
+  deleteLiveList(id: string, messageId: string): Promise<boolean>
   saveGroupToken(t: GroupFormToken): Promise<void>
   peekGroupToken(token: string): Promise<GroupFormToken | null>
   takeGroupToken(token: string, now: Date, byName: string): Promise<GroupFormToken | null>
@@ -199,10 +201,12 @@ export function makeGroupDeps(admin: Any, channel: GroupChannel = 'telegram'): G
     saveLiveList: async (r) => {
       await one(admin.from('channel_live_lists').upsert({ ...r, updated_at: new Date().toISOString() }, { onConflict: 'group_id,site_id' }))
     },
-    updateLiveList: async (id, p) => {
-      await one(admin.from('channel_live_lists').update({ ...p, updated_at: new Date().toISOString() }).eq('id', id))
+    updateLiveList: async (row, p) => {
+      let q = admin.from('channel_live_lists').update({ ...p, updated_at: new Date().toISOString() }).eq('id', row.id).eq('message_id', row.message_id)
+      q = row.rendered_hash === null ? q.is('rendered_hash', null) : q.eq('rendered_hash', row.rendered_hash)
+      return !!(await one(q.select('id')))?.length
     },
-    deleteLiveList: async (id) => { await one(admin.from('channel_live_lists').delete().eq('id', id)) },
+    deleteLiveList: async (id, messageId) => !!(await one(admin.from('channel_live_lists').delete().eq('id', id).eq('message_id', messageId).select('id')))?.length,
 
     saveGroupToken: async (t) => { await one(admin.from('channel_form_tokens').insert({ ...t, profile_id: null, response_id: null })) },
     peekGroupToken: async (tok) => {

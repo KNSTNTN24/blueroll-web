@@ -161,6 +161,55 @@ describe('refreshList', () => {
   })
 })
 
+describe('refreshList races (compare-and-set)', () => {
+  const posted = async () => {
+    const f = setup(); const t = fakeTgApi()
+    await repostList(f.d, t.api, GROUP, SITE, NOW)
+    return f
+  }
+  it('(a) a refresh that read the row before a repost does not delete the new row or message', async () => {
+    const f = await posted()
+    const stale = { ...f.s.lists[0] }
+    f.s.completions.push({ template_id: 'tA', site_id: 's1', completed_at: '2026-10-14T09:30:00Z', completed_by: null })
+    // the repost lands while the stale refresh is editing the (now deleted) old message
+    let once = true
+    const t = fakeTgApi((m) => {
+      if (m !== 'editMessageText' || !once) return undefined
+      once = false
+      f.s.lists[0] = { ...f.s.lists[0], message_id: '777', tokens: { tB: 'tokX' }, rendered_hash: 'new' }
+      return { ok: false, status: 400, description: 'Bad Request: message to edit not found' }
+    })
+    await refreshList(f.d, t.api, GROUP, stale, SITE, NOW)
+    expect(f.s.lists).toHaveLength(1)
+    expect(f.s.lists[0].message_id).not.toBe('101')
+    expect(t.calls.filter((c) => c.method === 'deleteMessage' && c.body.message_id === 777)).toEqual([])
+  })
+  it('(a2) stale all-done refresh does not delete a reposted message', async () => {
+    const f = await posted()
+    const stale = { ...f.s.lists[0] }
+    f.s.lists[0] = { ...stale, message_id: '777' }
+    const t = fakeTgApi()
+    f.s.completions.push({ template_id: 'tA', site_id: 's1', completed_at: '2026-10-14T09:30:00Z', completed_by: null }, { template_id: 'tB', site_id: 's1', completed_at: '2026-10-14T09:31:00Z', completed_by: null })
+    await refreshList(f.d, t.api, GROUP, stale, SITE, NOW)
+    expect(t.calls.filter((c) => c.method === 'deleteMessage' && c.body.message_id === 101)).toEqual([])
+  })
+  it('(b) a lost update is retried: the stored row ends up matching the last edit', async () => {
+    const f = await posted()
+    const stale = { ...f.s.lists[0] }
+    f.s.completions.push({ template_id: 'tA', site_id: 's1', completed_at: '2026-10-14T09:30:00Z', completed_by: null })
+    let n = 0
+    const t = fakeTgApi((m) => {
+      if (m === 'editMessageText' && ++n === 1) f.s.lists[0] = { ...f.s.lists[0], rendered_hash: 'other-writer', tokens: { tA: 'tokY', tB: 'tok2' } }
+      return undefined
+    })
+    expect(await refreshList(f.d, t.api, GROUP, stale, SITE, NOW)).toBe('edited')
+    expect(t.calls.filter((c) => c.method === 'editMessageText')).toHaveLength(2)
+    const last = t.calls.filter((c) => c.method === 'editMessageText')[1].body
+    expect(last.reply_markup.inline_keyboard[0][0].url).toBe(link(f.s.lists[0].tokens.tB))
+    expect(f.s.lists[0].rendered_hash).not.toBe('other-writer')
+  })
+})
+
 describe('refreshGroupSite / unlinkGroup', () => {
   it('refreshGroupSite: null when the group has no list at that site', async () => {
     const { d } = setup()
