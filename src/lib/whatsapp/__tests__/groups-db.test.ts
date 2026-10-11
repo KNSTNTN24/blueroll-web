@@ -96,3 +96,52 @@ describe('expireTokens', () => {
     expect(f.calls).toEqual([])
   })
 })
+
+describe('linkGroup', () => {
+  // Chainable PostgREST stand-in: records every builder call per query; `existing` answers the lookup's maybeSingle().
+  function fakeAdmin(existing: { id: string; business_id: string } | null) {
+    const queries: { table: string; ops: [string, ...any[]][] }[] = []
+    const admin = {
+      from: (table: string) => {
+        const q = { table, ops: [] as [string, ...any[]][] }
+        queries.push(q)
+        const result = () => {
+          const op = q.ops[0]?.[0]
+          if (op === 'select' && q.ops.some((o) => o[0] === 'maybeSingle')) return { data: existing, error: null }
+          if (op === 'insert' || op === 'update') return { data: { id: existing?.id ?? 'new', business_id: 'b', channel: 'telegram', chat_id: '-1002', title: 'Kitchen', alerts: false }, error: null }
+          return { data: null, error: null }
+        }
+        const b: any = new Proxy({}, {
+          get: (_t, k: string) => k === 'then'
+            ? (res: any, rej: any) => Promise.resolve(result()).then(res, rej)
+            : (...args: any[]) => { q.ops.push([k, ...args]); return b },
+        })
+        return b
+      },
+    }
+    return { admin, queries }
+  }
+  const NOW_ = new Date('2026-10-14T09:40:00Z')
+  const args = { business_id: 'b', chat_id: '-1002', title: 'Kitchen', linked_by: 'm1', now: NOW_ }
+  const mappingDeletes = (qs: { table: string; ops: any[] }[]) => qs.filter((q) => q.table === 'channel_group_checklists' && q.ops[0][0] === 'delete')
+  const groupUpdate = (qs: { table: string; ops: any[] }[]) => qs.find((q) => q.table === 'channel_groups' && q.ops[0][0] === 'update')!
+
+  it('a new chat → insert, nothing cleared', async () => {
+    const f = fakeAdmin(null)
+    await makeGroupDeps(f.admin).linkGroup(args)
+    expect(mappingDeletes(f.queries)).toEqual([])
+    expect(f.queries.some((q) => q.table === 'channel_groups' && q.ops[0][0] === 'insert')).toBe(true)
+  })
+  it('same business relink (e.g. after an unlink) → old checklist choices and the alerts flag are cleared', async () => {
+    const f = fakeAdmin({ id: 'g1', business_id: 'b' })
+    await makeGroupDeps(f.admin).linkGroup(args)
+    expect(mappingDeletes(f.queries)).toEqual([{ table: 'channel_group_checklists', ops: [['delete'], ['eq', 'group_id', 'g1']] }])
+    expect(groupUpdate(f.queries).ops[0][1]).toMatchObject({ business_id: 'b', unlinked_at: null, alerts: false })
+  })
+  it('another business → cleared as well', async () => {
+    const f = fakeAdmin({ id: 'g1', business_id: 'old' })
+    await makeGroupDeps(f.admin).linkGroup(args)
+    expect(mappingDeletes(f.queries)).toHaveLength(1)
+    expect(groupUpdate(f.queries).ops[0][1]).toMatchObject({ business_id: 'b', alerts: false })
+  })
+})

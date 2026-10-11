@@ -76,7 +76,7 @@ export function fakeGroupDeps(init: Partial<FakeState> = {}, over: Partial<Group
     linkGroup: async (a) => {
       let g = s.groups.find((x) => x.chat_id === a.chat_id)
       if (g) {
-        if (g.business_id !== a.business_id) { const id = g.id; s.mappings = s.mappings.filter((m) => m.group_id !== id); g.alerts = false }
+        const id = g.id; s.mappings = s.mappings.filter((m) => m.group_id !== id); g.alerts = false   // any relink starts clean
         Object.assign(g, { business_id: a.business_id, title: a.title, linked_by: a.linked_by, unlinked_at: null })
       } else {
         g = groupRow({ id: `g${s.groups.length + 1}`, business_id: a.business_id, channel: 'telegram', chat_id: a.chat_id, title: a.title, alerts: false }, { linked_by: a.linked_by })

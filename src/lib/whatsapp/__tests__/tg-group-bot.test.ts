@@ -91,6 +91,15 @@ describe('/link', () => {
     expect(s.mappings).toEqual([])
     expect(s.groups[0]).toMatchObject({ business_id: 'b', alerts: false, unlinked_at: null })
   })
+  it('relinking an unlinked group of the same business clears its old checklists + alerts (a manager chooses again)', async () => {
+    const old = groupRow({ id: 'g1', business_id: 'b', channel: 'telegram', chat_id: '-1002', title: 'Kitchen', alerts: true }, { unlinked_at: '2026-10-13T09:00:00.000Z' })
+    const { d, s } = fakeGroupDeps({ groups: [old], codes: [{ ...CODE }], mappings: [{ group_id: 'g1', template_id: 'tX' }] })
+    const { api, calls } = fakeTgApi()
+    await handleGroupEvent(cmd('link', '482913'), d, api)
+    expect(texts(calls)[0]).toBe(GROUP_TEXT.linked('Fern & Fig'))
+    expect(s.mappings).toEqual([])
+    expect(s.groups[0]).toMatchObject({ id: 'g1', business_id: 'b', alerts: false, unlinked_at: null })
+  })
   it('relinking to another business expires the old lists\' open forms', async () => {
     const old = groupRow({ id: 'g1', business_id: 'old', channel: 'telegram', chat_id: '-1002', title: 'Kitchen', alerts: false })
     const tok = { token: 'tkOld', kind: 'group_checklist' as const, business_id: 'old', group_id: 'g1', site_id: 's1', template_id: 'tX', item_ids: ['i1'], expires_at: '2026-10-15T09:00:00Z', used_at: null, used_by_name: null }

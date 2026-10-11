@@ -154,12 +154,11 @@ export function makeGroupDeps(admin: Any, channel: GroupChannel = 'telegram'): G
           business_id: a.business_id, channel, chat_id: a.chat_id, title: a.title, linked_by: a.linked_by, linked_at: at,
         }).select(GROUP_COLS).single())
       }
-      const moved = existing.business_id !== a.business_id
-      // Relinked to another business: the old business's checklist choices and alerts flag don't carry over.
-      if (moved) await one(admin.from('channel_group_checklists').delete().eq('group_id', existing.id))
+      // Any relink (another business, or the same one after an unlink) starts clean: old checklist choices and the
+      // alerts flag don't carry over — the bot replies "A manager will choose which checks this group does."
+      await one(admin.from('channel_group_checklists').delete().eq('group_id', existing.id))
       return await one(admin.from('channel_groups').update({
-        business_id: a.business_id, title: a.title, linked_by: a.linked_by, linked_at: at, unlinked_at: null,
-        ...(moved ? { alerts: false } : {}),
+        business_id: a.business_id, title: a.title, linked_by: a.linked_by, linked_at: at, unlinked_at: null, alerts: false,
       }).eq('id', existing.id).select(GROUP_COLS).single())
     },
     markGroupUnlinked: async (id, now) => {
