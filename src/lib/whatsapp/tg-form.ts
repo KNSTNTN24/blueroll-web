@@ -6,7 +6,7 @@ import { flagResponse } from './flagging'
 export type ItemType = 'temperature' | 'yes_no' | 'tick' | 'text'
 export interface FormItem { id: string; name: string; type: ItemType; required: boolean; min: number | null; max: number | null; unit: string | null }
 export interface CorrectiveAction { id: string; title: string }
-export interface FormData { templateName: string; siteName: string; items: FormItem[]; correctiveActions: CorrectiveAction[] }
+export interface FormData { templateName: string; siteName: string; items: FormItem[]; correctiveActions: CorrectiveAction[]; consent: string | null }
 export type AnswerValue = string | boolean
 export type Answers = Record<string, AnswerValue | undefined>
 export type Corrective = Record<string, { action: string; details: string } | undefined>
@@ -72,22 +72,40 @@ export function buildPayload(token: string, items: FormItem[], answers: Answers,
   return { t: token, answers: out, corrective: corr }
 }
 
-/** Mini App page copy. */
+/** Mini App page copy (group checks: there is no personal chat to send commands to). */
 export const FORM_MSG = {
   outside: 'Open this form from Telegram.',
-  expired: 'This form has expired — send /checks for a new one.',
-  changed: 'This checklist was updated — send /checks for a new form.',
+  expired: 'This check has expired — open the list in your group again.',
+  changed: 'This checklist was updated — open the list in your group again.',
+  moved: 'This check was moved — open the list again.',
+  notMember: "You're no longer in this group.",
+  unavailable: "Blueroll checks aren't available for this team right now.",
   used: 'Already submitted ✓',
-  forbidden: "You don't have access to this form.",
   unauthorized: "Couldn't verify your Telegram session. Close and open the form again from Telegram.",
+  busy: "Couldn't check your group membership. Please try again in a minute.",
   generic: 'Something went wrong. Please try again.',
   retry: "Couldn't save your answers. Please press Submit again.",
 }
 
-/** Page message for a non-OK channel-form response. */
-export function statusMessage(status: number, error: unknown): string {
+export const usedBy = (by: unknown) => (typeof by === 'string' && by.trim() ? `${FORM_MSG.used} by ${by.trim()}` : FORM_MSG.used)
+
+/** Page message for a non-OK channel-form response (`by` = winner's first name on 410 used). */
+export function statusMessage(status: number, error: unknown, by?: unknown): string {
   if (status === 401) return FORM_MSG.unauthorized
-  if (status === 403) return FORM_MSG.forbidden
-  if (status === 410) return error === 'changed' ? FORM_MSG.changed : error === 'used' ? FORM_MSG.used : FORM_MSG.expired
+  if (status === 403) return error === 'unavailable' ? FORM_MSG.unavailable : FORM_MSG.notMember
+  if (status === 410) {
+    if (error === 'used') return usedBy(by)
+    if (error === 'changed') return FORM_MSG.changed
+    if (error === 'moved') return FORM_MSG.moved
+    return FORM_MSG.expired
+  }
+  if (status === 503) return FORM_MSG.busy
   return FORM_MSG.generic
+}
+
+const TOKEN_RE = /^[A-Za-z0-9_-]{1,128}$/
+/** The live list opens the Mini App by direct link (?startapp= -> initDataUnsafe.start_param); ?t= stays as a fallback. */
+export function resolveToken(startParam: unknown, queryToken: string): string {
+  if (typeof startParam === 'string' && TOKEN_RE.test(startParam)) return startParam
+  return TOKEN_RE.test(queryToken) ? queryToken : ''
 }
