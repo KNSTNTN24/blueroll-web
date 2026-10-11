@@ -1,0 +1,144 @@
+/* HACCP Plan document — one renderer for screen, inspector link and PDF.
+   Design reference: docs/design/haccp-plan/*.dc.html */
+
+.plan-doc {
+  --pd-brand: #1f9d63;
+  --pd-deep: #1f7a52;
+  --pd-tint: #e9f4ee;
+  --pd-ink: #16181d;
+  --pd-body: #3b3f47;
+  --pd-muted: #5f6670;
+  --pd-rule: #d9dce1;
+  --pd-hair: #e9eaed;
+  --pd-canvas: #f6f7f8;
+  --pd-amber: #8a5a0c;
+  --pd-amber-fill: #e0a43a;
+  --pd-amber-tint: #fbf1e1;
+  --pd-red: #d2453f;
+  --pd-slate: #2f4a63;
+  font-family: var(--font-geist), system-ui, sans-serif;
+  color: var(--pd-ink);
+  font-feature-settings: 'tnum' 0;
+}
+.plan-doc *, .plan-doc *::before, .plan-doc *::after { box-sizing: border-box; }
+.plan-doc h1, .plan-doc h2, .plan-doc h3, .plan-doc p { margin: 0; }
+
+.plan-doc[data-mode='screen'] { display: flex; flex-direction: column; gap: 24px; align-items: center; }
+.plan-sheet { width: 100%; background: #fff; display: flex; flex-direction: column; gap: 20px; }
+.plan-doc[data-mode='screen'] .plan-sheet {
+  max-width: 794px; border: 1px solid var(--pd-hair); border-radius: 12px; padding: 44px 64px 36px;
+  scroll-margin-top: 72px;
+}
+
+/* Shared parts */
+.pd-runhead { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 12px; color: var(--pd-muted); border-bottom: 1px solid var(--pd-rule); padding-bottom: 12px; }
+.pd-runhead strong { color: var(--pd-ink); font-weight: 600; }
+.pd-kicker { font-size: 12px; font-weight: 700; letter-spacing: 1.6px; text-transform: uppercase; color: var(--pd-deep); }
+.pd-h1 { font-size: 34px; font-weight: 800; letter-spacing: -1px; line-height: 1.1; text-wrap: balance; }
+.pd-h2 { font-size: 16px; font-weight: 700; }
+.pd-sub { font-size: 12px; color: var(--pd-muted); }
+.pd-pill { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.pd-pill::before { content: ''; width: 7px; height: 7px; border-radius: 9px; background: currentColor; }
+.pd-pill[data-tone='ok'] { background: var(--pd-tint); color: var(--pd-deep); }
+.pd-pill[data-tone='amber'] { background: var(--pd-amber-tint); color: var(--pd-amber); }
+.pd-pill[data-tone='open'] { background: #f1f2f4; color: var(--pd-body); }
+.pd-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.pd-row-c { display: flex; align-items: center; gap: 10px; }
+.pd-footer { margin-top: auto; display: flex; justify-content: space-between; gap: 16px; font-size: 11.5px; color: var(--pd-muted); border-top: 1px solid var(--pd-hair); padding-top: 12px; }
+.pd-box { border: 1px solid var(--pd-rule); border-radius: 10px; }
+.pd-scroll-x { overflow-x: auto; }
+
+/* Method label grid */
+.pd-label-grid { display: grid; grid-template-columns: 132px minmax(0, 1fr); border-top: 1px solid var(--pd-ink); }
+.pd-label-grid > div { padding: 12px 0; border-bottom: 1px solid var(--pd-rule); }
+.pd-label { font-size: 13px; font-weight: 700; }
+.pd-text { font-size: 15px; line-height: 1.5; }
+.pd-text-2 { font-size: 15px; line-height: 1.5; color: var(--pd-body); }
+.pd-ticks { display: flex; flex-direction: column; gap: 7px; }
+.pd-tick { display: flex; gap: 10px; font-size: 15px; line-height: 1.5; }
+.pd-tick svg { flex: none; margin-top: 2px; }
+.pd-answer { display: flex; flex-direction: column; gap: 4px; padding-top: 6px; }
+.pd-answer-label { font-size: 12px; font-weight: 600; color: var(--pd-muted); }
+.pd-answer-auto { font-size: 11.5px; font-weight: 600; color: var(--pd-deep); }
+.pd-answer p { font-size: 14.5px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.pd-open { background: var(--pd-amber-tint); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
+.pd-open li { font-size: 13px; line-height: 1.45; }
+.pd-open ul { margin: 0; padding-left: 18px; }
+
+/* Tables */
+.pd-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.pd-table thead { display: table-header-group; }
+.pd-table th { text-align: left; font-size: 12px; font-weight: 700; color: var(--pd-body); background: var(--pd-canvas); padding: 8px 12px; border-bottom: 1px solid var(--pd-rule); }
+.pd-table td { padding: 8px 12px; border-bottom: 1px solid var(--pd-hair); vertical-align: top; line-height: 1.45; }
+.pd-table tr { break-inside: avoid; }
+
+/* Proof */
+.pd-proof { border: 1px solid var(--pd-brand); border-radius: 12px; padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; }
+.pd-proof[data-empty='1'] { border-color: var(--pd-rule); border-style: dashed; }
+.pd-strip { display: grid; grid-template-columns: repeat(28, minmax(0, 1fr)); gap: 3px; }
+.pd-strip > span { height: 20px; border-radius: 3px; }
+.pd-day-ok { background: var(--pd-brand); }
+.pd-day-flagged { background: var(--pd-red); }
+.pd-day-corrected { background: var(--pd-amber-fill); }
+.pd-day-missed { background: repeating-linear-gradient(135deg, #c9cdd3 0 3px, #eef0f2 3px 6px); }
+.pd-day-none { background: #eef0f2; }
+.pd-stats3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; font-size: 12.5px; line-height: 1.4; }
+.pd-stat-v { font-size: 20px; font-weight: 700; letter-spacing: -0.4px; }
+.pd-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; color: var(--pd-muted); }
+.pd-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.pd-legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+
+/* Grids that stack on phones */
+.pd-grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+.pd-grid-4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.pd-grid-5 { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+
+@media (max-width: 640px) {
+  .plan-doc[data-mode='screen'] { gap: 12px; }
+  .plan-doc[data-mode='screen'] .plan-sheet { padding: 20px 16px; border-radius: 0; border-left: 0; border-right: 0; }
+  .plan-doc[data-mode='screen'] .pd-grid-2,
+  .plan-doc[data-mode='screen'] .pd-grid-4,
+  .plan-doc[data-mode='screen'] .pd-label-grid { grid-template-columns: minmax(0, 1fr); }
+  .plan-doc[data-mode='screen'] .pd-label-grid > div:nth-child(odd) { border-bottom: 0; padding-bottom: 0; }
+  .plan-doc[data-mode='screen'] .pd-grid-5 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .plan-doc[data-mode='screen'] .pd-stats3 { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .plan-doc[data-mode='screen'] .pd-h1 { font-size: 28px; }
+  .plan-doc[data-mode='screen'] .pd-cover-band { padding: 28px 20px; }
+  .plan-doc[data-mode='screen'] .pd-cover-title { font-size: 44px; }
+  .plan-doc[data-mode='screen'] .pd-runhead { flex-wrap: wrap; }
+}
+
+/* Print */
+@page { size: A4; margin: 14mm 16mm 18mm; }
+.plan-doc[data-mode='print'] { -webkit-print-color-adjust: exact; print-color-adjust: exact; background: #fff; }
+.plan-doc[data-mode='print'] .plan-sheet { break-before: page; padding: 0; }
+.plan-doc[data-mode='print'] .plan-sheet:first-child { break-before: auto; }
+.plan-keep { break-inside: avoid; }
+@media print {
+  html, body { background: #fff !important; }
+  .plan-no-print { display: none !important; }
+  .plan-doc { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .plan-doc .plan-sheet { break-before: page; border: 0 !important; border-radius: 0 !important; padding: 0 !important; max-width: none !important; }
+  .plan-doc .plan-sheet:first-child { break-before: auto; }
+}
+
+/* Cover */
+.pd-cover-band { background: var(--pd-deep); color: #fff; border-radius: 10px; padding: 44px 48px 40px; display: flex; flex-direction: column; gap: 56px; }
+.pd-cover-title { font-size: 60px; line-height: 1.02; font-weight: 800; letter-spacing: -2px; }
+.pd-cover-chip { font-size: 12px; font-weight: 600; letter-spacing: 1.6px; text-transform: uppercase; padding: 6px 12px; border: 1px solid rgba(255, 255, 255, 0.55); border-radius: 999px; }
+.plan-doc[data-mode='screen'] .pd-cover-sheet { padding: 0; overflow: hidden; }
+.plan-doc[data-mode='screen'] .pd-cover-sheet .pd-cover-band { border-radius: 0; }
+.plan-doc[data-mode='screen'] .pd-cover-body { padding: 0 64px 36px; }
+@media (max-width: 640px) { .plan-doc[data-mode='screen'] .pd-cover-body { padding: 0 16px 20px; } }
+.pd-cover-body { display: flex; flex-direction: column; gap: 28px; }
+
+/* Allergen matrix */
+.pd-matrix { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+.pd-matrix thead { display: table-header-group; }
+.pd-matrix th { background: var(--pd-canvas); border-bottom: 1px solid var(--pd-rule); font-weight: 600; color: var(--pd-body); }
+.pd-matrix th.pd-vert { height: 84px; padding: 0 0 8px; width: 28px; vertical-align: bottom; border-left: 1px solid var(--pd-hair); }
+.pd-matrix th.pd-vert span { writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; font-size: 11.5px; display: inline-block; }
+.pd-matrix td { border-bottom: 1px solid var(--pd-hair); padding: 6px 10px; }
+.pd-matrix td.pd-cell { border-left: 1px solid var(--pd-hair); text-align: center; padding: 6px 0; }
+.pd-has { display: inline-block; width: 13px; height: 13px; border-radius: 4px; background: var(--pd-ink); vertical-align: middle; }
+.pd-trace { font-weight: 800; color: var(--pd-amber); }

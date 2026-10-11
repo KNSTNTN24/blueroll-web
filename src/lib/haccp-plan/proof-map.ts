@@ -9,7 +9,7 @@ export function mergeDays(strips: DayStatus[][]): DayStatus[] {
 
 type Rule = { keys?: string[]; sections?: string[]; name?: RegExp; title: string; deliveries?: boolean; all?: boolean }
 const RULES: Record<string, Rule> = {
-  chilled_storage: { keys: ['fridge_temps'], sections: ['temperature'], name: /fridge|freezer|temperature/i, title: 'Fridge & freezer temperature log' },
+  chilled_storage: { keys: ['fridge_temps'], sections: ['temperature'], name: /fridge|freezer|chiller/i, title: 'Fridge & freezer temperature log' },
   freezing: { keys: ['fridge_temps'], sections: ['temperature'], name: /freezer/i, title: 'Freezer temperature log' },
   chilling_down: { keys: ['cooling'], name: /cool/i, title: 'Cooling records' },
   defrosting: { keys: ['defrosting'], name: /defrost/i, title: 'Defrosting records' },

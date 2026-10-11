@@ -39,6 +39,14 @@ describe('proofForMethod', () => {
     expect(p?.stats[1]).toEqual({ value: '2', label: 'Out of range — 2 corrected', tone: 'amber' })
     expect(p?.stats[2].value).toBe('TA · PK')
   })
+  it('does not treat cooking temperature logs as fridge records', () => {
+    const p = proofForMethod('chilled_storage', proof([
+      tpl({ name: 'Fridge & Freezer Temperatures', libraryKey: 'fridge_temps', completions: 2 }),
+      tpl({ name: 'Cooking Temperatures', libraryKey: 'cooking_temps', sfbbSection: 'cooking', completions: 5 }),
+      tpl({ name: 'Hot Holding Temperature', sfbbSection: 'cooking', completions: 5 }),
+    ]))
+    expect(p?.sourceNames).toEqual(['Fridge & Freezer Temperatures'])
+  })
   it('uses deliveries for suppliers and stock control', () => {
     const p = proofForMethod('suppliers', proof([], { count: 40, outOfRange: 1, days: days('ok') }))
     expect(p?.title).toBe('Delivery checks')
