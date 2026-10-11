@@ -17,3 +17,6 @@ verify_jwt = false
 
 [functions.whatsapp-webhook]
 verify_jwt = false
+
+[functions.haccp-plan]
+verify_jwt = false

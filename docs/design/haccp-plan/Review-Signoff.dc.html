@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>HACCP Pack — Review and sign-off</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&amp;family=Caveat:wght@500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#ffffff}
+a{color:#1f7a52}a:hover{color:#16181d}
+</style>
+</helmet>
+<div style="width: 794px; height: 1123px; box-sizing: border-box; padding: 44px 64px 36px; background: #ffffff; font-family: Geist, system-ui, sans-serif; color: #16181d; display: flex; flex-direction: column; gap: 20px">
+
+  <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: #5f6670; border-bottom: 1px solid #d9dce1; padding-bottom: 12px">
+    <div style="display: flex; align-items: center; gap: 8px">
+      <svg viewBox="100 50 370 430" width="13" height="15" aria-hidden="true"><path fill="#1f7a52" d="M241 97V203.426C254.606 198.617 269.247 196 284.5 196C356.573 196 415 254.427 415 326.5C415 398.573 356.573 457 284.5 457C212.594 457 154.272 398.843 154.003 327H154V97H241ZM284.5 283C260.476 283 241 302.476 241 326.5C241 350.524 260.476 370 284.5 370C308.524 370 328 350.524 328 326.5C328 302.476 308.524 283 284.5 283Z"></path></svg>
+      <span style="font-weight: 600; color: #16181d">St James’s Café · Borough</span>
+      <span>HACCP Plan v4</span>
+    </div>
+    <span>5 · Management · p. 28</span>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 6px">
+    <div style="display: flex; align-items: center; gap: 16px">
+      <dc-import name="SectionIcon" icon="management" size="56" tone="solid" hint-size="56px,56px"></dc-import>
+      <div style="display: flex; flex-direction: column; gap: 4px">
+        <div style="font-size: 12px; font-weight: 700; letter-spacing: 1.6px; text-transform: uppercase; color: #1f7a52">Safe method 5.7 · Management</div>
+        <h1 style="margin: 0; font-size: 34px; font-weight: 800; letter-spacing: -1px; line-height: 1.1">Review &amp; sign-off</h1>
+      </div>
+    </div>
+    <p style="margin: 0; font-size: 15px; line-height: 1.55; color: #3b3f47; max-width: 600px">We review this plan every four weeks, and straight away when the menu, equipment, suppliers or staff change.</p>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 10px">
+    <h2 style="margin: 0; font-size: 16px; font-weight: 700">4-weekly reviews</h2>
+    <div style="border: 1px solid #d9dce1; border-radius: 10px; overflow: hidden">
+      <div style="display: grid; grid-template-columns: 96px 120px minmax(0, 1fr) 60px; background: #f6f7f8; border-bottom: 1px solid #d9dce1; font-size: 12px; font-weight: 700; color: #3b3f47">
+        <div style="padding: 9px 14px">Date</div><div style="padding: 9px 14px">Reviewed by</div><div style="padding: 9px 14px">Problems found · what changed</div><div style="padding: 9px 14px">Ver.</div>
+      </div>
+      <sc-for list="{{reviews}}" as="r" hint-placeholder-count="4">
+        <div style="display: grid; grid-template-columns: 96px 120px minmax(0, 1fr) 60px; border-bottom: 1px solid #e9eaed; font-size: 13px; line-height: 1.45">
+          <div style="padding: 10px 14px; font-weight: 600; font-variant-numeric: tabular-nums">{{r.date}}</div>
+          <div style="padding: 10px 14px">{{r.by}}</div>
+          <div style="padding: 10px 14px">{{r.notes}}</div>
+          <div style="padding: 10px 14px; font-weight: 600">{{r.ver}}</div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 10px">
+    <h2 style="margin: 0; font-size: 16px; font-weight: 700">Changes in this version</h2>
+    <div style="display: flex; flex-direction: column; gap: 6px">
+      <sc-for list="{{changes}}" as="c" hint-placeholder-count="3">
+        <div style="display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 10px; font-size: 13px; line-height: 1.45; padding: 8px 12px; background: #f6f7f8; border-radius: 8px">
+          <span style="font-weight: 700; color: #1f7a52">{{c.ref}}</span>
+          <span>{{c.text}}</span>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div style="border: 1px solid #16181d; border-radius: 12px; padding: 22px 24px; display: flex; flex-direction: column; gap: 18px">
+    <div style="font-size: 12px; font-weight: 700; letter-spacing: 1.6px; text-transform: uppercase; color: #5f6670">Declaration</div>
+    <p style="margin: 0; font-size: 16px; line-height: 1.6">I confirm that this food safety management system has been put in place at St James’s Café, Borough, that staff have been trained in the safe methods that apply to their work, and that it will be reviewed at least every four weeks.</p>
+    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; align-items: end">
+      <div style="display: flex; flex-direction: column; gap: 6px">
+        <div style="font-family: 'Caveat', 'Segoe Script', cursive; font-size: 26px; color: #1f3a8a; border-bottom: 1px solid #16181d; padding-bottom: 4px; height: 34px">E. Marsh</div>
+        <div style="font-size: 12px; color: #5f6670">Signature</div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 6px">
+        <div style="font-size: 15px; font-weight: 600; border-bottom: 1px solid #16181d; padding-bottom: 6px">Emma Marsh, Owner</div>
+        <div style="font-size: 12px; color: #5f6670">Name and role</div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 6px">
+        <div style="font-size: 15px; font-weight: 600; border-bottom: 1px solid #16181d; padding-bottom: 6px">3 October 2026</div>
+        <div style="font-size: 12px; color: #5f6670">Date</div>
+      </div>
+    </div>
+    <div style="font-size: 12px; color: #5f6670; line-height: 1.45">Signed in Blueroll by emma@[DOMAIN] at 3 Oct 2026, 16:42. Any edit after sign-off creates a new version and asks for a new signature.</div>
+  </div>
+
+  <div style="margin-top: auto; display: flex; justify-content: space-between; font-size: 12px; color: #5f6670; border-top: 1px solid #e9eaed; padding-top: 12px">
+    <span>Plan ID BR-2481-V4 · SFBB: Management — 4-weekly review</span>
+    <span>blueroll.app</span>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":794,"height":1123}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      reviews: [
+        { date: '03 Oct 26', by: 'Emma Marsh', notes: 'Display chiller added. Defrosting list still to complete. Two fridge readings above 5 °C — engineer fixed door seal.', ver: 'v4' },
+        { date: '05 Sep 26', by: 'Emma Marsh', notes: 'Autumn menu: soup and brownie added; allergen matrix updated and retrained staff.', ver: 'v3' },
+        { date: '08 Aug 26', by: 'Tom Achton', notes: 'No problems. New dairy supplier (Meadow Dairy) approved.', ver: 'v2' },
+        { date: '11 Jul 26', by: 'Emma Marsh', notes: 'Plan created from questionnaire and signed off.', ver: 'v1' }
+      ],
+      changes: [
+        { ref: '3.1', text: 'Display chiller added to cold storage and to the AM/PM temperature checklist.' },
+        { ref: '1.4', text: 'Chocolate brownie (GF) marked “may contain tree nuts” after supplier label change.' },
+        { ref: '5.3', text: 'Stock rotation check moved from weekly to daily.' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

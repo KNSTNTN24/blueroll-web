@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>HACCP Pack — At a glance</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#ffffff}
+a{color:#1f7a52}a:hover{color:#16181d}
+</style>
+</helmet>
+<div style="width: 794px; height: 1123px; box-sizing: border-box; padding: 44px 64px 36px; background: #ffffff; font-family: Geist, system-ui, sans-serif; color: #16181d; display: flex; flex-direction: column; gap: 28px">
+
+  <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: #5f6670; border-bottom: 1px solid #d9dce1; padding-bottom: 12px">
+    <div style="display: flex; align-items: center; gap: 8px">
+      <svg viewBox="100 50 370 430" width="13" height="15" aria-hidden="true"><path fill="#1f7a52" d="M241 97V203.426C254.606 198.617 269.247 196 284.5 196C356.573 196 415 254.427 415 326.5C415 398.573 356.573 457 284.5 457C212.594 457 154.272 398.843 154.003 327H154V97H241ZM284.5 283C260.476 283 241 302.476 241 326.5C241 350.524 260.476 370 284.5 370C308.524 370 328 350.524 328 326.5C328 302.476 308.524 283 284.5 283Z"></path></svg>
+      <span style="font-weight: 600; color: #16181d">St James’s Café · Borough</span>
+      <span>HACCP Plan v4</span>
+    </div>
+    <span>At a glance · p. 2</span>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 8px">
+    <h1 style="margin: 0; font-size: 34px; font-weight: 800; letter-spacing: -1px">At a glance</h1>
+    <p style="margin: 0; font-size: 16px; line-height: 1.55; color: #3b3f47; max-width: 600px">What this plan covers, who is responsible, and what the last 28 days of records show. Start here.</p>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px">
+    <sc-for list="{{stats}}" as="st" hint-placeholder-count="4">
+      <div style="border: 1px solid #d9dce1; border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px">
+        <div style="font-size: 26px; font-weight: 700; letter-spacing: -0.6px; font-variant-numeric: tabular-nums">{{st.value}}</div>
+        <div style="font-size: 13px; font-weight: 600">{{st.label}}</div>
+        <div style="font-size: 12px; color: #5f6670">{{st.sub}}</div>
+      </div>
+    </sc-for>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 10px">
+    <h2 style="margin: 0; font-size: 18px; font-weight: 700">Contents</h2>
+    <div style="border-top: 1px solid #16181d">
+      <sc-for list="{{toc}}" as="t" hint-placeholder-count="5">
+        <div style="display: grid; grid-template-columns: 40px minmax(0, 1fr) 128px 40px; gap: 14px; align-items: center; padding: 11px 0; border-bottom: 1px solid #d9dce1">
+          <dc-import name="SectionIcon" icon="{{t.icon}}" size="40" tone="tint" hint-size="40px,40px"></dc-import>
+          <div style="display: flex; flex-direction: column; gap: 3px">
+            <div style="font-size: 15px; font-weight: 700">{{t.num}} · {{t.name}}</div>
+            <div style="font-size: 12px; line-height: 1.45; color: #5f6670">{{t.methods}}</div>
+          </div>
+          <div style="font-size: 12px; font-weight: 600; color: {{t.color}}">{{t.status}}</div>
+          <div style="font-size: 14px; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums">{{t.page}}</div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px">
+    <div style="display: flex; flex-direction: column; gap: 10px">
+      <h2 style="margin: 0; font-size: 18px; font-weight: 700">Who is responsible</h2>
+      <div style="display: flex; flex-direction: column">
+        <sc-for list="{{people}}" as="p" hint-placeholder-count="4">
+          <div style="display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid #e9eaed; font-size: 13px">
+            <span style="color: #5f6670">{{p.role}}</span>
+            <span style="font-weight: 600; text-align: right">{{p.name}}</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 10px">
+      <h2 style="margin: 0; font-size: 18px; font-weight: 700">Open points</h2>
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <sc-for list="{{open}}" as="o" hint-placeholder-count="3">
+          <div style="display: flex; gap: 10px; padding: 10px 12px; border-radius: 8px; background: #fbf1e1; font-size: 13px; line-height: 1.45">
+            <span style="font-weight: 700; color: #8a5a0c; white-space: nowrap">{{o.ref}}</span>
+            <span>{{o.text}}</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top: auto; display: flex; justify-content: space-between; font-size: 12px; color: #5f6670; border-top: 1px solid #e9eaed; padding-top: 12px">
+    <span>Signed off by Emma Marsh · 3 Oct 2026 · Next review 31 Oct 2026</span>
+    <span>blueroll.app</span>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":794,"height":1123}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const ok = '#1f7a52', warn = '#8a5a0c';
+    return {
+      stats: [
+        { value: '97%', label: 'Plan complete', sub: '112 of 115 points' },
+        { value: '28/28', label: 'Days recorded', sub: 'Opening & closing checks' },
+        { value: '3', label: 'Out-of-range readings', sub: 'All corrected, logged' },
+        { value: '6/6', label: 'Staff trained', sub: 'Level 2 food hygiene' }
+      ],
+      toc: [
+        { num: '1', icon: 'cross', name: 'Cross-contamination', methods: 'Personal hygiene · Cloths · Separating foods · Food allergies · Physical & chemical contamination · Pest control', status: 'Complete', color: ok, page: '3' },
+        { num: '2', icon: 'cleaning', name: 'Cleaning', methods: 'Handwashing · Cleaning effectively · Clear & clean as you go · Cleaning schedule', status: 'Complete', color: ok, page: '9' },
+        { num: '3', icon: 'chilling', name: 'Chilling', methods: 'Chilled storage · Chilling down hot food · Defrosting · Freezing', status: '1 point open', color: warn, page: '12' },
+        { num: '4', icon: 'cooking', name: 'Cooking', methods: 'Cooking safely · Extra care foods · Reheating · Menu checks · Hot holding · Ready-to-eat', status: '2 points open', color: warn, page: '16' },
+        { num: '5', icon: 'management', name: 'Management', methods: 'Opening & closing · Suppliers · Stock control · Training · Probes · Daily diary · 4-weekly review', status: 'Complete', color: ok, page: '22' }
+      ],
+      people: [
+        { role: 'Food business operator', name: 'Emma Marsh' },
+        { role: 'Site manager', name: 'Tom Achton' },
+        { role: 'Allergen lead', name: 'Priya Kaur' },
+        { role: 'Pest control', name: '[CONTRACTOR], monthly' }
+      ],
+      open: [
+        { ref: '3.3', text: 'List products that need defrosting.' },
+        { ref: '4.2', text: 'Describe how rice is cooled and stored.' },
+        { ref: '4.5', text: 'Upload hot-holding unit service record.' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

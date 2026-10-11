@@ -21,13 +21,12 @@ const pctColor = (p: number) => (p >= 80 ? '#1f7a52' : p >= 40 ? '#b07d1e' : '#c
  * (haccp_pack_data is keyed by business_id), so completion is a group figure;
  * what varies per site is whether that site's manager has signed it off.
  */
-export function AllSitesDashboard({ sectionProgress, totalProgress, siteProgress, reviewLabel, reviewOverdue, onExportPDF }: {
+export function AllSitesDashboard({ sectionProgress, totalProgress, siteProgress, reviewLabel, reviewOverdue }: {
   sectionProgress: Record<string, Progress>
   totalProgress: Progress
   siteProgress?: Record<string, Progress>
   reviewLabel: string
   reviewOverdue: boolean
-  onExportPDF: () => void
 }) {
   const business = useAuthStore((s) => s.business)
   const profile = useAuthStore((s) => s.profile)
@@ -90,12 +89,6 @@ export function AllSitesDashboard({ sectionProgress, totalProgress, siteProgress
             <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#1f9d63' }} />
             {signedCount} of {sites.length} sites signed off
           </span>
-          <button onClick={onExportPDF}
-            style={{ display: 'flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap', background: '#14161b', border: 'none', color: '#fff', font: "600 13.5px 'Geist'", padding: '10px 15px', borderRadius: 10, cursor: 'pointer' }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = '#25282f')} onMouseLeave={(e) => (e.currentTarget.style.background = '#14161b')}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12" /><polyline points="7 10 12 15 17 10" /><path d="M4 19h16" /></svg>
-            Export PDF
-          </button>
         </div>
       </div>
 
