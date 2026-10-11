@@ -13,7 +13,7 @@ import { toggleDemoMode } from '@/lib/demo'
 import { SitesSettings } from './sites-settings'
 import { MembersRoles } from './members-roles'
 import { NotificationsSettings } from './notifications-settings'
-import { WhatsAppSettings } from './whatsapp-settings'
+import { MessagingSettings } from './whatsapp-settings'
 
 const CONTENT_WIDTH = 860
 const PRICE_PER_SITE = 24.99
@@ -32,8 +32,8 @@ const GREEN_BTN: React.CSSProperties = { border: 'none', background: '#1f9d63', 
 const focusRing = (e: React.FocusEvent<HTMLInputElement>) => { e.currentTarget.style.borderColor = '#1f9d63'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(31,157,99,.13)' }
 const blurRing = (e: React.FocusEvent<HTMLInputElement>) => { e.currentTarget.style.borderColor = '#e2e4e8'; e.currentTarget.style.boxShadow = 'none' }
 
-type Tab = 'Profile' | 'Sites' | 'Team' | 'Billing' | 'Notifications'
-const TAB_LABEL: Record<Tab, string> = { Profile: 'Profile', Sites: 'Sites', Team: 'Team', Billing: 'Billing & subscription', Notifications: 'Notifications' }
+type Tab = 'Profile' | 'Sites' | 'Team' | 'Billing' | 'Notifications' | 'Messaging'
+const TAB_LABEL: Record<Tab, string> = { Profile: 'Profile', Sites: 'Sites', Team: 'Team', Billing: 'Billing & subscription', Notifications: 'Notifications', Messaging: 'Messaging' }
 
 export default function SettingsPage() {
   const routerNav = useRouter()
@@ -47,7 +47,7 @@ export default function SettingsPage() {
   // given full-estate access must NOT thereby gain team/role management.
   const showAdminTabs = profile?.role === 'owner' || profile?.role === 'manager'
 
-  const tabs: Tab[] = ['Profile', ...(showAdminTabs ? (["Sites", "Team"] as Tab[]) : []), 'Billing', 'Notifications']
+  const tabs: Tab[] = ['Profile', ...(showAdminTabs ? (["Sites", "Team"] as Tab[]) : []), 'Billing', 'Notifications', ...(showAdminTabs ? (['Messaging'] as Tab[]) : [])]
   const [tab, setTab] = useState<Tab>('Profile')
 
   // Profile personal fields
@@ -139,7 +139,7 @@ export default function SettingsPage() {
       {tab === 'Sites' && <SitesSettings />}
       {tab === 'Team' && <MembersRoles />}
       {tab === 'Notifications' && <NotificationsSettings />}
-      {tab === 'Notifications' && showAdminTabs && <div className="mt-6"><WhatsAppSettings /></div>}
+      {tab === 'Messaging' && showAdminTabs && <MessagingSettings />}
 
       {/* ── Profile ── */}
       {tab === 'Profile' && (

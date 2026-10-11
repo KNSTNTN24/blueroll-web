@@ -4,9 +4,9 @@ import { useEffect, useState } from 'react'
 import QRCode from 'qrcode'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { CHANNELS, issueLinkCode, revokeIdentity, type Channel } from '@/lib/whatsapp/client'
+import { CHANNELS, issueLinkCode, revokeIdentity, type LinkChannel } from '@/lib/whatsapp/client'
 
-type ChannelProp = Channel
+type ChannelProp = LinkChannel
 
 export function ChannelStatus({ channel, identity, onChanged, onConnect }: {
   channel: ChannelProp; identity: { id: string; external_id: string } | undefined; onChanged: () => void; onConnect: () => void
