@@ -2,7 +2,8 @@
 import { describe, it, expect } from 'vitest'
 import { repostList, repostGroup, refreshList, refreshGroupSite, unlinkGroup } from '../../../../supabase/functions/_shared/channels/tg-live'
 import { miniAppLink } from '../../../../supabase/functions/_shared/channels/telegram'
-import { fakeGroupDeps, fakeTgApi, NOW, GROUP, SITE, tpl } from './fakes/group-deps'
+import { handleFormPost, type FormApiDeps } from '../../../../supabase/functions/_shared/channels/form-api'
+import { fakeGroupDeps, fakeTgApi, NOW, GROUP, SITE, TEMP_ITEM, tpl } from './fakes/group-deps'
 
 const link = (t: string) => miniAppLink(t)
 const FRIDGE = tpl({ id: 'tA', name: 'Fridge temps', deadline_time: '11:00' })   // 10:00Z → 🟠 at 09:40Z
@@ -27,7 +28,7 @@ describe('repostList', () => {
       ['tok2', 'group_checklist', 'g1', 's1', 'tB', ['i1'], '2026-10-15T09:40:00.000Z', null],
     ])
   })
-  it('a second repost sends a new message first, then deletes the previous one; tokens are fresh', async () => {
+  it('a second repost sends a new message first, then deletes the previous one; unused tokens are carried over', async () => {
     const { d, s } = setup()
     const { api, calls } = fakeTgApi()
     await repostList(d, api, GROUP, SITE, NOW)
@@ -35,17 +36,33 @@ describe('repostList', () => {
     expect(calls.map((c) => c.method)).toEqual(['sendMessage', 'sendMessage', 'deleteMessage'])
     expect(calls[2].body).toEqual({ chat_id: '-1001', message_id: 101 })
     expect(s.lists).toHaveLength(1)
-    expect(s.lists[0]).toMatchObject({ message_id: '102', tokens: { tA: 'tok3', tB: 'tok4' } })
+    expect(s.lists[0]).toMatchObject({ message_id: '102', tokens: { tA: 'tok1', tB: 'tok2' } })
+    expect(s.tokens).toHaveLength(2)
   })
-  it('a repost expires the previous list\'s unused tokens (old forms are rejected)', async () => {
+  it('a repost replaces used or stale tokens and expires the replaced ones; carried-over tokens stay valid', async () => {
     const { d, s } = setup()
     const { api } = fakeTgApi()
     await repostList(d, api, GROUP, SITE, NOW)
+    s.tokens.find((t) => t.token === 'tok1')!.used_at = '2026-10-14T09:35:00.000Z'                // used → replaced
+    s.tokens.find((t) => t.token === 'tok2')!.expires_at = '2026-10-14T10:20:00.000Z'             // < 1 h left → replaced
     await repostList(d, api, GROUP, SITE, NOW)
-    expect(await d.takeGroupToken('tok1', NOW, 'Maria')).toBeNull()
+    expect(s.lists[0].tokens).toEqual({ tA: 'tok3', tB: 'tok4' })
     expect(await d.takeGroupToken('tok2', NOW, 'Maria')).toBeNull()
+    expect(s.tokens.find((t) => t.token === 'tok2')!.expires_at).not.toBe('2026-10-14T10:20:00.000Z')
     expect(await d.takeGroupToken('tok3', NOW, 'Maria')).not.toBeNull()
     expect(s.tokens.find((t) => t.token === 'tok4')!.expires_at).toBe('2026-10-15T09:40:00.000Z')
+  })
+  it("a repost triggered by checklist X keeps checklist Y's open form working; X's replaced token is expired", async () => {
+    const { d, s } = setup()
+    const { api } = fakeTgApi((m) => (m === 'getChatMember' ? { result: { status: 'member' } } : undefined))
+    await repostList(d, api, GROUP, SITE, NOW)   // tA → tok1, tB → tok2; someone opens Cleaning (tok2)
+    s.items.tA = [{ ...TEMP_ITEM, id: 'i2', name: 'Chest freezer' }]   // Fridge temps changed → its token must be replaced
+    await repostList(d, api, GROUP, SITE, NOW)   // e.g. the Fridge temps reminder
+    expect(s.lists[0].tokens).toEqual({ tA: 'tok3', tB: 'tok2' })
+    const form: FormApiDeps = { g: d, api, verifyInitData: async () => ({ userId: '111', firstName: 'Anna', lastName: 'Smith' }), alertManagers: async () => {} }
+    expect(await handleFormPost(form, { t: 'tok1', answers: { i1: '3' }, corrective: {} }, 'anna')).toEqual({ status: 410, body: { error: 'expired' } })
+    expect(await handleFormPost(form, { t: 'tok2', answers: { i1: '3' }, corrective: {} }, 'anna')).toEqual({ status: 200, body: { ok: true } })
+    expect(s.completions.filter((c) => c.template_id === 'tB')).toHaveLength(1)
   })
   it('app-only checklist (required photo): listed without a button, no token', async () => {
     const { d, s } = setup({ items: { tB: [{ id: 'ip', name: 'Label photo', item_type: 'photo', required: true, min_value: null, max_value: null, unit: null, sort_order: 0 }] } })

@@ -84,10 +84,13 @@ export async function unlinkGroup(d: GroupDeps, api: TgApi, group: ChannelGroup,
   await d.markGroupUnlinked(group.id, now)
 }
 
-/** Reminder or /checks: post a fresh list (notifies), then delete the previous one. Nothing open → nothing sent. */
+/**
+ * Reminder or /checks: post a fresh list (notifies), then delete the previous one. Nothing open → nothing sent.
+ * Still-valid tokens of the previous list are carried over (forms open in the group keep working); only replaced ones expire.
+ */
 export async function repostList(d: GroupDeps, api: TgApi, group: ChannelGroup, site: SiteInfo, now: Date): Promise<ListOutcome> {
   const prev = (await d.liveLists(group.id)).find((l) => l.site_id === site.id) ?? null
-  const { rendered, tokens } = await buildList(d, group, site, now, {})
+  const { rendered, tokens } = await buildList(d, group, site, now, prev?.tokens ?? {})
   if (!rendered.openCount) {
     if (prev) await dropList(d, api, group, prev)
     return 'empty'
@@ -105,7 +108,7 @@ export async function repostList(d: GroupDeps, api: TgApi, group: ChannelGroup, 
     message_id: String(r.result?.message_id ?? ''), tokens, rendered_hash: rendered.hash,
   })
   if (prev) {
-    // The previous list's forms die with it (first submit wins; tokens live until reposted). Tokens kept by the new list stay.
+    // Tokens the new list replaced are retired (first submit wins); tokens it carried over stay valid.
     const kept = new Set(Object.values(tokens))
     await d.expireTokens(Object.values(prev.tokens ?? {}).filter((t) => !kept.has(t)))
     await deleteListMessage(api, group.chat_id, prev.message_id)
