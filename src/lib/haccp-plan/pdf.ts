@@ -14,6 +14,26 @@ export function contentDisposition(fileName: string): string {
   return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(fileName)}`
 }
 
+/** Validity probe: the edge function checks the token without loading the plan or counting a view. */
+export function planCheckUrl(supabaseUrl: string, token: string): string {
+  return `${supabaseUrl}/functions/v1/haccp-plan?t=${token}&check=1`
+}
+
+/**
+ * Best-effort per-instance throttle so one link can't keep Chromium busy in a loop.
+ * Fluid Compute reuses instances, so this catches the common case without a store.
+ */
+export function makeRenderThrottle(windowMs: number) {
+  const last = new Map<string, number>()
+  return (token: string, now: number = Date.now()): boolean => {
+    const prev = last.get(token)
+    if (prev !== undefined && now - prev < windowMs) return false
+    last.set(token, now)
+    if (last.size > 500) for (const [k, v] of last) if (now - v >= windowMs) last.delete(k)
+    return true
+  }
+}
+
 export type RenderResult =
   | { status: 'ok'; pdf: Uint8Array; fileName: string }
   | { status: 'not_found' }

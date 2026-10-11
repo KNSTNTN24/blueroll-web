@@ -39,7 +39,7 @@ export function proofForMethod(methodId: string, proof: PlanBundle['proof']): Me
     if (!d.count) return null
     return { title: r.title, days: d.days, sourceNames: ['Deliveries'], stats: [
       { value: String(d.count), label: 'Deliveries checked in 28 days', tone: 'default' },
-      { value: String(d.outOfRange), label: 'Above safe temperature', tone: d.outOfRange ? 'amber' : 'default' },
+      { value: String(d.outOfRange), label: 'Above 5 °C chilled or −15 °C frozen', tone: d.outOfRange ? 'amber' : 'default' },
       { value: d.count ? `${Math.round(((d.count - d.outOfRange) / d.count) * 100)}%` : '—', label: 'Accepted in range', tone: 'default' },
     ] }
   }

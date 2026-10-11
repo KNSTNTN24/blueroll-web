@@ -9,6 +9,7 @@ import {
   periodFor,
   type TemplateRow,
 } from "./aggregate.ts";
+import { buildCorrective, planDocuments, planTeam } from "./scope.ts";
 
 const PAGE = 1000;
 const FROZEN_GUESS_MAX = -5; // deliveries have no frozen flag: a reading at or below −5 °C is a frozen product
@@ -76,7 +77,7 @@ export async function loadBundle(client: SupabaseClient, businessId: string, sit
     ).eq("business_id", businessId).order("name").range(a, b)),
     fetchAll((a, b) => admin.from("suppliers").select("id, name, contact_name, phone, email, delivery_days").eq("business_id", businessId).range(a, b)),
     fetchAll((a, b) => admin.from("checklist_templates").select("id, name, frequency, sfbb_section, library_key, site_id, active").eq("business_id", businessId).range(a, b)),
-    fetchAll((a, b) => admin.from("documents").select("id, title, category").eq("business_id", businessId).range(a, b)),
+    fetchAll((a, b) => admin.from("documents").select("id, title, category, access_level").eq("business_id", businessId).order("id").range(a, b)),
     fetchAll((a, b) => admin.from("profiles").select("id, full_name, role").eq("business_id", businessId).is("removed_at", null).range(a, b)),
   ]);
 
@@ -111,18 +112,7 @@ export async function loadBundle(client: SupabaseClient, businessId: string, sit
     id: t.id, name: t.name, library_key: t.library_key ?? null, sfbb_section: t.sfbb_section ?? null, frequency: t.frequency,
   }));
 
-  const corrective = completions
-    .flatMap((c) => (c.responses ?? []).filter((r: Row) => r.flagged).map((r: Row) => ({
-      at: c.completed_at as string,
-      template: nameById.get(c.template_id) ?? "Checklist",
-      item: r.item?.name ?? "Item",
-      value: r.value ?? null,
-      notes: r.notes ?? null,
-      status: r.corrective_status === "done" || r.corrective_status === "needed" ? r.corrective_status : null,
-      by: c.completed_by_profile?.full_name ?? null,
-    })))
-    .sort((a: { at: string }, b: { at: string }) => (a.at < b.at ? 1 : -1))
-    .slice(0, 20);
+  const corrective = buildCorrective(completions as never[], nameById, period.dates, tz);
 
   const reviewIds = templates.filter((t) => t.library_key === "haccp_review" || /4.?weekly|haccp review/i.test(t.name)).map((t) => t.id);
   let lastReview: { at: string; by: string | null } | null = null;
@@ -161,8 +151,8 @@ export async function loadBundle(client: SupabaseClient, businessId: string, sit
     sources: {
       recipes, dishes, suppliers,
       templates: templates.map((t) => ({ id: t.id, name: t.name, frequency: t.frequency, sfbb_section: t.sfbb_section ?? null })),
-      documents,
-      team: team.map((p) => ({ full_name: p.full_name ?? null, role: p.role ?? null })),
+      documents: planDocuments(documents as never[]),
+      team: planTeam(team as never[]).map((p) => ({ full_name: p.full_name ?? null, role: p.role ?? null })),
     },
     proof: {
       templates: aggregateTemplates(templateRows, completionRows, instances as InstanceRow[], period.dates, tz),

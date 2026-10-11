@@ -69,7 +69,8 @@
 .pd-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .pd-table thead { display: table-header-group; }
 .pd-table th { text-align: left; font-size: 12px; font-weight: 700; color: var(--pd-body); background: var(--pd-canvas); padding: 8px 12px; border-bottom: 1px solid var(--pd-rule); }
-.pd-table td { padding: 8px 12px; border-bottom: 1px solid var(--pd-hair); vertical-align: top; line-height: 1.45; }
+.pd-table { table-layout: fixed; }
+.pd-table td { overflow-wrap: break-word; padding: 8px 12px; border-bottom: 1px solid var(--pd-hair); vertical-align: top; line-height: 1.45; }
 .pd-table tr { break-inside: avoid; }
 
 /* Proof */
@@ -135,10 +136,11 @@
 .pd-cover-body { display: flex; flex-direction: column; gap: 28px; }
 
 /* Allergen matrix */
-.pd-matrix { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+.pd-matrix { border-collapse: collapse; width: 100%; font-size: 12.5px; table-layout: fixed; }
+.pd-matrix td:first-child { overflow-wrap: anywhere; word-break: break-word; }
 .pd-matrix thead { display: table-header-group; }
 .pd-matrix th { background: var(--pd-canvas); border-bottom: 1px solid var(--pd-rule); font-weight: 600; color: var(--pd-body); }
-.pd-matrix th.pd-vert { height: 84px; padding: 0 0 8px; width: 28px; vertical-align: bottom; border-left: 1px solid var(--pd-hair); }
+.pd-matrix th.pd-vert { height: 84px; padding: 0 0 8px; width: 5%; vertical-align: bottom; border-left: 1px solid var(--pd-hair); }
 .pd-matrix th.pd-vert span { writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; font-size: 11.5px; display: inline-block; }
 .pd-matrix td { border-bottom: 1px solid var(--pd-hair); padding: 6px 10px; }
 .pd-matrix td.pd-cell { border-left: 1px solid var(--pd-hair); text-align: center; padding: 6px 0; }

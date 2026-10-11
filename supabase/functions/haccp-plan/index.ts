@@ -5,7 +5,7 @@
 // Deploy with --no-verify-jwt: token callers have no JWT; member mode verifies the JWT itself.
 // CORS: https://app.blueroll.app, http://localhost:3001, plus PLAN_EXTRA_ORIGINS (comma-separated).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { handlePlanRequest, type HandlerDeps } from "../_shared/haccp-plan/handler.ts";
+import { decideAccess, handlePlanRequest, type HandlerDeps } from "../_shared/haccp-plan/handler.ts";
 import { loadBundle } from "../_shared/haccp-plan/load.ts";
 
 const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
@@ -38,7 +38,7 @@ const deps: HandlerDeps = {
   sha256Hex,
   findShare: async (hash) => {
     const { data, error } = await admin.from("haccp_plan_shares")
-      .select("id, business_id, site_id, kind, expires_at, revoked_at").eq("token_hash", hash).maybeSingle();
+      .select("id, business_id, site_id, kind, expires_at, revoked_at, view_count").eq("token_hash", hash).maybeSingle();
     if (error) throw error;
     return data;
   },
@@ -54,17 +54,16 @@ const deps: HandlerDeps = {
   memberAccess: async (userId, siteId) => {
     const { data: p } = await admin.from("profiles")
       .select("business_id, role, removed_at, is_group_admin").eq("id", userId).maybeSingle();
-    if (!p || !p.business_id || p.removed_at) return "forbidden";
-    const canManage = p.role === "owner" || p.role === "manager";
-    if (!siteId) return { businessId: p.business_id, canManage };
-    const { data: site } = await admin.from("sites").select("id").eq("id", siteId).eq("business_id", p.business_id).maybeSingle();
-    if (!site) return "forbidden";
-    if (!p.is_group_admin) {
-      // Same rule as can_see_site_row(): no member_sites rows = sees every site.
-      const { data: ms } = await admin.from("member_sites").select("site_id").eq("profile_id", userId);
-      if (ms && ms.length && !ms.some((r) => r.site_id === siteId)) return "forbidden";
+    if (!p?.business_id) return "forbidden";
+    const { data: biz } = await admin.from("businesses").select("id").eq("id", p.business_id).is("deleted_at", null).maybeSingle();
+    if (!biz) return "forbidden";
+    let site: { id: string; inBusiness: boolean } | null = null;
+    if (siteId) {
+      const { data: s } = await admin.from("sites").select("id").eq("id", siteId).eq("business_id", p.business_id).maybeSingle();
+      site = { id: siteId, inBusiness: !!s };
     }
-    return { businessId: p.business_id, canManage };
+    const { data: ms } = await admin.from("member_sites").select("site_id").eq("profile_id", userId);
+    return decideAccess(p, site, (ms ?? []).map((r: { site_id: string }) => r.site_id));
   },
   loadBundle: (businessId, siteId) => loadBundle(admin, businessId, siteId, new Date()),
 };
@@ -90,6 +89,7 @@ Deno.serve(async (req) => {
   const r = await handlePlanRequest({
     method: req.method,
     token: req.method === "GET" ? url.searchParams.get("t") ?? "" : null,
+    check: url.searchParams.get("check") === "1",
     authorization: req.headers.get("Authorization"),
     siteId,
   }, deps);

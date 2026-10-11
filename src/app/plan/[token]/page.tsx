@@ -9,6 +9,7 @@ import { buildPlan } from '@/lib/haccp-plan/build'
 import { PlanDocument } from '@/components/haccp-plan/PlanDocument'
 import { SectionChips } from '@/components/haccp-plan/SectionChips'
 import { Logo, fmtDate } from '@/components/haccp-plan/parts'
+import { planUrl } from '@/lib/haccp-plan/share'
 
 function Message({ text }: { text: string }) {
   return (
@@ -45,10 +46,12 @@ function PublicPlan() {
   if (error || !doc || data === undefined) return <Message text="Couldn’t load this plan. Try again in a moment." />
 
   const state = fontsReady ? 'ready' : 'loading'
+  // Inspector links carry a QR back to the live view; short-lived PDF tokens must not.
+  const qrUrl = data.share?.kind === 'inspector' ? planUrl(window.location.origin, token) : null
   if (print) {
     return (
       <div data-plan-state={state} data-plan-filename={doc.fileName} data-plan-footer={doc.footerLabel} style={{ background: '#fff' }}>
-        <PlanDocument doc={doc} mode="print" />
+        <PlanDocument doc={doc} mode="print" qrUrl={qrUrl} />
       </div>
     )
   }
@@ -67,7 +70,7 @@ function PublicPlan() {
       </header>
       <SectionChips doc={doc} />
       <main style={{ padding: '24px 0 48px' }}>
-        <PlanDocument doc={doc} mode="screen" />
+        <PlanDocument doc={doc} mode="screen" qrUrl={qrUrl} />
       </main>
     </div>
   )

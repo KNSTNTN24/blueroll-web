@@ -52,6 +52,7 @@ describe('proofForMethod', () => {
     expect(p?.title).toBe('Delivery checks')
     expect(p?.stats[0].value).toBe('40')
     expect(p?.stats[1].tone).toBe('amber')
+    expect(p?.stats[1].label).toBe('Above 5 °C chilled or −15 °C frozen')
   })
   it('returns null when nothing is linked', () => {
     expect(proofForMethod('cooking_safely', proof([]))).toBeNull()

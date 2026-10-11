@@ -1,6 +1,18 @@
 import type { PlanDoc } from '@/lib/haccp-plan/types'
 import { OGL_ATTRIBUTION } from '@/lib/haccp-plan/copy'
+import { qrMatrix } from '@/lib/haccp-plan/qr'
 import { Logo, RunHead, SectionIcon, SheetFooter, fmtDate } from './parts'
+
+function QrCode({ url, size = 104 }: { url: string; size?: number }) {
+  const m = qrMatrix(url)
+  const n = m.length + 2
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${n} ${n}`} role="img" aria-label="QR code for the live, read-only plan" shapeRendering="crispEdges">
+      <rect width={n} height={n} fill="#ffffff" />
+      {m.flatMap((row, y) => row.map((dark, x) => (dark ? <rect key={`${x}-${y}`} x={x + 1} y={y + 1} width="1" height="1" fill="#16181d" /> : null)))}
+    </svg>
+  )
+}
 
 const RATING_TEXT: Record<string, string> = { '5': 'Very good', '4': 'Good', '3': 'Generally satisfactory', '2': 'Improvement necessary', '1': 'Major improvement necessary', '0': 'Urgent improvement necessary' }
 
@@ -93,9 +105,9 @@ export function Cover({ doc, qrUrl }: { doc: PlanDoc; qrUrl?: string | null }) {
             </div>
           </div>
           {qrUrl && (
-            <div className="pd-box" style={{ width: 200, padding: 14, display: 'flex', flexDirection: 'column', gap: 6, borderRadius: 12 }}>
-              <div style={{ fontSize: 12, fontWeight: 700 }}>Live records, read-only</div>
-              <div style={{ fontSize: 11.5, lineHeight: 1.4, color: '#3b3f47', overflowWrap: 'anywhere' }}>{qrUrl}</div>
+            <div className="pd-box plan-keep" style={{ width: 172, padding: 14, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, borderRadius: 12, textAlign: 'center' }}>
+              <QrCode url={qrUrl} />
+              <div style={{ fontSize: 12, lineHeight: 1.35, color: '#3b3f47' }}>Scan for live records, read-only</div>
             </div>
           )}
         </div>
@@ -190,6 +202,10 @@ export function CorrectivePage({ doc }: { doc: PlanDoc }) {
       ) : (
         <div className="pd-box pd-scroll-x" style={{ overflow: 'hidden' }}>
           <table className="pd-table">
+            <colgroup>
+              <col style={{ width: '12%' }} /><col style={{ width: '21%' }} /><col style={{ width: '30%' }} />
+              <col style={{ width: '10%' }} /><col style={{ width: '14%' }} /><col style={{ width: '13%' }} />
+            </colgroup>
             <thead><tr><th>Date</th><th>Check</th><th>Item</th><th>Reading</th><th>Action</th><th>By</th></tr></thead>
             <tbody>
               {doc.corrective.map((c, i) => (
@@ -198,7 +214,7 @@ export function CorrectivePage({ doc }: { doc: PlanDoc }) {
                   <td>{c.template}</td>
                   <td>{c.item}{c.notes ? <div className="pd-sub">{c.notes}</div> : null}</td>
                   <td style={{ fontVariantNumeric: 'tabular-nums' }}>{c.value ?? '—'}</td>
-                  <td style={{ fontWeight: 600, color: c.status === 'done' ? '#1f7a52' : '#8a5a0c' }}>{c.status === 'done' ? 'Corrected' : 'Open'}</td>
+                  <td style={{ fontWeight: 600, whiteSpace: 'nowrap', color: c.status === 'done' ? '#1f7a52' : '#8a5a0c' }}>{c.status === 'done' ? 'Corrected' : 'Open'}</td>
                   <td>{c.by ?? '—'}</td>
                 </tr>
               ))}

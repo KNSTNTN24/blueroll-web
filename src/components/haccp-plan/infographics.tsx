@@ -173,7 +173,7 @@ export function AllergenMatrix({ dishes }: { dishes: PlanDoc['dishes'] }) {
           <table className="pd-matrix">
             <thead>
               <tr>
-                <th style={{ textAlign: 'left', padding: '8px 10px', verticalAlign: 'bottom', minWidth: 150 }}>Dish</th>
+                <th style={{ textAlign: 'left', padding: '8px 10px', verticalAlign: 'bottom', width: '30%' }}>Dish</th>
                 {cols.map((c) => <th key={c} className="pd-vert"><span>{c}</span></th>)}
               </tr>
             </thead>

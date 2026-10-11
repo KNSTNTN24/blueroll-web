@@ -28,7 +28,12 @@ create policy haccp_plan_shares_insert on public.haccp_plan_shares for insert
   with check (
     business_id = public.get_my_business_id()
     and created_by = auth.uid()
-    and (site_id is null or public.can_see_site_row(site_id))
+    and (
+      site_id is not null and public.can_see_site_row(site_id)
+      -- business-wide view only for people who see every site (same rule as the edge function)
+      or site_id is null and (public.am_i_group_admin()
+        or not exists (select 1 from public.member_sites ms where ms.profile_id = auth.uid()))
+    )
     and revoked_at is null and view_count = 0
     and (
       (kind = 'pdf' and expires_at <= now() + interval '15 minutes')
@@ -58,3 +63,16 @@ end $$;
 drop trigger if exists trg_haccp_plan_shares_guard on public.haccp_plan_shares;
 create trigger trg_haccp_plan_shares_guard before update on public.haccp_plan_shares
   for each row execute function public.haccp_plan_shares_guard();
+
+-- Signing the HACCP Plan is a declaration on an inspector-facing document: owners and managers only.
+-- Restrictive, so the existing business/site write policy still applies on top.
+drop policy if exists haccp_signoffs_manager_insert on public.haccp_signoffs;
+create policy haccp_signoffs_manager_insert on public.haccp_signoffs as restrictive for insert
+  with check (public.is_active_business_manager(business_id));
+drop policy if exists haccp_signoffs_manager_update on public.haccp_signoffs;
+create policy haccp_signoffs_manager_update on public.haccp_signoffs as restrictive for update
+  using (public.is_active_business_manager(business_id))
+  with check (public.is_active_business_manager(business_id));
+drop policy if exists haccp_signoffs_manager_delete on public.haccp_signoffs;
+create policy haccp_signoffs_manager_delete on public.haccp_signoffs as restrictive for delete
+  using (public.is_active_business_manager(business_id));
