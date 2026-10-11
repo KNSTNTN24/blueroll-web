@@ -1,0 +1,20 @@
+import { describe, it, expect } from 'vitest'
+import { TOKEN_RE, footerTemplate, contentDisposition } from './pdf'
+
+describe('pdf helpers', () => {
+  it('validates tokens', () => {
+    expect(TOKEN_RE.test('a'.repeat(43))).toBe(true)
+    expect(TOKEN_RE.test('a'.repeat(42))).toBe(false)
+    expect(TOKEN_RE.test('../../etc/passwd' + 'a'.repeat(27))).toBe(false)
+  })
+  it('escapes the footer label', () => {
+    const f = footerTemplate('Tom & Jerry <Café>')
+    expect(f).toContain('Tom &amp; Jerry &lt;Café&gt;')
+    expect(f).toContain('class="pageNumber"')
+    expect(f).toContain('class="totalPages"')
+  })
+  it('builds a safe content disposition', () => {
+    expect(contentDisposition('HACCP-Plan-st-james-s-cafe.pdf')).toBe(`attachment; filename="HACCP-Plan-st-james-s-cafe.pdf"; filename*=UTF-8''HACCP-Plan-st-james-s-cafe.pdf`)
+    expect(contentDisposition('a"b.pdf')).toContain('filename="a_b.pdf"')
+  })
+})

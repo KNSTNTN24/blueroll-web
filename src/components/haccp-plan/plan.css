@@ -111,9 +111,11 @@
 /* Print */
 @page { size: A4; margin: 14mm 16mm 18mm; }
 .plan-doc[data-mode='print'] { -webkit-print-color-adjust: exact; print-color-adjust: exact; background: #fff; }
-.plan-doc[data-mode='print'] .plan-sheet { break-before: page; padding: 0; }
+.plan-doc[data-mode='print'] .plan-sheet { break-before: page; padding: 0; gap: 14px; }
 .plan-doc[data-mode='print'] .plan-sheet:first-child { break-before: auto; }
 .plan-keep { break-inside: avoid; }
+/* Chromium's footerTemplate carries the running footer + page numbers in print. */
+.plan-doc[data-mode='print'] .pd-footer { display: none; }
 @media print {
   html, body { background: #fff !important; }
   .plan-no-print { display: none !important; }

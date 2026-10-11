@@ -105,7 +105,7 @@ export function Cover({ doc, qrUrl }: { doc: PlanDoc; qrUrl?: string | null }) {
 }
 
 export function AtAGlance({ doc }: { doc: PlanDoc }) {
-  const open = doc.openPoints.slice(0, 8)
+  const open = doc.openPoints.slice(0, 4)
   return (
     <section className="plan-sheet" aria-labelledby="pd-glance">
       <RunHead doc={doc} right="At a glance" />

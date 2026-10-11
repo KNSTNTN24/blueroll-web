@@ -169,7 +169,7 @@ export function AllergenMatrix({ dishes }: { dishes: PlanDoc['dishes'] }) {
       {dishes.length === 0 ? (
         <div className="pd-box" style={{ padding: 14, fontSize: 13, color: '#5f6670' }}>No dishes on this site’s menu yet.</div>
       ) : (
-        <div className="pd-box pd-scroll-x">
+        <div className={`pd-box pd-scroll-x${dishes.length <= 30 ? ' plan-keep' : ''}`}>
           <table className="pd-matrix">
             <thead>
               <tr>
