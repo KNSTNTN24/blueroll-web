@@ -4,8 +4,9 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
-import { HACCP_SECTIONS, ALLERGEN_LABELS, type EUAllergen } from '@/lib/constants'
-import { resolveAllergens, sourceMeta, type Dish } from '@/lib/dishes'
+import { HACCP_SECTIONS } from '@/lib/constants'
+import { type Dish } from '@/lib/dishes'
+import { computeAutoData, type AutoDataSources } from '@/lib/haccp-pack/auto-data'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import Link from 'next/link'
@@ -246,7 +247,7 @@ export default function HaccpPackPage() {
     queryFn: async () => {
       const { data } = await supabase
         .from('documents')
-        .select('id, name, category, file_url')
+        .select('id, title, category, file_url')
         .eq('business_id', businessId)
       return data ?? []
     },
@@ -268,196 +269,14 @@ export default function HaccpPackPage() {
   // ── Compute auto-fill values ──
   const autoData = useMemo<Record<string, string>>(() => {
     if (!autoFillEnabled) return {}
-    const auto: Record<string, string> = {}
-
-    // Recipes-based (driven by the haccp_methods multi-select on each recipe)
-    if (recipes?.length) {
-      // Helper: recipes that declared a given HACCP method
-      const withMethod = (methodId: string) =>
-        (recipes as any[]).filter((r) => Array.isArray(r.haccp_methods) && r.haccp_methods.includes(methodId))
-
-      // Helper: format one recipe row with optional trailing detail
-      const fmt = (r: any, detail?: string | null) =>
-        detail ? `${r.name}: ${detail}` : r.name
-
-      // Cooking Safely → ck_dishes
-      const cooking = withMethod('cooking_safely')
-      if (cooking.length) {
-        auto['ck_dishes'] = cooking
-          .map((r) => {
-            const parts = [r.cooking_method, r.cooking_temp ? `${r.cooking_temp}°C` : null].filter(Boolean)
-            return fmt(r, parts.length ? parts.join(' @ ') : null)
-          })
-          .join('\n')
-      }
-
-      // Reheating → rh_items
-      const reheating = withMethod('reheating')
-      if (reheating.length) {
-        auto['rh_items'] = reheating.map((r) => fmt(r, r.reheating_instructions)).join('\n')
-      }
-
-      // Hot Holding → hh_items
-      const hotHold = withMethod('hot_holding')
-      if (hotHold.length) auto['hh_items'] = hotHold.map((r) => r.name).join(', ')
-
-      // Chilling Down Hot Food → cd_method
-      const chillingDown = withMethod('chilling_down')
-      if (chillingDown.length) {
-        auto['cd_method'] = chillingDown.map((r) => fmt(r, r.chilling_method)).join('\n')
-      }
-
-      // Freezing → fz_method
-      const freezing = withMethod('freezing')
-      if (freezing.length) {
-        auto['fz_method'] = freezing.map((r) => fmt(r, r.freezing_instructions)).join('\n')
-      }
-
-      // Defrosting → df_method + df_products
-      const defrosting = withMethod('defrosting')
-      if (defrosting.length) {
-        auto['df_method'] = defrosting.map((r) => fmt(r, r.defrosting_instructions)).join('\n')
-        auto['df_products'] = defrosting.map((r) => r.name).join(', ')
-      }
-
-      // Extra Care Foods → ec_items
-      const extraCare = withMethod('extra_care')
-      if (extraCare.length) {
-        auto['ec_items'] = extraCare
-          .map((r) => {
-            const flags = Array.isArray(r.extra_care_flags) ? r.extra_care_flags.join(', ') : r.extra_care_flags
-            return fmt(r, flags || null)
-          })
-          .join('\n')
-      }
-
-      // Ready-to-Eat → rte_items
-      const rte = withMethod('ready_to_eat')
-      if (rte.length) auto['rte_items'] = rte.map((r) => r.name).join(', ')
-
-      // Menu Checks → mc_items (all recipes that have any cooking-side method)
-      const menuCooking = (recipes as any[]).filter(
-        (r) =>
-          Array.isArray(r.haccp_methods) &&
-          r.haccp_methods.some((m: string) =>
-            ['cooking_safely', 'reheating', 'hot_holding', 'extra_care'].includes(m),
-          ),
-      )
-      if (menuCooking.length) {
-        auto['mc_items'] = menuCooking
-          .map((r) => {
-            const parts = [r.cooking_method, r.cooking_temp ? `${r.cooking_temp}°C` : null].filter(Boolean)
-            return parts.length ? `${r.name} — ${parts.join(' @ ')}` : r.name
-          })
-          .join('\n')
-      }
-
-      // ── Ingredient-driven fields ──
-      // Keywords for raw meat / poultry / fish / offal. Lowercase substrings.
-      const RAW_KEYWORDS = [
-        'chicken', 'beef', 'pork', 'lamb', 'mutton', 'veal', 'turkey', 'duck', 'goose', 'rabbit', 'venison',
-        'mince', 'sausage', 'bacon', 'ham', 'gammon', 'chorizo', 'steak', 'brisket', 'ribeye', 'sirloin',
-        'liver', 'kidney', 'offal',
-        'fish', 'salmon', 'tuna', 'cod', 'haddock', 'mackerel', 'trout', 'seabass', 'sea bass', 'anchov', 'sardine', 'plaice', 'pollock',
-        'prawn', 'shrimp', 'lobster', 'crab', 'crayfish', 'langoustine',
-        'mussel', 'oyster', 'clam', 'scallop', 'squid', 'octopus', 'cockle', 'whelk',
-      ]
-      // Allergens that always imply a raw protein product to handle as "raw"
-      const SEAFOOD_ALLERGENS = new Set(['fish', 'crustaceans', 'molluscs'])
-
-      const rawProducts = new Set<string>()
-      const allergensPresent = new Set<string>()
-      const recipeAllergenMap = new Map<string, Set<string>>()
-
-      for (const r of recipes as any[]) {
-        const ings: Array<{ name?: string; allergens?: string[] }> = (r.recipe_ingredients ?? [])
-          .map((ri: any) => ri?.ingredient)
-          .filter(Boolean)
-
-        for (const ing of ings) {
-          const name = (ing.name ?? '').trim()
-          if (!name) continue
-          const lower = name.toLowerCase()
-          const ingAllergens: string[] = Array.isArray(ing.allergens) ? ing.allergens : []
-
-          // Raw detection: by keyword OR by seafood allergen
-          const isRaw =
-            RAW_KEYWORDS.some((kw) => lower.includes(kw)) ||
-            ingAllergens.some((a) => SEAFOOD_ALLERGENS.has(a))
-          if (isRaw) rawProducts.add(name)
-
-          // Collect allergens
-          for (const a of ingAllergens) {
-            allergensPresent.add(a)
-            if (!recipeAllergenMap.has(r.name)) recipeAllergenMap.set(r.name, new Set())
-            recipeAllergenMap.get(r.name)!.add(a)
-          }
-        }
-      }
-
-      if (rawProducts.size) {
-        auto['sf_raw_products'] = Array.from(rawProducts).sort().join(', ')
-      }
-
-      // Allergens are declared per dish, not per recipe: a drink or bought-in
-      // item has no recipe but still belongs in the pack. Recipe-backed lines
-      // trace to ingredients; declared lines carry who attested and when.
-      const dishLines = (dishes ?? []).map((d) => {
-        const al = resolveAllergens(d)
-        const list = al.length ? al.map((a) => ALLERGEN_LABELS[a as EUAllergen] ?? a).join(', ') : 'none'
-        return `${d.name}: ${list} (${sourceMeta(d)})`
-      })
-      const dishAllergens = new Set<string>()
-      ;(dishes ?? []).forEach((d) => resolveAllergens(d).forEach((a) => dishAllergens.add(ALLERGEN_LABELS[a as EUAllergen] ?? a)))
-
-      if (dishLines.length) {
-        const header = `Allergens present: ${dishAllergens.size ? Array.from(dishAllergens).sort().join(', ') : 'none declared'}`
-        auto['fa_allergens_list'] = `${header}\n\n${dishLines.join('\n')}`
-      } else if (allergensPresent.size) {
-        // No dishes on the menu yet — fall back to the recipe library.
-        const header = `Allergens present: ${Array.from(allergensPresent).sort().join(', ')}`
-        const perRecipe = Array.from(recipeAllergenMap.entries())
-          .map(([recipeName, set]) => `${recipeName}: ${Array.from(set).sort().join(', ')}`)
-          .join('\n')
-        auto['fa_allergens_list'] = perRecipe ? `${header}\n\n${perRecipe}` : header
-      }
-    }
-
-    // Suppliers-based
-    if (suppliersData?.length) {
-      auto['sup_list'] = suppliersData.map((s: any) => `${s.name}${s.contact_name ? ` (${s.contact_name})` : ''}${s.phone ? ` \u2014 ${s.phone}` : ''}${s.email ? ` \u2014 ${s.email}` : ''}`).join('\n')
-
-      const deliveryDays = suppliersData
-        .filter((s: any) => s.delivery_days)
-        .map((s: any) => `${s.name}: ${Array.isArray(s.delivery_days) ? s.delivery_days.join(', ') : s.delivery_days}`)
-      if (deliveryDays.length) auto['sf_delivery_schedule'] = deliveryDays.join('\n')
-    }
-
-    // Documents-based
-    if (documents?.length) {
-      const pestDocs = documents.filter((d: any) => d.category === 'contract' || d.category === 'inspection')
-      if (pestDocs.length) auto['pc_company'] = pestDocs.map((d: any) => d.name).join(', ')
-
-      const trainingDocs = documents.filter((d: any) => d.category === 'training' || d.category === 'certificate')
-      if (trainingDocs.length) auto['tr_records'] = trainingDocs.map((d: any) => d.name).join(', ')
-    }
-
-    // Team-based
-    if (teamProfiles?.length) {
-      const responsible = teamProfiles.filter((p: any) => p.role === 'owner' || p.role === 'manager')
-      if (responsible.length) auto['tr_responsible'] = responsible.map((p: any) => `${p.full_name ?? 'Unnamed'} (${p.role})`).join(', ')
-    }
-
-    // Checklists-based
-    if (checklistTemplates?.length) {
-      const tempChecklist = checklistTemplates.find((c: any) => c.sfbb_section === 'temperature' || c.name?.toLowerCase().includes('temperature'))
-      if (tempChecklist) auto['st_method'] = `Using checklist: ${tempChecklist.name} (${tempChecklist.frequency})`
-
-      const probeChecklist = checklistTemplates.find((c: any) => c.sfbb_section === 'probes' || c.name?.toLowerCase().includes('probe') || c.name?.toLowerCase().includes('calibrat'))
-      if (probeChecklist) auto['tp_method'] = `Using checklist: ${probeChecklist.name} (${probeChecklist.frequency})`
-    }
-
-    return auto
+    return computeAutoData({
+      recipes: (recipes ?? []) as unknown as AutoDataSources['recipes'],
+      dishes: dishes ?? [],
+      suppliers: (suppliersData ?? []) as AutoDataSources['suppliers'],
+      templates: (checklistTemplates ?? []) as AutoDataSources['templates'],
+      documents: (documents ?? []) as AutoDataSources['documents'],
+      team: (teamProfiles ?? []) as AutoDataSources['team'],
+    })
   }, [autoFillEnabled, recipes, dishes, suppliersData, documents, teamProfiles, checklistTemplates])
 
   // ── Save mutation ──
@@ -521,7 +340,7 @@ export default function HaccpPackPage() {
       updated.sources = { ...updated.sources }
       delete updated.sources[fieldId]
     }
-    queryClient.setQueryData(['haccp-pack', businessId], updated)
+    queryClient.setQueryData(['haccp-pack', businessId, packSiteId], updated)
     debouncedSave(updated)
   }
 
