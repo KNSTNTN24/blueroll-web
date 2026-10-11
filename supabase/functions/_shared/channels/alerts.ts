@@ -73,6 +73,21 @@ export async function alertGroups(g: Pick<GroupDeps, 'groupById' | 'alertGroups'
   }
 }
 
+export type TelegramAlertGroups = { g: Pick<GroupDeps, 'ready' | 'groupById' | 'alertGroups' | 'markGroupUnlinked' | 'now'>; api: TgApi }
+
+/**
+ * Out-of-range alert from a WhatsApp submission (spec §2): every Telegram group marked "Alerts" in the business, while the
+ * business can use Telegram. There is no source group. Best effort: never throws, so the WhatsApp flow is never failed.
+ */
+export async function alertTelegramAlertsGroups(t: TelegramAlertGroups, businessId: string, a: ManagerAlert): Promise<void> {
+  try {
+    if (!(await t.g.ready(businessId))) return
+    await alertGroups(t.g, t.api, businessId, null, a)
+  } catch (err) {
+    console.error('telegram alerts-group alert failed', String((err as Error)?.message ?? err).slice(0, 200))
+  }
+}
+
 // deno-lint-ignore no-explicit-any
 export function makeAlertDeps(admin: any): AlertDeps {
   // deno-lint-ignore no-explicit-any

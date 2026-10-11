@@ -99,6 +99,16 @@ describe('GET', () => {
     const otherSite = setup({ templates: [{ ...T, site_id: 's2' }, T2] })
     expect(await handleFormGet(otherSite.d, 'tokA', 'anna')).toEqual({ status: 410, body: { error: 'moved' } })
   })
+  it('business mismatches → 410 moved: token of another business than its group; mapped template of another business', async () => {
+    const tokOther = setup({ tokens: [tok({ business_id: 'b2' })] })
+    expect(await handleFormGet(tokOther.d, 'tokA', 'anna')).toEqual({ status: 410, body: { error: 'moved' } })
+    expect(tokOther.calls).toEqual([])   // refused before the membership call
+    const tplOther = setup({ templates: [{ ...T, business_id: 'b2' }, T2] })
+    expect(await handleFormGet(tplOther.d, 'tokA', 'anna')).toEqual({ status: 410, body: { error: 'moved' } })
+    expect(await handleFormPost(tplOther.d, ok, 'anna')).toEqual({ status: 410, body: { error: 'moved' } })
+    expect(tplOther.s.tokens[0].used_at).toBeNull()
+    expect(tplOther.s.completionRows).toEqual([])
+  })
   it('team not ready → 403 unavailable; items re-created → 410 changed', async () => {
     expect(await handleFormGet(setup({ ready: { b: false } }).d, 'tokA', 'anna')).toEqual({ status: 403, body: { error: 'unavailable' } })
     const changed = setup({ items: { t1: ITEMS.map((i) => ({ ...i, id: i.id + 'x' })) } })
@@ -201,5 +211,66 @@ describe('POST', () => {
     expect(await handleFormPost(d, null, 'forged')).toEqual({ status: 401, body: { error: 'unauthorized' } })
     expect(await handleFormPost(d, null, 'anna')).toEqual({ status: 400, body: { error: 'bad_request' } })
     expect(await handleFormPost(d, { t: 'tokA', answers: [] }, 'anna')).toEqual({ status: 400, body: { error: 'bad_request' } })
+    expect(await handleFormPost(d, { t: 5 }, 'anna')).toEqual({ status: 400, body: { error: 'bad_request' } })
+  })
+  it("temperature '5abc' is treated as missing", async () => {
+    const { d, s } = setup()
+    expect(await handleFormPost(d, { t: 'tokA', answers: { i1: '5abc', i2: 'yes' }, corrective: {} }, 'anna'))
+      .toEqual({ status: 400, body: { error: 'missing', items: ['Walk-in fridge'] } })
+    expect(s.completionRows).toEqual([])
+  })
+  it('flagged with an unknown corrective action → 400 naming every flagged item, token still usable', async () => {
+    const { d, s } = setup()
+    const r = await handleFormPost(d, { t: 'tokA', answers: { i1: '9', i2: 'no' }, corrective: { i2: { action: 'bogus' } } }, 'anna')
+    expect(r).toEqual({ status: 400, body: { error: 'corrective_required', items: ['Walk-in fridge', 'Door seals OK'] } })
+    expect(s.tokens[0].used_at).toBeNull()
+    expect(s.completionRows).toEqual([])
+  })
+  it('corrective details trimmed and clipped to 300; notes only for flagged items; answers normalised', async () => {
+    const { d, s, waAlerts } = setup()
+    const long = 'x'.repeat(400)
+    const r = await handleFormPost(d, { t: 'tokA', answers: { i1: 9, i2: 'yes', i3: '  ok  ' },
+      corrective: { i1: { action: 'moved', details: `  ${long}  ` }, i2: { action: 'discarded' } } }, 'anna')
+    expect(r).toEqual({ status: 200, body: { ok: true } })
+    const note = `Moved food to another fridge: ${'x'.repeat(300)}`
+    expect(s.responses.map((x) => [x.item_id, x.value, x.flagged, x.notes, x.corrective_status])).toEqual([
+      ['i1', '9', true, note, 'done'], ['i2', 'yes', false, null, null], ['i3', 'ok', false, null, null],
+    ])
+    expect(waAlerts).toEqual([expect.objectContaining({ itemName: 'Walk-in fridge', value: '9 °C', time: '10:40', action: note })])
+  })
+  it('corrective without details uses the action title only', async () => {
+    const { d, s, waAlerts } = setup()
+    expect((await handleFormPost(d, { t: 'tokA', answers: { i1: '3', i2: 'no' }, corrective: { i2: { action: 'other', details: '   ' } } }, 'anna')).status).toBe(200)
+    expect(s.responses.find((x) => x.item_id === 'i2')).toMatchObject({ flagged: true, notes: 'Other', corrective_status: 'done' })
+    expect(waAlerts[0]).toMatchObject({ itemName: 'Door seals OK', value: 'no', action: 'Other' })
+  })
+  it('answers for ids not on the token and a __proto__ key are ignored', async () => {
+    const { d, s } = setup()
+    const answers = JSON.parse('{"i1":"3","i2":"yes","i4":"photo.jpg","zzz":"x","__proto__":{"i3":"polluted"}}')
+    expect((await handleFormPost(d, { t: 'tokA', answers, corrective: JSON.parse('{"__proto__":{"action":"moved"}}') }, 'anna')).status).toBe(200)
+    expect(s.responses.map((x) => [x.item_id, x.value, x.flagged, x.notes])).toEqual([['i1', '3', false, null], ['i2', 'yes', false, null]])
+  })
+  it('failing alerts and a failing list refresh never fail the submission', async () => {
+    const api = fakeTgApi((m, body) => {
+      if (m === 'getChatMember') return { result: { status: 'member' } }
+      throw new Error(`telegram down: ${m} ${body.chat_id}`)
+    })
+    const { d, s } = setup({ lists: [{ id: 'l1', group_id: 'g1', site_id: 's1', list_date: '2026-10-14', message_id: '55', tokens: { t1: 'tokA' }, rendered_hash: 'old' }] }, api)
+    d.alertManagers = async () => { throw new Error('boom') }
+    const r = await handleFormPost(d, { t: 'tokA', answers: { i1: '9', i2: 'yes' }, corrective: { i1: { action: 'moved' } } }, 'anna')
+    expect(r).toEqual({ status: 200, body: { ok: true } })
+    expect(s.completionRows).toHaveLength(1)
+  })
+  it('after a 500 the same token resubmits successfully, recorded once', async () => {
+    const { d, s } = setup()
+    const real = d.g.insertCompletion
+    let fail = true
+    d.g.insertCompletion = async (row) => { if (fail) throw new Error('db down'); return real(row) }
+    expect(await handleFormPost(d, ok, 'anna')).toEqual({ status: 500, body: { error: 'retry' } })
+    expect(s.tokens[0].used_at).toBeNull()
+    fail = false
+    expect(await handleFormPost(d, ok, 'anna')).toEqual({ status: 200, body: { ok: true } })
+    expect(s.completionRows).toHaveLength(1)
+    expect(s.tokens[0]).toMatchObject({ used_by_name: 'Anna' })
   })
 })

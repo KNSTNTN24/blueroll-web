@@ -9,7 +9,7 @@ import { makeSender, templateMessage } from "../_shared/channels/whatsapp.ts";
 import { makeTelegramApi } from "../_shared/channels/telegram.ts";
 import { makeDeps, pageAll } from "../_shared/channels/db.ts";
 import { isBillable, withUnit, type BotDeps } from "../_shared/channels/bot.ts";
-import { alertManagers, makeAlertDeps, type Senders } from "../_shared/channels/alerts.ts";
+import { alertManagers, alertTelegramAlertsGroups, makeAlertDeps, type Senders } from "../_shared/channels/alerts.ts";
 import { whatsappUI } from "../_shared/channels/ui.ts";
 import { makeGroupDeps } from "../_shared/channels/groups-db.ts";
 import { runTelegramGroups, type GroupRunResult } from "../_shared/channels/tg-cron.ts";
@@ -174,12 +174,15 @@ async function correctiveBusiness(biz: string, list: Ident[], sites: Map<string,
       if (logId === null) continue;
       // Per-manager sends are logged separately by alertManagers (kind 'alert', one row per send).
       const { data: by } = await admin.from("profiles").select("full_name").eq("id", n.completion.completed_by).eq("business_id", biz).maybeSingle();
-      await alertManagers(alertDeps, senders, biz, {
+      const alert = {
         siteName: site?.name ?? "", itemName: n.item?.name ?? "",
         value: withUnit(n.value ?? "", n.item?.unit ?? (n.item?.item_type === "temperature" ? "°C" : null)),
         time: hhmm(n.completion.completed_at, site?.timezone ?? "Europe/London"),
         byName: by?.full_name ?? "", action: "No corrective action recorded",
-      }, now);
+      };
+      try { await alertManagers(alertDeps, senders, biz, alert, now); }
+      // Spec §2: also every Telegram "Alerts" group of the business (best effort, never throws).
+      finally { if (tgApi) await alertTelegramAlertsGroups({ g: groupDeps, api: tgApi }, biz, alert); }
     }
   }
 }

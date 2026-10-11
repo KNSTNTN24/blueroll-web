@@ -1,6 +1,8 @@
 // src/lib/whatsapp/__tests__/alerts.test.ts
 import { describe, it, expect } from 'vitest'
-import { alertManagers, makeAlertDeps, alertGroups, groupAlertText, type AlertDeps, type AlertRecipient } from '../../../../supabase/functions/_shared/channels/alerts'
+import { alertManagers, makeAlertDeps, alertGroups, alertTelegramAlertsGroups, groupAlertText, type AlertDeps, type AlertRecipient } from '../../../../supabase/functions/_shared/channels/alerts'
+import { makeDeps } from '../../../../supabase/functions/_shared/channels/db'
+import { whatsappUI } from '../../../../supabase/functions/_shared/channels/ui'
 import { fakeGroupDeps, fakeTgApi, groupRow, GROUP } from './fakes/group-deps'
 import type { SendFn } from '../../../../supabase/functions/_shared/channels/types'
 
@@ -127,5 +129,61 @@ describe('alertGroups', () => {
     const { api, calls } = fakeTgApi()
     await alertGroups(d, api, 'b', 'g1', A)
     expect(calls).toEqual([])
+  })
+})
+
+describe('WhatsApp-origin alerts → Telegram "Alerts" groups (spec §2)', () => {
+  const kitchen = groupRow(GROUP)   // not an alerts group: no source group on the WhatsApp path
+  const managers = groupRow({ id: 'g2', business_id: 'b', channel: 'telegram', chat_id: '-1002', title: 'Managers', alerts: true })
+  const otherBiz = groupRow({ id: 'g9', business_id: 'other', channel: 'telegram', chat_id: '-1009', title: 'Other', alerts: true })
+
+  it('every Alerts group of the business, plain group text; not the other groups or businesses', async () => {
+    const { d } = fakeGroupDeps({ groups: [kitchen, managers, otherBiz] })
+    const { api, calls } = fakeTgApi()
+    await alertTelegramAlertsGroups({ g: d, api }, 'b', A)
+    expect(calls).toEqual([{ method: 'sendMessage', body: { chat_id: '-1002', text: groupAlertText(A) } }])
+  })
+  it('business cannot use Telegram → nothing sent; a failing lookup never throws', async () => {
+    const off = fakeGroupDeps({ groups: [managers], ready: { b: false } })
+    const t1 = fakeTgApi()
+    await alertTelegramAlertsGroups({ g: off.d, api: t1.api }, 'b', A)
+    expect(t1.calls).toEqual([])
+    const broken = fakeGroupDeps({ groups: [managers] }, { alertGroups: async () => { throw new Error('db down') } })
+    const t2 = fakeTgApi()
+    await expect(alertTelegramAlertsGroups({ g: broken.d, api: t2.api }, 'b', A)).resolves.toBeUndefined()
+    expect(t2.calls).toEqual([])
+  })
+
+  // makeDeps (WhatsApp bot) wiring: WhatsApp managers personally + Telegram Alerts groups; groups still told when the
+  // manager lookup fails, and that failure still surfaces as before.
+  const fakeAdmin = (failIdentities = false) => {
+    const table = (t: string) => {
+      const q: any = {}
+      for (const m of ['select', 'eq', 'in', 'is', 'insert']) q[m] = () => q
+      q.then = (res: any, rej: any) => Promise.resolve(
+        t === 'channel_identities' && failIdentities ? { data: null, error: { message: 'boom' } }
+          : { data: t === 'profiles' ? [{ id: 'm1' }] : t === 'channel_identities' ? [{ channel: 'whatsapp', external_id: '447700900999', last_inbound_at: null }] : null, error: null },
+      ).then(res, rej)
+      return q
+    }
+    return { from: table, rpc: () => Promise.resolve({ data: true, error: null }) }
+  }
+  it('makeDeps.alertManagers: WhatsApp manager gets the template and the Telegram Alerts group gets the text', async () => {
+    const wa: any[] = []
+    const send = async (m: any) => { wa.push(m); return { id: 'w1', ok: true, status: 200 } }
+    const { d: g } = fakeGroupDeps({ groups: [kitchen, managers] })
+    const { api, calls } = fakeTgApi()
+    const deps = makeDeps(fakeAdmin(), { channel: 'whatsapp', ui: whatsappUI(), send, telegramAlertGroups: { g, api } })
+    await deps.alertManagers('b', A)
+    expect(wa.map((m) => [m.to, m.template?.name])).toEqual([['447700900999', 'manager_alert']])
+    expect(calls).toEqual([{ method: 'sendMessage', body: { chat_id: '-1002', text: groupAlertText(A) } }])
+  })
+  it('makeDeps.alertManagers: groups are told even when the manager lookup fails (the failure still surfaces)', async () => {
+    const send = async () => ({ id: 'w1', ok: true, status: 200 })
+    const { d: g } = fakeGroupDeps({ groups: [managers] })
+    const t = fakeTgApi()
+    const deps = makeDeps(fakeAdmin(true), { channel: 'whatsapp', ui: whatsappUI(), send, telegramAlertGroups: { g, api: t.api } })
+    await expect(deps.alertManagers('b', A)).rejects.toMatchObject({ message: 'boom' })
+    expect(t.calls.map((c) => c.body.chat_id)).toEqual(['-1002'])
   })
 })
