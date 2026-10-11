@@ -9,12 +9,12 @@ export function availableChecklists(templates: Template[], p: Person, siteId: st
   return templates.filter((t) => t.active && (t.site_id === null || t.site_id === siteId) && isAssigned(t, p))
 }
 
-export function dueChecklists(args: {
-  templates: Template[]; person: Person; siteId: string; tz: string; now: Date; completions: CompletionLite[]
-}): DueChecklist[] {
-  const { templates, person, siteId, tz, now, completions } = args
+/** What is still due at a site for these templates, regardless of who they are assigned to (Telegram groups). */
+export function dueAtSite(args: { templates: Template[]; siteId: string; tz: string; now: Date; completions: CompletionLite[] }): DueChecklist[] {
+  const { templates, siteId, tz, now, completions } = args
   const out: DueChecklist[] = []
-  for (const t of availableChecklists(templates, person, siteId)) {
+  for (const t of templates) {
+    if (!t.active || (t.site_id !== null && t.site_id !== siteId)) continue
     const need = t.multi_per_day ? (t.min_per_day ?? 0) : 1
     if (need === 0) continue
     const freq = t.multi_per_day ? 'daily' : t.frequency
@@ -29,6 +29,12 @@ export function dueChecklists(args: {
     })
   }
   return out
+}
+
+export function dueChecklists(args: {
+  templates: Template[]; person: Person; siteId: string; tz: string; now: Date; completions: CompletionLite[]
+}): DueChecklist[] {
+  return dueAtSite({ ...args, templates: availableChecklists(args.templates, args.person, args.siteId) })
 }
 
 /**

@@ -5,7 +5,7 @@ import type { BotDeps, FormToken, Identity } from './bot.ts'
 import type { SendFn } from './types.ts'
 import { maskId } from './mask.ts'
 import type { Channel, ChannelUI } from './ui.ts'
-import { alertManagers, makeAlertDeps, type Senders } from './alerts.ts'
+import { alertManagers, alertTelegramAlertsGroups, makeAlertDeps, type Senders, type TelegramAlertGroups } from './alerts.ts'
 
 const IDENTITY_COLS = 'id, business_id, profile_id, external_id'
 
@@ -63,6 +63,8 @@ export interface DepsConfig {
   correctiveFlowId?: string
   /** Senders for cross-channel manager alerts; defaults to `{ [channel]: send }`. */
   senders?: Senders
+  /** Telegram "Alerts" groups that also get this channel's out-of-range alerts (spec §2); omitted = none. */
+  telegramAlertGroups?: TelegramAlertGroups
 }
 
 // deno-lint-ignore no-explicit-any
@@ -203,7 +205,10 @@ export function makeDeps(admin: any, cfg: DepsConfig): BotDeps {
       }
     },
 
-    alertManagers: (b, a) => alertManagers(alertDeps, senders, b, a, clock()),
+    alertManagers: async (b, a) => {
+      try { await alertManagers(alertDeps, senders, b, a, clock()) }
+      finally { if (cfg.telegramAlertGroups) await alertTelegramAlertsGroups(cfg.telegramAlertGroups, b, a) }   // never throws
+    },
 
     log: async (e) => {
       const { error } = await admin.from('channel_messages_log').insert({ ...e, channel: ch })

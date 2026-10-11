@@ -14,11 +14,11 @@ export function maskNumber(e164: string): string {
   return d.length < 6 ? '+••' : `+${d.slice(0, 2)} ${d.slice(2, 3)}••• ••${d.slice(-2)}`
 }
 
-export const TELEGRAM_BOT = 'BluerollChecksBot'
+export type LinkChannel = 'whatsapp'
 
-// Per-channel config. buildLink returns null when the channel's destination is
-// not configured (dialog then shows the code only). Telegram is never null.
-export const CHANNELS: Record<Channel, { label: string; buildLink: (code: string) => string | null; codeText: (code: string) => string; displayId: (externalId: string) => string; notConfiguredNote: string; scanInstruction: string; codeInstruction: string }> = {
+// Personal connect (QR / code) exists for WhatsApp only; Telegram works through groups (Settings → Messaging).
+// buildLink returns null when the destination is not configured (dialog then shows the code only).
+export const CHANNELS: Record<LinkChannel, { label: string; buildLink: (code: string) => string | null; codeText: (code: string) => string; displayId: (externalId: string) => string; notConfiguredNote: string; scanInstruction: string; codeInstruction: string }> = {
   whatsapp: {
     label: 'WhatsApp',
     buildLink: (code) => (WA_NUMBER ? waLink(WA_NUMBER, code) : null),
@@ -27,15 +27,6 @@ export const CHANNELS: Record<Channel, { label: string; buildLink: (code: string
     notConfiguredNote: 'WhatsApp number not configured yet',
     scanInstruction: 'Ask them to scan this with their phone camera and press Send in WhatsApp.',
     codeInstruction: 'Send this code to Blueroll on WhatsApp from their phone.',
-  },
-  telegram: {
-    label: 'Telegram',
-    buildLink: (code) => `https://t.me/${TELEGRAM_BOT}?start=${code}`,
-    codeText: (code) => `/start ${code}`,
-    displayId: () => 'connected',
-    notConfiguredNote: 'Telegram bot not configured yet',
-    scanInstruction: 'Scan with the phone camera, then tap Start in Telegram.',
-    codeInstruction: 'Send this code to Blueroll on Telegram from their phone.',
   },
 }
 
@@ -47,10 +38,10 @@ export async function issueLinkCode(a: { profileId: string; siteId: string | nul
 }
 
 export async function listIdentities(businessId: string, channel: Channel = 'whatsapp') {
-  const { data, error } = await supabase.from('channel_identities').select('id, profile_id, external_id, consent_at')
+  const { data, error } = await supabase.from('channel_identities').select('id, profile_id, external_id, consent_at, consent_source')
     .eq('business_id', businessId).eq('channel', channel).is('revoked_at', null)
   if (error) throw error
-  return (data ?? []) as { id: string; profile_id: string; external_id: string; consent_at: string }[]
+  return (data ?? []) as { id: string; profile_id: string; external_id: string; consent_at: string; consent_source: string }[]
 }
 
 export async function revokeIdentity(id: string) {

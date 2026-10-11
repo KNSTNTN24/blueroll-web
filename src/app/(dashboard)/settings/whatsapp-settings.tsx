@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { Switch } from '@/components/ui/switch'
+import { TelegramGroups } from './telegram-groups'
 import { channelAvailable, syncAllFlows, type Channel } from '@/lib/whatsapp/client'
 
 interface ChannelToggleProps {
@@ -49,9 +50,14 @@ export function ChannelToggle({ channel, column, title, description }: ChannelTo
   )
 }
 
-export function WhatsAppSettings() {
+export function MessagingSettings() {
+  const telegramOn = useAuthStore((s) => !!s.business?.telegram_enabled)
   return (
     <div className="flex flex-col gap-4">
+      <div>
+        <h1 className="text-[25px] font-bold tracking-[-0.02em]">Messaging</h1>
+        <p className="mt-1.5 text-[14px] text-muted-foreground">Checks in WhatsApp and Telegram for staff who work without the app.</p>
+      </div>
       {/* Hidden until the WhatsApp number is configured (NEXT_PUBLIC_WHATSAPP_NUMBER). */}
       {channelAvailable('whatsapp') && <ChannelToggle
         channel="whatsapp"
@@ -63,8 +69,9 @@ export function WhatsAppSettings() {
         channel="telegram"
         column="telegram_enabled"
         title="Telegram checks"
-        description="Staff get reminders and fill in checks in Telegram. Free."
+        description="Staff fill in checks from your team's Telegram groups. Free."
       />
+      {telegramOn && <TelegramGroups />}
     </div>
   )
 }

@@ -1,12 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { createHmac } from 'crypto'
-import start from './fixtures/tg-start.json'
-import command from './fixtures/tg-command.json'
-import callback from './fixtures/tg-callback.json'
 import group from './fixtures/tg-group.json'
-import { verifyWebhookSecret, parseUpdate, tgText, tgButtons, tgWebAppButton, verifyInitData, makeTelegramSender, answerCallback, setupBot, BOT_USERNAME } from '../../../../supabase/functions/_shared/channels/telegram'
-
-const priv = (text: unknown, extra: Record<string, unknown> = {}) => ({ update_id: 9, message: { from: { id: 42, is_bot: false }, chat: { id: 42, type: 'private' }, text, ...extra } })
+import { verifyWebhookSecret, tgText, tgButtons, tgWebAppButton, verifyInitData, makeTelegramSender, setupBot, BOT_USERNAME,
+  parseGroupUpdate, makeTelegramApi, tgHtml, tgEditHtml, escapeHtml, tgOutcome, memberStatus, membersCanInvite, miniAppLink, TG_MINI_APP_SHORT_NAME, type TgApiResult } from '../../../../supabase/functions/_shared/channels/telegram'
 
 describe('verifyWebhookSecret', () => {
   it('true/false/null', () => {
@@ -14,34 +10,6 @@ describe('verifyWebhookSecret', () => {
     expect(verifyWebhookSecret('abd', 'abc')).toBe(false)
     expect(verifyWebhookSecret('ab', 'abc')).toBe(false)
     expect(verifyWebhookSecret(null, 'abc')).toBe(false)
-  })
-})
-
-describe('parseUpdate', () => {
-  it('/start code → LINK', () => expect(parseUpdate(start)).toEqual([{ kind: 'text', from: '123456789', text: 'LINK 482913', id: '1001' }]))
-  it('/start alone and /help → help', () => {
-    expect(parseUpdate(priv('/start'))[0]).toMatchObject({ text: 'help' })
-    expect(parseUpdate(priv('/help'))[0]).toMatchObject({ text: 'help' })
-    expect(parseUpdate(priv('/start abc'))[0]).toMatchObject({ text: 'help' })
-  })
-  it('/checks@Bot → checks; /stop; other text as is', () => {
-    expect(parseUpdate(command)).toEqual([{ kind: 'text', from: '123456789', text: 'checks', id: '1002' }])
-    expect(parseUpdate(priv('/stop'))[0]).toMatchObject({ text: 'stop' })
-    expect(parseUpdate(priv('hello there'))[0]).toMatchObject({ text: 'hello there' })
-    expect(parseUpdate(priv('/checks@OtherBot'))).toEqual([])
-    expect(BOT_USERNAME).toBe('BluerollChecksBot')
-  })
-  it('callback → button', () => expect(parseUpdate(callback)).toEqual([{ kind: 'button', from: '123456789', payload: 'fill:t1:s1', id: '1003', callbackId: 'cb-77' }]))
-  it('ignored shapes → []', () => {
-    expect(parseUpdate(group)).toEqual([])
-    expect(parseUpdate({ update_id: 1, channel_post: { chat: { id: 1, type: 'channel' }, text: 'x' } })).toEqual([])
-    expect(parseUpdate({ update_id: 1, edited_message: priv('x').message })).toEqual([])
-    expect(parseUpdate({ update_id: 1, message: { ...priv('x').message, from: { id: 42, is_bot: true } } })).toEqual([])
-    expect(parseUpdate(priv(undefined, { sticker: { file_id: 'f' } }))).toEqual([])
-    expect(parseUpdate({ update_id: 1, callback_query: { id: 'c', from: { id: 1 }, message: { chat: { id: -5, type: 'group' } }, data: 'x' } })).toEqual([])
-  })
-  it('malformed never throws', () => {
-    for (const v of [null, undefined, 5, 'x', [], {}, { message: 5 }, { message: { chat: null } }, { callback_query: 'x' }, { callback_query: { from: null } }]) expect(parseUpdate(v)).toEqual([])
   })
 })
 
@@ -77,7 +45,11 @@ describe('verifyInitData', () => {
     return p
   }
   const nowSec = Math.floor(now.getTime() / 1000)
-  it('valid → userId', async () => expect(await verifyInitData(build(nowSec - 60).toString(), token, now)).toEqual({ userId: '777' }))
+  it('valid → user id and names', async () => expect(await verifyInitData(build(nowSec - 60).toString(), token, now)).toEqual({ userId: '777', firstName: 'Ann', lastName: '' }))
+  it('last name is returned when present', async () => {
+    expect(await verifyInitData(build(nowSec - 60, '{"id":778,"first_name":"Ben","last_name":"Smith"}').toString(), token, now))
+      .toEqual({ userId: '778', firstName: 'Ben', lastName: 'Smith' })
+  })
   it('tampered user → null', async () => {
     const p = build(nowSec - 60); p.set('user', '{"id":888}')
     expect(await verifyInitData(p.toString(), token, now)).toBeNull()
@@ -101,14 +73,6 @@ describe('makeTelegramSender', () => {
     expect(calls[0].url).toBe('https://api.telegram.org/botT0K/sendMessage')
     expect(calls[0].body).toEqual({ chat_id: '1', text: 'hi' })
   })
-  it('answers callback query when callback_query_id present', async () => {
-    const urls: string[] = []; const bodies: any[] = []
-    const f = (async (url: string, init: any) => { urls.push(url); bodies.push(JSON.parse(init.body)); return new Response(JSON.stringify({ ok: true, result: { message_id: 1 } })) }) as unknown as typeof fetch
-    await makeTelegramSender({ token: 'T', fetchFn: f })({ chat_id: '1', text: 'x', callback_query_id: 'cb' })
-    expect(urls.map((u) => u.split('/').pop())).toEqual(['answerCallbackQuery', 'sendMessage'])
-    expect(bodies[0]).toEqual({ callback_query_id: 'cb' })
-    expect(bodies[1]).toEqual({ chat_id: '1', text: 'x' })
-  })
   it('never throws', async () => {
     const boom = (async () => { throw new Error('net') }) as unknown as typeof fetch
     expect(await makeTelegramSender({ token: 'T', fetchFn: boom })({ chat_id: '1', text: 'x' })).toEqual({ id: null, ok: false, status: 0 })
@@ -117,30 +81,156 @@ describe('makeTelegramSender', () => {
   })
 })
 
-describe('answerCallback', () => {
-  it('posts answerCallbackQuery and never throws', async () => {
-    const calls: { url: string; body: any }[] = []
-    const f = (async (url: string, init: any) => { calls.push({ url, body: JSON.parse(init.body) }); return new Response('{}') }) as unknown as typeof fetch
-    await answerCallback('T', 'cb1', f)
-    expect(calls).toEqual([{ url: 'https://api.telegram.org/botT/answerCallbackQuery', body: { callback_query_id: 'cb1' } }])
-    const boom = (async () => { throw new Error('net') }) as unknown as typeof fetch
-    await expect(answerCallback('T', 'cb1', boom)).resolves.toBeUndefined()
-  })
-})
-
 describe('setupBot', () => {
-  it('sets webhook + commands', async () => {
+  it('sets the webhook (messages + my_chat_member) and private + group commands', async () => {
     const calls: { m: string; b: any }[] = []
     const f = (async (url: string, init: any) => { calls.push({ m: url.split('/').pop()!, b: JSON.parse(init.body) }); return new Response(JSON.stringify({ ok: true })) }) as unknown as typeof fetch
     const r = await setupBot({ token: 'T', webhookUrl: 'https://h/x', secret: 'S', fetchFn: f })
     expect(r).toEqual({ ok: true, errors: [] })
-    expect(calls[0]).toEqual({ m: 'setWebhook', b: { url: 'https://h/x', secret_token: 'S', allowed_updates: ['message', 'callback_query'] } })
-    expect(calls[1].m).toBe('setMyCommands')
+    expect(calls[0]).toEqual({ m: 'setWebhook', b: { url: 'https://h/x', secret_token: 'S', allowed_updates: ['message', 'my_chat_member'] } })
+    expect(calls[1]).toEqual({ m: 'setMyCommands', b: { commands: [{ command: 'help', description: 'How Blueroll checks work' }] } })
+    expect(calls[2]).toEqual({ m: 'setMyCommands', b: { scope: { type: 'all_group_chats' }, commands: [
+      { command: 'checks', description: "Show today's checks" },
+      { command: 'link', description: 'Link this group to Blueroll' },
+      { command: 'help', description: 'How Blueroll checks work' },
+    ] } })
   })
   it('collects errors without leaking token', async () => {
     const f = (async () => new Response(JSON.stringify({ ok: false, description: 'bad TOKEN123' }), { status: 401 })) as unknown as typeof fetch
     const r = await setupBot({ token: 'TOKEN123', webhookUrl: 'u', secret: 's', fetchFn: f })
-    expect(r.ok).toBe(false); expect(r.errors).toHaveLength(2)
+    expect(r.ok).toBe(false); expect(r.errors).toHaveLength(3)
     expect(JSON.stringify(r.errors)).not.toContain('TOKEN123')
+  })
+})
+
+const grp = (text: unknown, extra: Record<string, unknown> = {}) => ({
+  update_id: 5, message: { message_id: 1, from: { id: 42, is_bot: false, first_name: 'Ann' }, chat: { id: -100123, type: 'supergroup', title: 'Kitchen' }, text, ...extra },
+})
+
+describe('parseGroupUpdate', () => {
+  it('/link <code> in a group → link command with the chat title', () => {
+    expect(parseGroupUpdate(grp('/link 482913'))).toEqual([{ kind: 'command', chatId: '-100123', chatTitle: 'Kitchen', userId: '42', command: 'link', arg: '482913', id: '5' }])
+    expect(parseGroupUpdate(grp('/link@BluerollChecksBot 482913'))).toEqual([{ kind: 'command', chatId: '-100123', chatTitle: 'Kitchen', userId: '42', command: 'link', arg: '482913', id: '5' }])
+  })
+  it('/checks (fixture, no title) and /checks@BluerollChecksBot → checks; other bot → nothing', () => {
+    expect(parseGroupUpdate(group)).toEqual([{ kind: 'command', chatId: '-100123', chatTitle: '', userId: '123456789', command: 'checks', arg: '', id: '1004' }])
+    expect(parseGroupUpdate(grp('/checks@BluerollChecksBot'))[0]).toMatchObject({ command: 'checks' })
+    expect(parseGroupUpdate(grp('/checks@OtherBot'))).toEqual([])
+  })
+  it('/help and /start → help', () => {
+    expect(parseGroupUpdate(grp('/help'))[0]).toMatchObject({ command: 'help' })
+    expect(parseGroupUpdate(grp('/start'))[0]).toMatchObject({ command: 'help' })
+  })
+  it('chatter, unknown commands, stickers and bot senders are ignored', () => {
+    expect(parseGroupUpdate(grp('hello all'))).toEqual([])
+    expect(parseGroupUpdate(grp('/stop'))).toEqual([])
+    expect(parseGroupUpdate(grp('/constructor'))).toEqual([])
+    expect(parseGroupUpdate(grp(undefined, { sticker: { file_id: 'f' } }))).toEqual([])
+    expect(parseGroupUpdate(grp('/checks', { from: { id: 7, is_bot: true } }))).toEqual([])
+  })
+  it('an anonymous group admin (GroupAnonymousBot, sender_chat = the group) can still /link', () => {
+    const u = grp('/link 111111', { from: { id: 1087968824, is_bot: true, first_name: 'Group' }, sender_chat: { id: -100123, type: 'supergroup' } })
+    expect(parseGroupUpdate(u)).toEqual([{ kind: 'command', chatId: '-100123', chatTitle: 'Kitchen', userId: '', command: 'link', arg: '111111', id: '5' }])
+  })
+  it('any private message (incl. an old /start <code> and stickers) → private', () => {
+    expect(parseGroupUpdate({ update_id: 6, message: { from: { id: 42, is_bot: false }, chat: { id: 42, type: 'private' }, text: '/start 482913' } }))
+      .toEqual([{ kind: 'private', chatId: '42', id: '6' }])
+    expect(parseGroupUpdate({ update_id: 7, message: { from: { id: 42, is_bot: false }, chat: { id: 42, type: 'private' }, sticker: {} } }))
+      .toEqual([{ kind: 'private', chatId: '42', id: '7' }])
+  })
+  it('my_chat_member left/kicked in a group → bot_removed; added or private → nothing', () => {
+    const mcm = (status: string, type = 'supergroup') => ({ update_id: 8, my_chat_member: { chat: { id: -100123, type }, from: { id: 42 }, new_chat_member: { status, user: { id: 1 } } } })
+    expect(parseGroupUpdate(mcm('left'))).toEqual([{ kind: 'bot_removed', chatId: '-100123', id: '8' }])
+    expect(parseGroupUpdate(mcm('kicked'))).toEqual([{ kind: 'bot_removed', chatId: '-100123', id: '8' }])
+    expect(parseGroupUpdate(mcm('member'))).toEqual([])
+    expect(parseGroupUpdate(mcm('kicked', 'private'))).toEqual([])
+  })
+  it('group → supergroup migration', () => {
+    const u = { update_id: 9, message: { from: { id: 42, is_bot: false }, chat: { id: -5, type: 'group' }, migrate_to_chat_id: -1009 } }
+    expect(parseGroupUpdate(u)).toEqual([{ kind: 'migrated', chatId: '-5', newChatId: '-1009', id: '9' }])
+  })
+  it('channel posts, edits and malformed input never produce events or throw', () => {
+    expect(parseGroupUpdate({ update_id: 1, channel_post: { chat: { id: -1, type: 'channel' }, text: '/checks' } })).toEqual([])
+    expect(parseGroupUpdate({ update_id: 1, edited_message: grp('/checks').message })).toEqual([])
+    for (const v of [null, undefined, 5, 'x', [], {}, { message: 5 }, { message: { chat: null } }, { my_chat_member: 'x' }]) expect(parseGroupUpdate(v)).toEqual([])
+  })
+})
+
+describe('Mini App direct link', () => {
+  it('uses the BotFather short name', () => {
+    expect(TG_MINI_APP_SHORT_NAME).toBe('form')
+    expect(miniAppLink('abc_DEF-1')).toBe(`https://t.me/${BOT_USERNAME}/${TG_MINI_APP_SHORT_NAME}?startapp=abc_DEF-1`)
+  })
+})
+
+describe('HTML builders', () => {
+  it('escapeHtml escapes &, < and >', () => expect(escapeHtml('Fish & Chips <Bar>')).toBe('Fish &amp; Chips &lt;Bar&gt;'))
+  it('tgHtml: HTML parse mode, no link previews, URL buttons', () => {
+    expect(tgHtml('-1', '<b>x</b>', [[{ text: 'A', url: 'https://t.me/a' }]])).toEqual({
+      chat_id: '-1', text: '<b>x</b>', parse_mode: 'HTML', link_preview_options: { is_disabled: true },
+      reply_markup: { inline_keyboard: [[{ text: 'A', url: 'https://t.me/a' }]] },
+    })
+    expect(tgHtml('-1', 'x')).toEqual({ chat_id: '-1', text: 'x', parse_mode: 'HTML', link_preview_options: { is_disabled: true } })
+  })
+  it('tgEditHtml always sends reply_markup (an empty keyboard clears old buttons)', () => {
+    expect(tgEditHtml('-1', '55', 'x', [])).toEqual({
+      chat_id: '-1', message_id: 55, text: 'x', parse_mode: 'HTML', link_preview_options: { is_disabled: true }, reply_markup: { inline_keyboard: [] },
+    })
+  })
+})
+
+describe('makeTelegramApi', () => {
+  it('posts the method and returns the result', async () => {
+    const calls: { url: string; body: any }[] = []
+    const f = (async (url: string, init: any) => { calls.push({ url, body: JSON.parse(init.body) }); return new Response(JSON.stringify({ ok: true, result: { message_id: 9 } })) }) as unknown as typeof fetch
+    const r = await makeTelegramApi({ token: 'T0K', fetchFn: f })('sendMessage', { chat_id: '-1', text: 'x' })
+    expect(r).toEqual({ ok: true, status: 200, description: '', result: { message_id: 9 }, migrateTo: null })
+    expect(calls).toEqual([{ url: 'https://api.telegram.org/botT0K/sendMessage', body: { chat_id: '-1', text: 'x' } }])
+  })
+  it('errors: description without the token, migrate_to_chat_id surfaced, never throws', async () => {
+    const f = (async () => new Response(JSON.stringify({ ok: false, description: 'Bad Request: group chat was upgraded T0K', parameters: { migrate_to_chat_id: -1009 } }), { status: 400 })) as unknown as typeof fetch
+    const r = await makeTelegramApi({ token: 'T0K', fetchFn: f })('sendMessage', {})
+    expect(r).toEqual({ ok: false, status: 400, description: 'Bad Request: group chat was upgraded ***', result: null, migrateTo: '-1009' })
+    const boom = (async () => { throw new Error('net') }) as unknown as typeof fetch
+    expect(await makeTelegramApi({ token: 'T', fetchFn: boom })('getChat', {})).toEqual({ ok: false, status: 0, description: 'network', result: null, migrateTo: null })
+  })
+})
+
+const R = (o: Partial<TgApiResult>): TgApiResult => ({ ok: false, status: 400, description: '', result: null, migrateTo: null, ...o })
+
+describe('tgOutcome', () => {
+  it.each([
+    [R({ ok: true, status: 200 }), 'ok'],
+    [R({ description: 'Bad Request: message is not modified: specified new message content and reply markup are exactly the same' }), 'not_modified'],
+    [R({ description: 'Bad Request: message to edit not found' }), 'gone'],
+    [R({ description: 'Bad Request: message to delete not found' }), 'gone'],
+    [R({ description: "Bad Request: message can't be deleted for everyone" }), 'gone'],
+    [R({ description: "Bad Request: message can't be edited" }), 'gone'],
+    [R({ status: 403, description: 'Forbidden: bot was kicked from the supergroup chat' }), 'kicked'],
+    [R({ status: 403, description: 'Forbidden: bot is not a member of the group chat' }), 'kicked'],
+    [R({ description: 'Bad Request: chat not found' }), 'kicked'],
+    [R({ description: 'Bad Request: group chat was upgraded to a supergroup chat', migrateTo: '-1009' }), 'migrated'],
+    [R({ status: 429, description: 'Too Many Requests: retry after 5' }), 'retry'],
+    [R({ status: 0, description: 'network' }), 'retry'],
+  ])('%#', (r, want) => expect(tgOutcome(r)).toBe(want))
+})
+
+describe('memberStatus / membersCanInvite', () => {
+  it('member statuses', () => {
+    for (const s of ['creator', 'administrator', 'member']) expect(memberStatus(R({ ok: true, status: 200, result: { status: s } }))).toBe('member')
+    expect(memberStatus(R({ ok: true, status: 200, result: { status: 'restricted', is_member: true } }))).toBe('member')
+    expect(memberStatus(R({ ok: true, status: 200, result: { status: 'restricted', is_member: false } }))).toBe('not_member')
+    expect(memberStatus(R({ ok: true, status: 200, result: { status: 'left' } }))).toBe('not_member')
+    expect(memberStatus(R({ ok: true, status: 200, result: { status: 'kicked' } }))).toBe('not_member')
+    expect(memberStatus(R({ description: 'Bad Request: user not found' }))).toBe('not_member')
+    expect(memberStatus(R({ description: 'Bad Request: PARTICIPANT_ID_INVALID' }))).toBe('not_member')
+    expect(memberStatus(R({ status: 0, description: 'network' }))).toBe('unknown')
+    expect(memberStatus(R({ status: 429 }))).toBe('unknown')
+  })
+  it('can members invite?', () => {
+    expect(membersCanInvite(R({ ok: true, status: 200, result: { permissions: { can_invite_users: true } } }))).toBe(true)
+    expect(membersCanInvite(R({ ok: true, status: 200, result: { permissions: { can_invite_users: false } } }))).toBe(false)
+    expect(membersCanInvite(R({ ok: true, status: 200, result: {} }))).toBe(false)
+    expect(membersCanInvite(R({ status: 0 }))).toBeNull()
   })
 })

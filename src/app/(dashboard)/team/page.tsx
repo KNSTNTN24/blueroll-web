@@ -10,7 +10,7 @@ import { Plus, Copy, CheckCircle2, X, ShieldCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ROLE_LABELS, type UserRole } from '@/lib/constants'
 import { format } from 'date-fns'
-import { channelAvailable, listIdentities, type Channel } from '@/lib/whatsapp/client'
+import { channelAvailable, listIdentities, type LinkChannel } from '@/lib/whatsapp/client'
 import { ChannelStatus, ChannelConnectDialog } from './whatsapp-connect'
 import { AddWhatsAppMemberDialog } from './add-whatsapp-member'
 
@@ -41,7 +41,7 @@ export default function TeamPage() {
   const [inviteSite, setInviteSite] = useState<string>('')
   const [generatedToken, setGeneratedToken] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
-  const [connecting, setConnecting] = useState<{ id: string; full_name: string | null; channel: Channel } | null>(null)
+  const [connecting, setConnecting] = useState<{ id: string; full_name: string | null; channel: LinkChannel } | null>(null)
   const [addingWa, setAddingWa] = useState(false)
   const [tab, setTab] = useState<string>('all') // 'all' or a site id (only used in the all-sites view)
 
@@ -77,7 +77,7 @@ export default function TeamPage() {
   })
 
   const tgOn = isManager && !!business?.telegram_enabled
-  const { data: tgIdentities = [], refetch: refetchTgIds } = useQuery({
+  const { data: tgIdentities = [] } = useQuery({
     queryKey: ['tg-identities', business?.id],
     enabled: !!business?.id && tgOn,
     queryFn: () => listIdentities(business!.id, 'telegram'),
@@ -159,7 +159,7 @@ export default function TeamPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-        {(waOn || tgOn) && <Button variant="outline" onClick={() => setAddingWa(true)}>Add staff without app login</Button>}
+        {waOn && <Button variant="outline" onClick={() => setAddingWa(true)}>Add staff without app login</Button>}
         {isManager && (
           <button onClick={openInvite}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: '#1f9d63', border: 'none', color: '#fff', fontSize: 14, fontWeight: 600, padding: '11px 17px', borderRadius: 11, cursor: 'pointer', boxShadow: '0 1px 2px rgba(16,24,40,.1)' }}
@@ -347,7 +347,9 @@ export default function TeamPage() {
                       )}
                       {tgOn && (
                         <td className="px-3 py-3">
-                          <ChannelStatus channel="telegram" identity={tgIdentities.find((x) => x.profile_id === m.id)} onChanged={refetchTgIds} onConnect={() => setConnecting({ id: m.id, full_name: m.full_name, channel: 'telegram' })} />
+                          {tgIdentities.some((x) => x.profile_id === m.id)
+                            ? <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[12px] font-medium text-sky-700">via Telegram group</span>
+                            : <span className="text-[12px] text-[#b0b5bc]">—</span>}
                         </td>
                       )}
                       <td className="px-4 py-3 text-[12.5px] text-muted-foreground">
@@ -363,11 +365,11 @@ export default function TeamPage() {
       </div>
 
       {connecting && business && (
-        <ChannelConnectDialog channel={connecting.channel} member={connecting} siteId={currentSiteId} onClose={() => { setConnecting(null); if (waOn) refetchIds(); if (tgOn) refetchTgIds() }} />
+        <ChannelConnectDialog channel={connecting.channel} member={connecting} siteId={currentSiteId} onClose={() => { setConnecting(null); if (waOn) refetchIds() }} />
       )}
       {addingWa && (
-        <AddWhatsAppMemberDialog roles={roles} sites={sites} defaultSiteId={currentSiteId} channels={[...(waOn ? ['whatsapp' as const] : []), ...(tgOn ? ['telegram' as const] : [])]} onClose={() => setAddingWa(false)}
-          onCreated={(id, name, channel) => { setAddingWa(false); queryClient.invalidateQueries({ queryKey: ['team', business?.id] }); setConnecting({ id, full_name: name, channel }) }} />
+        <AddWhatsAppMemberDialog roles={roles} sites={sites} defaultSiteId={currentSiteId} onClose={() => setAddingWa(false)}
+          onCreated={(id, name) => { setAddingWa(false); queryClient.invalidateQueries({ queryKey: ['team', business?.id] }); setConnecting({ id, full_name: name, channel: 'whatsapp' }) }} />
       )}
     </div>
   )

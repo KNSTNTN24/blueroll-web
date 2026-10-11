@@ -1,97 +1,108 @@
 // supabase/functions/_shared/channels/form-api.ts
-// Telegram Mini App form API (GET form / POST answers + inline corrective actions). Pure over FormApiDeps (unit-tested
-// with fakes); channel-form/index.ts wires it to Supabase.
+// Telegram Mini App form API for GROUP checklists (spec §5, §6). Pure over FormApiDeps (unit-tested with fakes);
+// channel-form/index.ts wires it to Supabase + the Bot API.
 //
-// Security order for both handlers: initData signature (401) → linked Telegram identity (403) → token ownership (403,
-// before any token detail is used or revealed) → token live/kind (410) → business ready + person active (403) →
-// assignment re-check (410) → item ids unchanged (410 'changed'). POST validates everything BEFORE taking the token,
-// so a 400 leaves it usable; takeToken (atomic, owner-scoped) runs only right before recording → replays get 410.
-import type { Answer, Person, Template, TemplateItem } from '../checklists-core/types.ts'
+// Order for both handlers: initData signature (401) → token shape/kind (410 expired) → group still linked (410 moved)
+// → Telegram membership of that group (403 not_member / 503 retry_later) → token used (410 used + winner's first name)
+// / expired (410) → team can use Telegram (403 unavailable) → checklist still mapped + site valid (410 moved) → item ids
+// unchanged (410 changed). POST validates answers BEFORE taking the token; the atomic take decides "first submit wins".
+import type { Person, Template, TemplateItem } from '../checklists-core/types.ts'
 import { fieldName, formItems, parseFormAnswers } from '../checklists-core/answers.ts'
-import { availableChecklists } from '../checklists-core/due.ts'
+import { recordCompletion } from '../checklists-core/record.ts'
 import { CORRECTIVE_ACTIONS } from './whatsapp-flows.ts'
-import { withUnit, type FormToken, type SiteInfo } from './bot.ts'
+import { withUnit, type SiteInfo } from './bot.ts'
+import { memberStatus, type TgApi, type TgUser } from './telegram.ts'
+import { notifyManagers, type ChannelGroup, type GroupDeps, type GroupFormToken } from './groups-db.ts'
+import { refreshGroupSite } from './tg-live.ts'
+import { alertGroups } from './alerts.ts'
+import type { ManagerAlert } from './ui.ts'
+import { telegramDisplayName } from './members.ts'
 
 export interface FormApiDeps {
-  now(): Date
-  verifyInitData(initData: string): Promise<{ userId: string } | null>
-  identityByExternal(channel: 'telegram', externalId: string): Promise<{ profile_id: string; business_id: string } | null>
-  /** Read-only lookup by token (any state); validity is checked here so ownership can be checked first. */
-  peekToken(token: string): Promise<FormToken | null>
-  takeToken(token: string, now: Date, profileId: string): Promise<FormToken | null>
-  /** Undo takeToken after a failed record: clears used_at only if it still equals usedAtIso. */
-  releaseToken(token: string, usedAtIso: string): Promise<void>
-  ready(businessId: string): Promise<boolean>
-  person(profileId: string): Promise<Person | null>
-  sitesFor(profileId: string): Promise<SiteInfo[]>
-  templates(businessId: string): Promise<Template[]>
-  items(templateId: string): Promise<TemplateItem[]>
-  /** `corrective` maps flagged item id → notes; those responses are stored with corrective_status 'done'. */
-  recordCompletionWithCorrective(a: { person: Person; siteId: string; template: Template; items: TemplateItem[]; answers: Answer[]; corrective: Record<string, string> }): Promise<{ completionId: string; flagged: { item: TemplateItem; value: string; notes: string }[] }>
-  alert(businessId: string, a: { siteName: string; itemName: string; value: string; time: string; byName: string; action: string }): Promise<void>
-  /** Best-effort chat message to the submitting Telegram user (chat id = their user id in a private chat). */
-  notifyUser(chatId: string, text: string): Promise<void>
+  g: GroupDeps
+  api: TgApi
+  verifyInitData(initData: string): Promise<TgUser | null>
+  /** WhatsApp-linked owners/managers (alerts.ts alertManagers). Telegram alerts go to groups. */
+  alertManagers(businessId: string, a: ManagerAlert): Promise<void>
 }
+
+export const consentText = (business: string) => `Your name will be recorded with checks in ${business}'s food safety records.`
 
 type Res = { status: number; body: unknown }
 const res = (status: number, body: unknown): Res => ({ status, body })
 const UNAUTHORIZED = res(401, { error: 'unauthorized' })
-const FORBIDDEN = res(403, { error: 'forbidden' })
+const NOT_MEMBER = res(403, { error: 'not_member' })
+const UNAVAILABLE = res(403, { error: 'unavailable' })
 const EXPIRED = res(410, { error: 'expired' })
-/** The owner already submitted this form (page shows "Already submitted", not "expired"). */
-const USED = res(410, { error: 'used' })
+const MOVED = res(410, { error: 'moved' })
 const CHANGED = res(410, { error: 'changed' })
+const RETRY_LATER = res(503, { error: 'retry_later' })
+const used = (by: string | null) => res(410, { error: 'used', by })
 const DETAILS_MAX = 300
+const TOKEN_RE = /^[A-Za-z0-9_-]{1,128}$/
 
 const isObj = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x)
 const own = (o: Record<string, unknown>, k: string) => Object.prototype.hasOwnProperty.call(o, k) ? o[k] : undefined
+const errMsg = (e: unknown) => String((e as Error)?.message ?? e).slice(0, 200)
 
-type Ctx = { userId: string; tok: FormToken; person: Person; site: SiteInfo; template: Template; items: TemplateItem[]; itemIds: string[] }
+type Ctx = { user: TgUser; tok: GroupFormToken; group: ChannelGroup; site: SiteInfo; template: Template; items: TemplateItem[] }
 
 /** Shared checks for GET and POST. Never consumes the token. */
 async function authorize(d: FormApiDeps, token: string, initData: string): Promise<Res | Ctx> {
-  const v = initData ? await d.verifyInitData(initData) : null
-  if (!v) return UNAUTHORIZED
-  const ident = await d.identityByExternal('telegram', v.userId)
-  if (!ident) return FORBIDDEN
-  const tok = /^[A-Za-z0-9_-]{1,128}$/.test(token) ? await d.peekToken(token) : null
-  if (tok && tok.profile_id !== ident.profile_id) return FORBIDDEN   // not the owner: nothing about the token is used
-  if (tok?.used_at) return USED
-  const now = d.now()
-  if (!tok || new Date(tok.expires_at).getTime() <= now.getTime() || tok.kind !== 'checklist' || !tok.template_id) return EXPIRED
-  if (!(await d.ready(tok.business_id))) return FORBIDDEN
-  const person = await d.person(tok.profile_id)
-  if (!person || person.business_id !== tok.business_id) return FORBIDDEN
-  const [sites, templates] = await Promise.all([d.sitesFor(person.profile_id), d.templates(person.business_id)])
+  const user = initData ? await d.verifyInitData(initData) : null
+  if (!user) return UNAUTHORIZED
+  const tok = TOKEN_RE.test(token) ? await d.g.peekGroupToken(token) : null
+  if (!tok) return EXPIRED
+  const group = await d.g.groupById(tok.group_id)
+  if (!group || group.business_id !== tok.business_id) return MOVED
+  // Spec §5: checked on every open and submit — someone removed from the group can't submit from an open form.
+  const m = memberStatus(await d.api('getChatMember', { chat_id: group.chat_id, user_id: Number(user.userId) }))
+  if (m === 'not_member') return NOT_MEMBER
+  if (m === 'unknown') return RETRY_LATER
+  if (tok.used_at) return used(tok.used_by_name)
+  if (new Date(tok.expires_at).getTime() <= d.g.now().getTime()) return EXPIRED
+  if (!(await d.g.ready(group.business_id))) return UNAVAILABLE
+  const [templates, sites] = await Promise.all([d.g.mappedTemplates(group.id), d.g.sites(group.business_id)])
+  const template = templates.find((t) => t.id === tok.template_id && t.business_id === group.business_id && (t.site_id === null || t.site_id === tok.site_id))
   const site = sites.find((s) => s.id === tok.site_id)
-  const template = templates.find((t) => t.id === tok.template_id)
-  if (!site || !template || !availableChecklists([template], person, tok.site_id).length) return EXPIRED
-  const items = await d.items(template.id)
-  const itemIds = tok.item_ids ?? []
+  if (!template || !site) return MOVED
+  const items = await d.g.items(template.id)
   const known = new Set(items.map((i) => i.id))
-  // Editors delete + re-insert items on save: stale ids can't be mapped safely → the page asks for a fresh /checks.
-  if (!itemIds.length || itemIds.some((x) => !known.has(x))) return CHANGED
-  return { userId: v.userId, tok, person, site, template, items, itemIds }
+  // Editors delete + re-insert items on save: stale ids can't be mapped safely → the page asks to reopen the list.
+  if (!tok.item_ids.length || tok.item_ids.some((x) => !known.has(x))) return CHANGED
+  return { user, tok, group, site, template, items }
 }
 
 export async function handleFormGet(d: FormApiDeps, token: string, initData: string): Promise<Res> {
   const a = await authorize(d, token, initData)
   if ('status' in a) return a
   const supported = new Map(formItems(a.items).supported.map((i) => [i.id, i]))
-  const items = a.itemIds.map((id) => supported.get(id)).filter((i): i is TemplateItem => !!i)
+  const items = a.tok.item_ids.map((id) => supported.get(id)).filter((i): i is TemplateItem => !!i)
     .map((i) => ({ id: i.id, name: i.name, type: i.item_type, required: i.required, min: i.min_value, max: i.max_value, unit: i.unit }))
-  return res(200, { templateName: a.template.name, siteName: a.site.name, items, correctiveActions: CORRECTIVE_ACTIONS })
+  const known = await d.g.telegramIdentity(a.group.business_id, a.user.userId)
+  const consent = known ? null : consentText(await d.g.businessName(a.group.business_id))
+  return res(200, { templateName: a.template.name, siteName: a.site.name, items, correctiveActions: CORRECTIVE_ACTIONS, consent })
+}
+
+async function personFor(d: FormApiDeps, a: Ctx): Promise<{ person: Person; created: boolean }> {
+  const ident = await d.g.telegramIdentity(a.group.business_id, a.user.userId)
+  const existing = ident ? await d.g.person(ident.profile_id) : null
+  if (existing) return { person: existing, created: false }
+  const c = await d.g.createTelegramPerson({
+    businessId: a.group.business_id, siteId: a.site.id, tgUserId: a.user.userId,
+    displayName: telegramDisplayName(a.user.firstName, a.user.lastName),
+  })
+  const person = await d.g.person(c.profile_id)
+  if (!person) throw new Error('group member profile missing after create')
+  return { person, created: c.created }
 }
 
 export async function handleFormPost(d: FormApiDeps, body: unknown, initData: string): Promise<Res> {
   const bad = res(400, { error: 'bad_request' })
-  if (!isObj(body) || typeof body.t !== 'string' || !body.t) {
+  const answersIn = isObj(body) ? (body.answers ?? {}) : null
+  const correctiveIn = isObj(body) ? (body.corrective ?? {}) : null
+  if (!isObj(body) || typeof body.t !== 'string' || !body.t || !isObj(answersIn) || !isObj(correctiveIn)) {
     // Still require a valid initData first so an anonymous caller learns nothing beyond 401.
-    return (initData && (await d.verifyInitData(initData))) ? bad : UNAUTHORIZED
-  }
-  const answersIn = body.answers ?? {}
-  const correctiveIn = body.corrective ?? {}
-  if (!isObj(answersIn) || !isObj(correctiveIn)) {
     return (initData && (await d.verifyInitData(initData))) ? bad : UNAUTHORIZED
   }
   const a = await authorize(d, body.t, initData)
@@ -99,8 +110,8 @@ export async function handleFormPost(d: FormApiDeps, body: unknown, initData: st
 
   // Answers keyed by item id → f<i> by the token's item order, so validation is identical to the WhatsApp Flow path.
   const response: Record<string, unknown> = {}
-  a.itemIds.forEach((id, i) => { response[fieldName(i)] = own(answersIn, id) })
-  const parsed = parseFormAnswers(a.itemIds, a.items, response)
+  a.tok.item_ids.forEach((id, i) => { response[fieldName(i)] = own(answersIn, id) })
+  const parsed = parseFormAnswers(a.tok.item_ids, a.items, response)
   if (parsed.missingRequired.length) return res(400, { error: 'missing', items: parsed.missingRequired })
 
   const byId = new Map(a.items.map((i) => [i.id, i]))
@@ -115,35 +126,47 @@ export async function handleFormPost(d: FormApiDeps, body: unknown, initData: st
   }
   if (lacking.length) return res(400, { error: 'corrective_required', items: lacking })
 
-  const now = d.now()
-  const taken = await d.takeToken(a.tok.token, now, a.person.profile_id)
-  if (!taken) return USED   // concurrent submit won the take (peek saw it unused): nothing recorded twice
+  const now = d.g.now()
+  const byName = [...(a.user.firstName.trim() || 'someone')].slice(0, 64).join('')
+  const taken = await d.g.takeGroupToken(a.tok.token, now, byName)
+  if (!taken) {
+    // Someone else's submit won between our peek and take.
+    const again = await d.g.peekGroupToken(a.tok.token)
+    return again?.used_at ? used(again.used_by_name) : EXPIRED
+  }
 
-  let rec: Awaited<ReturnType<FormApiDeps['recordCompletionWithCorrective']>>
+  let person: Person
+  let created: boolean
+  let rec: Awaited<ReturnType<typeof recordCompletion>>
   try {
-    rec = await d.recordCompletionWithCorrective({ person: a.person, siteId: a.tok.site_id, template: a.template, items: a.items, answers: parsed.answers, corrective: notes })
+    ({ person, created } = await personFor(d, a))
+    rec = await recordCompletion(d.g, { person, siteId: a.site.id, template: a.template, items: a.items, answers: parsed.answers, source: 'telegram', now, correctiveNotes: notes })
   } catch (err) {
-    console.error('form record failed', String((err as Error)?.message ?? err).slice(0, 200))
+    console.error('group form record failed', errMsg(err))
     // Give the token back so the same form can be resubmitted.
-    try { await d.releaseToken(taken.token, taken.used_at ?? now.toISOString()) }
-    catch (e2) { console.error('form token release failed', String((e2 as Error)?.message ?? e2).slice(0, 200)) }
+    try { await d.g.releaseGroupToken(taken.token, taken.used_at ?? now.toISOString()) }
+    catch (e2) { console.error('group form token release failed', errMsg(e2)) }
     return res(500, { error: 'retry' })
+  }
+
+  // Everything below is best effort: the record is already saved.
+  const safe = async (what: string, f: () => Promise<unknown>) => { try { await f() } catch (err) { console.error(`group form ${what} failed`, errMsg(err)) } }
+  if (created) {
+    await safe('new-person note', () => notifyManagers(d.g, a.group.business_id, {
+      title: 'New person in Telegram checks',
+      message: `${person.full_name} filled in ${a.template.name} from the Telegram group “${a.group.title || 'Telegram'}” for the first time.`,
+      link: '/team',
+    }))
   }
   const time = new Intl.DateTimeFormat('en-GB', { timeZone: a.site.timezone || 'Europe/London', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(now)
   for (const f of rec.flagged) {
-    try {
-      await d.alert(a.person.business_id, {
-        siteName: a.site.name, itemName: f.item.name, time, byName: a.person.full_name, action: f.notes,
-        value: withUnit(f.value, f.item.unit ?? (f.item.item_type === 'temperature' ? '°C' : null)),
-      })
-    } catch (err) {
-      console.error('form alert failed', String((err as Error)?.message ?? err).slice(0, 200))   // recorded already; don't fail the submit
+    const alert: ManagerAlert = {
+      siteName: a.site.name, itemName: f.item.name, time, byName: person.full_name, action: f.notes ?? '',
+      value: withUnit(f.value, f.item.unit ?? (f.item.item_type === 'temperature' ? '°C' : null)),
     }
+    await safe('manager alert', () => d.alertManagers(a.group.business_id, alert))
+    await safe('group alert', () => alertGroups(d.g, d.api, a.group.business_id, a.group.id, alert))
   }
-  try {
-    await d.notifyUser(a.userId, `Recorded ✓ ${a.template.name} at ${a.site.name}`)
-  } catch (err) {
-    console.error('form confirmation failed', String((err as Error)?.message ?? err).slice(0, 200))   // recorded already
-  }
+  await safe('list refresh', () => refreshGroupSite(d.g, d.api, a.group.id, a.site.id, now))
   return res(200, { ok: true })
 }

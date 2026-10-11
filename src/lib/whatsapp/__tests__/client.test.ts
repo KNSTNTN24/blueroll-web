@@ -9,14 +9,9 @@ describe('whatsapp client helpers', () => {
     // number is unset in tests -> no link (dialog shows the code only)
     expect(CHANNELS.whatsapp.buildLink('012345')).toBeNull()
   })
-  it('telegram channel builds a t.me deep link and is never null', () => {
-    expect(CHANNELS.telegram.label).toBe('Telegram')
-    expect(CHANNELS.telegram.buildLink('012345')).toBe('https://t.me/BluerollChecksBot?start=012345')
-    expect(CHANNELS.telegram.scanInstruction).toBe('Scan with the phone camera, then tap Start in Telegram.')
-  })
-  it('displayId is channel-aware', () => {
+  it('only WhatsApp has a personal connect flow (Telegram works through groups)', () => {
+    expect(Object.keys(CHANNELS)).toEqual(['whatsapp'])
     expect(CHANNELS.whatsapp.displayId('447700900123')).toBe('+44 7••• ••23')
-    expect(CHANNELS.telegram.displayId('123456789')).toBe('connected')
   })
   it('WhatsApp is offered only when the WhatsApp number is configured; Telegram always', () => {
     expect(channelAvailable('whatsapp', '')).toBe(false)

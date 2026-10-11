@@ -2,7 +2,7 @@
 
 import Script from 'next/script'
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import { buildPayload, FORM_MSG, isFlagged, statusMessage, validateForm, type Answers, type Corrective, type FormData, type FormItem } from '@/lib/whatsapp/tg-form'
+import { buildPayload, FORM_MSG, isFlagged, resolveToken, statusMessage, validateForm, type Answers, type Corrective, type FormData, type FormItem } from '@/lib/whatsapp/tg-form'
 
 // Minimal typing of the Telegram WebApp surface we use (https://core.telegram.org/bots/webapps).
 interface TgMainButton {
@@ -15,6 +15,7 @@ interface TgMainButton {
 }
 interface TgWebApp {
   initData: string
+  initDataUnsafe?: { start_param?: string }
   colorScheme?: 'light' | 'dark'
   themeParams: Partial<Record<'bg_color' | 'text_color' | 'hint_color' | 'button_color' | 'button_text_color' | 'secondary_bg_color' | 'destructive_text_color', string>>
   ready(): void
@@ -55,6 +56,7 @@ export function TgForm({ token }: { token: string }) {
   const started = useRef(false)
   const inFlight = useRef(false)
   const done = useRef(false)
+  const formToken = useRef('')
 
   const init = useCallback(() => {
     if (started.current) return
@@ -76,12 +78,14 @@ export function TgForm({ token }: { token: string }) {
       // Native controls (select, checkbox, scrollbars) follow Telegram's light/dark, not the OS.
       ...(wa.colorScheme ? { colorScheme: wa.colorScheme } : {}),
     } as CSSProperties)
-    if (!token) { setPhase({ kind: 'message', text: MSG.expired }); return }
-    fetch(API, { method: 'GET', headers: { 'X-Telegram-Init-Data': wa.initData, 'X-Form-Token': token }, cache: 'no-store' })
+    const t = resolveToken(wa.initDataUnsafe?.start_param, token)
+    formToken.current = t
+    if (!t) { setPhase({ kind: 'message', text: MSG.expired }); return }
+    fetch(API, { method: 'GET', headers: { 'X-Telegram-Init-Data': wa.initData, 'X-Form-Token': t }, cache: 'no-store' })
       .then(async (r) => {
         const body = await r.json().catch(() => null)
-        if (r.ok && body && Array.isArray(body.items)) setPhase({ kind: 'form', data: body as FormData })
-        else setPhase({ kind: 'message', text: statusMessage(r.status, body?.error) })
+        if (r.ok && body && Array.isArray(body.items)) setPhase({ kind: 'form', data: { ...body, consent: typeof body.consent === 'string' ? body.consent : null } as FormData })
+        else setPhase({ kind: 'message', text: statusMessage(r.status, body?.error, body?.by) })
       })
       .catch(() => setPhase({ kind: 'message', text: MSG.generic }))
   }, [token])
@@ -114,7 +118,7 @@ export function TgForm({ token }: { token: string }) {
       const r = await fetch(API, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': wa.initData },
-        body: JSON.stringify(buildPayload(token, items, answers, corrective)),
+        body: JSON.stringify(buildPayload(formToken.current, items, answers, corrective)),
       })
       const body = await r.json().catch(() => null)
       if (done.current) return   // already recorded: a late reply (e.g. 410 replay) must not overwrite "Done"
@@ -130,8 +134,10 @@ export function TgForm({ token }: { token: string }) {
         })
       } else if (r.status === 500 && body?.error === 'retry') {
         setSubmitError({ text: MSG.retry })
+      } else if (r.status === 503) {
+        setSubmitError({ text: MSG.busy })
       } else if (r.status === 401 || r.status === 403 || r.status === 410) {
-        setPhase({ kind: 'message', text: statusMessage(r.status, body?.error) })
+        setPhase({ kind: 'message', text: statusMessage(r.status, body?.error, body?.by) })
       } else {
         setSubmitError({ text: MSG.generic })
       }
@@ -142,7 +148,7 @@ export function TgForm({ token }: { token: string }) {
       wa.MainButton.hideProgress()
       setSubmitting(false)
     }
-  }, [phase, v, token, items, answers, corrective])
+  }, [phase, v, items, answers, corrective])
 
   // Telegram MainButton: always calls the latest submit; visible only while the form is shown.
   const submitRef = useRef(submit)
@@ -194,6 +200,7 @@ export function TgForm({ token }: { token: string }) {
                 {submitError.items && <ul className="mt-1 list-disc pl-5">{submitError.items.map((n) => <li key={n}>{n}</li>)}</ul>}
               </div>
             )}
+            {phase.data.consent && <p className="mt-4 text-xs text-[var(--tg-hint)]">{phase.data.consent}</p>}
           </>
         )}
       </main>
