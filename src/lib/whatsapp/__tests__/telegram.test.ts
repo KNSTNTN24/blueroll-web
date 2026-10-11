@@ -110,6 +110,7 @@ const grp = (text: unknown, extra: Record<string, unknown> = {}) => ({
 describe('parseGroupUpdate', () => {
   it('/link <code> in a group → link command with the chat title', () => {
     expect(parseGroupUpdate(grp('/link 482913'))).toEqual([{ kind: 'command', chatId: '-100123', chatTitle: 'Kitchen', userId: '42', command: 'link', arg: '482913', id: '5' }])
+    expect(parseGroupUpdate(grp('/link@BluerollChecksBot 482913'))).toEqual([{ kind: 'command', chatId: '-100123', chatTitle: 'Kitchen', userId: '42', command: 'link', arg: '482913', id: '5' }])
   })
   it('/checks (fixture, no title) and /checks@BluerollChecksBot → checks; other bot → nothing', () => {
     expect(parseGroupUpdate(group)).toEqual([{ kind: 'command', chatId: '-100123', chatTitle: '', userId: '123456789', command: 'checks', arg: '', id: '1004' }])

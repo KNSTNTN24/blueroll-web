@@ -11,7 +11,7 @@ export const LINK_CODE_TTL_SEC = 900
 export const GROUP_LINK_STEPS = (code: string) => [
   'Open the staff group in Telegram (for example “Kitchen”), or create one.',
   'Add @BluerollChecksBot to the group.',
-  `Send this message in the group: /link ${code}`,
+  `Send this message in the group: /link@BluerollChecksBot ${code}`,
   'In the group settings → Permissions, turn off “Add members” for members.',
 ]
 

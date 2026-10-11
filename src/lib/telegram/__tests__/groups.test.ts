@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest'
 import { GROUP_LINK_STEPS, mappingDiff, checklistLabel, LINK_CODE_TTL_SEC } from '../groups'
 
 describe('telegram groups helpers', () => {
-  it('link steps carry the /link command with the code', () => {
+  it('link steps carry the bot-addressed /link command with the code (privacy mode may hide a plain /link)', () => {
     const steps = GROUP_LINK_STEPS('482913')
-    expect(steps).toContain('Send this message in the group: /link 482913')
+    expect(steps).toContain('Send this message in the group: /link@BluerollChecksBot 482913')
     expect(steps[1]).toBe('Add @BluerollChecksBot to the group.')
     expect(LINK_CODE_TTL_SEC).toBe(900)
   })
