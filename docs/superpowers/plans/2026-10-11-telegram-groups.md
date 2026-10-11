@@ -4301,17 +4301,22 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 **Files:** none (operations). Record every result in the report.
 
-- [ ] **Step 1: STOP — migration.** Ask Kostya: «Накатываю миграцию Telegram-групп (Task 1) на прод?» After «да»: apply `supabase/migrations/20261011130000_channel_groups.sql` via the Management API (`POST https://api.supabase.com/v1/projects/rszrggreuarvodcqeqrj/database/query`, bearer token from `~/Secrets/blueroll/supabase-access-token.txt`), then run `supabase/tests/channel_groups_verify.sql` and paste the `VERIFY_RESULT` json (must match Task 1's expected values).
+- [ ] **Step 1: STOP — migration.** Before asking, run a read-only count of active Telegram identities per business in production (the migration revokes every personal Telegram identity):
+  `select i.business_id, b.name, count(*) from channel_identities i join businesses b on b.id = i.business_id where i.channel = 'telegram' and i.revoked_at is null group by 1, 2;`
+  Expect Fern & Fig only. **STOP otherwise** and report the rows to Kostya — do not apply the migration.
+  Then ask Kostya: «Накатываю миграцию Telegram-групп (Task 1) на прод?» After «да»: apply `supabase/migrations/20261011130000_channel_groups.sql` via the Management API (`POST https://api.supabase.com/v1/projects/rszrggreuarvodcqeqrj/database/query`, bearer token from `~/Secrets/blueroll/supabase-access-token.txt`), then run `supabase/tests/channel_groups_verify.sql` and paste the `VERIFY_RESULT` json (must match Task 1's expected values, plus `whatsapp_dupe_other_business: "rejected"` from the final-review fix).
+
+- [ ] **Step 1b: read-only smoke of `makeGroupDeps` queries — after the migration, before setWebhook (Step 3).** These queries were only tested against fakes. Run each read-only call of `makeGroupDeps(admin, 'telegram')` against production (service role, `deno eval`, no writes): `orphanLiveLists` (the `group:channel_groups!inner` alias with the `group.channel` / `group.unlinked_at` embedded filters), `mappedTemplates` (embed), `linkedGroups`, `liveLists`, `completionsSince`, `sites`, `groupById`. Each must return without a PostgREST error (empty arrays are fine at this point). Paste the output. If `orphanLiveLists` errors, **STOP** — Settings-unlinked groups would keep their list messages forever (the cron only logs the error).
 
 - [ ] **Step 2: STOP — deploy functions.** Ask Kostya. After «да», from the repo root:
 
 ```bash
 export SUPABASE_ACCESS_TOKEN=$(cat ~/Secrets/blueroll/supabase-access-token.txt)
-for f in telegram-webhook channel-form whatsapp-reminders team-create-channel-member; do
+for f in telegram-webhook channel-form whatsapp-reminders whatsapp-webhook team-create-channel-member; do
   supabase functions deploy "$f" --project-ref rszrggreuarvodcqeqrj --no-verify-jwt || break
 done
 ```
-Secrets `TG_BOT_TOKEN`, `TG_WEBHOOK_SECRET`, `WA_CRON_SECRET` already exist from the previous plan — do not rotate.
+`whatsapp-webhook` is in the list because its imports changed (`bot.ts`, `db.ts`, `alerts.ts`: WhatsApp out-of-range alerts also reach Telegram Alerts groups). Secrets `TG_BOT_TOKEN`, `TG_WEBHOOK_SECRET`, `WA_CRON_SECRET` already exist from the previous plan — do not rotate.
 
 - [ ] **Step 3: STOP — webhook with `my_chat_member`.** Ask Kostya, then:
 
