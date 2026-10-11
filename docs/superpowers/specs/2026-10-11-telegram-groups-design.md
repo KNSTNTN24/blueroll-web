@@ -136,12 +136,16 @@ members' for members in group settings.") and the same note to managers (app not
 
 ## 9. Data
 
-- `telegram_groups`: `id`, `business_id`, `chat_id text unique`, `title`, `alerts boolean default false`, `linked_by`,
+Table and column names are channel-neutral: WhatsApp will move to the same group model later (decided 11.10.2026); only
+Telegram is implemented now.
+
+
+- `channel_groups`: `id`, `business_id`, `channel text` (`'telegram'`; `'whatsapp'` later), `chat_id text`, unique (`channel`, `chat_id`), `title`, `alerts boolean default false`, `linked_by`,
   `linked_at`, `last_permission_warning_at`, `unlinked_at`.
-- `telegram_group_checklists`: `group_id` (cascade), `template_id` (cascade), PK both.
-- `telegram_group_link_codes`: `code`, `business_id`, `issued_by`, `expires_at`, `used_at`, `created_at`; RPC
+- `channel_group_checklists`: `group_id` (cascade), `template_id` (cascade), PK both.
+- `channel_group_link_codes`: `code`, `business_id`, `channel`, `issued_by`, `expires_at`, `used_at`, `created_at`; RPC
   `issue_group_link_code()` for active managers (same CSPRNG generation as `issue_link_code`).
-- `telegram_group_reminders_sent`: PK (`group_id`, `template_id`, `site_id`, `period_key`).
+- `channel_group_reminders_sent`: PK (`group_id`, `template_id`, `site_id`, `period_key`).
 - `channel_live_lists`: `id`, `group_id` (cascade), `site_id` (cascade), `list_date date`, `message_id text`,
   `tokens jsonb` (`{template_id: token}`), `rendered_hash`, `created_at`, `updated_at`; unique (`group_id`, `site_id`).
 - `channel_form_tokens`: new `group_id uuid null`; `profile_id` nullable with check
