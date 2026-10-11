@@ -170,12 +170,17 @@ alter table public.channel_form_tokens add constraint channel_form_tokens_group_
   check ((kind = 'group_checklist') = (group_id is not null));
 
 -- 7. Identities: one active identity per (business, channel, external id) ----------------------------------------
--- Personal Telegram chats are dropped (spec §7): revoke them (pilot only: Fern & Fig). WhatsApp keeps "one business per
--- number" in code (db.ts consumeLinkCode revokes the number's other identities before linking).
-update public.channel_identities set revoked_at = now() where channel = 'telegram' and revoked_at is null;
+-- Personal Telegram chats are dropped (spec §7): revoke them (pilot only: Fern & Fig). Group-form identities (this
+-- feature) are left alone, so a re-run does not revoke them.
+update public.channel_identities set revoked_at = now()
+ where channel = 'telegram' and revoked_at is null and consent_source <> 'group_form';
 drop index if exists public.uq_channel_identity_active;
 create unique index if not exists uq_channel_identity_active
   on public.channel_identities(business_id, channel, external_id) where revoked_at is null;
+-- WhatsApp stays "one business per number" (inbound resolves by (channel, external_id) alone); db.ts consumeLinkCode
+-- also revokes the number's other identities before linking, this index makes it hold under concurrency.
+create unique index if not exists uq_channel_identity_whatsapp_active
+  on public.channel_identities(channel, external_id) where channel = 'whatsapp' and revoked_at is null;
 -- WhatsApp inbound lookups are by (channel, external_id) only.
 create index if not exists idx_channel_identity_external
   on public.channel_identities(channel, external_id) where revoked_at is null;

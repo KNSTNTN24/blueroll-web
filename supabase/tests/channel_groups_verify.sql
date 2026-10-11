@@ -10,6 +10,9 @@ declare
   v_site uuid;
   v_grp uuid;
   v_code text;
+  other_profile uuid;
+  other_biz uuid;
+  v_constraint text;
   res jsonb := '{}';
 begin
   select id into non_manager from profiles
@@ -99,6 +102,23 @@ begin
       res := res || '{"identity_dupe_same_business":"ALLOWED (BAD)"}';
     exception when unique_violation then res := res || '{"identity_dupe_same_business":"rejected"}'; end;
   end if;
+
+  -- 7. WhatsApp stays one business per number: a second active identity for the number in another business is rejected
+  select id, business_id into other_profile, other_biz from profiles
+   where business_id <> biz and removed_at is null limit 1;
+  update channel_identities set revoked_at = now()
+   where channel = 'whatsapp' and revoked_at is null and profile_id in (owner, other_profile);
+  insert into channel_identities (business_id, profile_id, channel, external_id, consent_source)
+  values (biz, owner, 'whatsapp', '999000222', 'qr_code');
+  begin
+    insert into channel_identities (business_id, profile_id, channel, external_id, consent_source)
+    values (other_biz, other_profile, 'whatsapp', '999000222', 'qr_code');
+    res := res || '{"whatsapp_dupe_other_business":"ALLOWED (BAD)"}';
+  exception when unique_violation then
+    get stacked diagnostics v_constraint = constraint_name;
+    res := res || jsonb_build_object('whatsapp_dupe_other_business',
+      case when v_constraint = 'uq_channel_identity_whatsapp_active' then 'rejected' else 'rejected by ' || v_constraint end);
+  end;
 
   raise exception 'VERIFY_RESULT %', res;
 end
