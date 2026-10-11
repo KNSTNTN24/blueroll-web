@@ -82,6 +82,13 @@ describe('buildPlan', () => {
     expect(buildPlan(b).dishes.map((x) => x.name)).toEqual(['Flat white'])
   })
 
+  it('does not repeat a postcode the address already contains', () => {
+    const b = makeBundle({ site: { address: "ST JAMES'S PARK THE MALL, LONDON, SW1A 1AA", postcode: 'SW1A 1AA' } })
+    expect(buildPlan(b).address).toBe("ST JAMES'S PARK THE MALL, LONDON, SW1A 1AA")
+    const c = makeBundle({ site: { address: '12 Bankside, London', postcode: 'SE1 9JE' } })
+    expect(buildPlan(c).address).toBe('12 Bankside, London, SE1 9JE')
+  })
+
   it('names the file and footer', () => {
     const d = buildPlan(makeBundle())
     expect(d.fileName).toBe('HACCP-Plan-st-james-s-cafe-borough-2026-10-11.pdf')

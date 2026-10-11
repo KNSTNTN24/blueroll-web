@@ -24,6 +24,13 @@ function slug(s: string): string {
   return s.normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
 }
 
+/** Address + postcode, without repeating a postcode the address line already ends with or contains. */
+function joinAddress(address: string | null, postcode: string | null): string | null {
+  const norm = (x: string) => x.replace(/\s+/g, '').toUpperCase()
+  if (address && postcode && norm(address).includes(norm(postcode))) return address
+  return [address, postcode].filter(Boolean).join(', ') || null
+}
+
 const label = (a: string) => ALLERGEN_LABELS[a as EUAllergen] ?? a
 
 /** Effective value of a text/select field: manual wins, else auto when allowed. */
@@ -153,7 +160,7 @@ export function buildPlan(bundle: PlanBundle, now: Date = new Date()): PlanDoc {
   const siteName = site?.name ?? null
   return {
     businessName, siteName,
-    address: [site?.address ?? bundle.business.address, site?.postcode ?? bundle.business.postCode].filter(Boolean).join(', ') || null,
+    address: joinAddress(site?.address ?? bundle.business.address, site?.postcode ?? bundle.business.postCode),
     fsaRating: site?.fsaRating ?? bundle.business.fsaRating,
     generatedAt: bundle.generatedAt, periodStart: bundle.periodStart, periodEnd: bundle.periodEnd,
     filled, total, pct,
