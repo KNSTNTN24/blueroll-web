@@ -99,7 +99,7 @@ describe('expireTokens', () => {
 
 describe('linkGroup', () => {
   // Chainable PostgREST stand-in: records every builder call per query; `existing` answers the lookup's maybeSingle().
-  function fakeAdmin(existing: { id: string; business_id: string } | null) {
+  function fakeAdmin(existing: { id: string; business_id: string; unlinked_at: string | null } | null) {
     const queries: { table: string; ops: [string, ...any[]][] }[] = []
     const admin = {
       from: (table: string) => {
@@ -132,14 +132,22 @@ describe('linkGroup', () => {
     expect(mappingDeletes(f.queries)).toEqual([])
     expect(f.queries.some((q) => q.table === 'channel_groups' && q.ops[0][0] === 'insert')).toBe(true)
   })
-  it('same business relink (e.g. after an unlink) → old checklist choices and the alerts flag are cleared', async () => {
-    const f = fakeAdmin({ id: 'g1', business_id: 'b' })
+  it('same business relink after an unlink → old checklist choices and the alerts flag are cleared', async () => {
+    const f = fakeAdmin({ id: 'g1', business_id: 'b', unlinked_at: '2026-10-13T09:00:00.000Z' })
     await makeGroupDeps(f.admin).linkGroup(args)
     expect(mappingDeletes(f.queries)).toEqual([{ table: 'channel_group_checklists', ops: [['delete'], ['eq', 'group_id', 'g1']] }])
     expect(groupUpdate(f.queries).ops[0][1]).toMatchObject({ business_id: 'b', unlinked_at: null, alerts: false })
   })
-  it('another business → cleared as well', async () => {
-    const f = fakeAdmin({ id: 'g1', business_id: 'old' })
+  it('/link re-run in a group still linked to the same business → checklist choices and alerts flag kept', async () => {
+    const f = fakeAdmin({ id: 'g1', business_id: 'b', unlinked_at: null })
+    await makeGroupDeps(f.admin).linkGroup(args)
+    expect(mappingDeletes(f.queries)).toEqual([])
+    const patch = groupUpdate(f.queries).ops[0][1]
+    expect(patch).toMatchObject({ business_id: 'b', unlinked_at: null })
+    expect(patch).not.toHaveProperty('alerts')
+  })
+  it('another business (linked there) → cleared', async () => {
+    const f = fakeAdmin({ id: 'g1', business_id: 'old', unlinked_at: null })
     await makeGroupDeps(f.admin).linkGroup(args)
     expect(mappingDeletes(f.queries)).toHaveLength(1)
     expect(groupUpdate(f.queries).ops[0][1]).toMatchObject({ business_id: 'b', alerts: false })
