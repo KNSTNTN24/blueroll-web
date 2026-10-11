@@ -145,14 +145,6 @@ async function sendChecklistForm(d: BotDeps, from: string, person: Person, templ
   const t = (await d.templates(person.business_id)).find((x) => x.id === templateId)
   if (!t || !sites.some((s) => s.id === siteId) || !availableChecklists([t], person, siteId).length) return out(d, ctx, d.ui.text(from, X.formExpired), 'reply')
   const tokenFor = (itemIds: string[]) => saveChecklistToken(d, { ...ctx, template_id: templateId }, itemIds)
-  if (d.ui.channel === 'telegram') {
-    // The Mini App renders the current items directly — no published Flow to match against.
-    const ids = telegramFormItemIds(await d.items(templateId))
-    if (!ids) return out(d, ctx, d.ui.text(from, X.appOnly(t.name)), 'reply')
-    const token = await tokenFor(ids)
-    const msg = d.ui.form(from, { templateName: t.name, token })
-    return msg ? out(d, ctx, msg, 'form') : out(d, ctx, d.ui.text(from, X.appOnly(t.name)), 'reply')
-  }
   const flow = await d.flowFor(templateId, siteId)
   if (!flow) return out(d, ctx, d.ui.text(from, X.appOnly(t.name)), 'reply')
   // The flow's stored item_ids go stale whenever an editor saves (items are deleted and re-inserted). If the current
@@ -178,39 +170,16 @@ async function sendDueList(d: BotDeps, from: string, person: Person) {
   const pending = (await d.pendingCorrective(person.profile_id)).filter((p) => sites.some((s) => s.id === p.site_id))
   for (const p of pending.slice(0, MAX_PENDING_CORRECTIVE)) await sendCorrectiveForm(d, from, person, p)
   let any = false
-  const itemIdsCache = new Map<string, string[] | null>()
   for (const s of sites) {
     const due = dueChecklists({ templates, person, siteId: s.id, tz: s.timezone, now, completions })
     if (!due.length) continue
     any = true
-    if (d.ui.dueForms) {
-      // Telegram: callback_data is capped at 64 bytes (a `fill:<uuid>:<uuid>` id is 78), so mint the form tokens now and
-      // send one Mini App button per due checklist (all of them; app-only ones are named in the text).
-      const tokens = new Map<string, string | null>()
-      for (const x of due) {
-        if (!itemIdsCache.has(x.template.id)) itemIdsCache.set(x.template.id, telegramFormItemIds(await d.items(x.template.id)))
-        const ids = itemIdsCache.get(x.template.id)
-        tokens.set(x.template.id, ids ? await saveChecklistToken(d, { ...ctx, site_id: s.id, template_id: x.template.id }, ids) : null)
-      }
-      await out(d, { ...ctx, site_id: s.id }, d.ui.dueForms(from, { siteName: s.name, tz: s.timezone, items: due }, tokens), 'form')
-      continue
-    }
     await out(d, { ...ctx, site_id: s.id }, d.ui.choices(from, TEXT.dueList(s.name), due.slice(0, 3).map((x) => ({ id: `fill:${x.template.id}:${s.id}`, title: x.template.name }))), 'reply')
   }
   if (!any) await out(d, ctx, d.ui.text(from, TEXT.nothingDue), 'reply')
 }
 
-export async function handleInbound(e: InboundEvent, deps: BotDeps): Promise<void> {
-  // Telegram: the first reply to a button press also answers its callback query (stops the client's spinner).
-  let callbackId = e.kind === 'button' && deps.ui.channel === 'telegram' ? e.callbackId : undefined
-  const d: BotDeps = !callbackId ? deps : {
-    ...deps,
-    send: (msg) => {
-      const m = callbackId ? { ...msg, callback_query_id: callbackId } : msg
-      callbackId = undefined
-      return deps.send(m)
-    },
-  }
+export async function handleInbound(e: InboundEvent, d: BotDeps): Promise<void> {
   const X = textsFor(d.ui)
   const reply = (body: string) => d.ui.text(e.from, body)
   const now = d.now()
@@ -219,13 +188,7 @@ export async function handleInbound(e: InboundEvent, deps: BotDeps): Promise<voi
   // before anything is consumed, recorded or sent.
   const claim = (business_id: string | null, profile_id: string | null, kind: string) =>
     d.log({ business_id, site_id: null, profile_id, direction: 'in', kind, billable: false, wa_message_id: waId })
-  let m = e.kind === 'text' ? e.text.match(/^\s*link\s*(\d{6})\s*$/i) : null
-  // Telegram: a bare 6-digit message is a link code too (people type the code shown on the manager's screen) — unlinked users only.
-  let known: Identity | null | undefined
-  if (!m && e.kind === 'text' && d.ui.channel === 'telegram') {
-    const bare = e.text.match(/^\s*(\d{6})\s*$/)
-    if (bare) { known = await d.findIdentity(e.from); if (!known) m = bare }
-  }
+  const m = e.kind === 'text' ? e.text.match(/^\s*link\s*(\d{6})\s*$/i) : null
   if (m) {
     if (!(await claim(null, null, 'link'))) return
     if (await d.linkFailures(e.from, new Date(now.getTime() - LINK_FAILURE_WINDOW_MS)) >= MAX_LINK_FAILURES) {
@@ -237,7 +200,7 @@ export async function handleInbound(e: InboundEvent, deps: BotDeps): Promise<voi
     return out(d, { business_id: r.ok ? r.identity.business_id : null, profile_id: r.ok ? r.identity.profile_id : null },
       reply(r.ok ? X.linked(r.name, r.siteName) : X.linkExpired), 'link')
   }
-  const id = known !== undefined ? known : await d.findIdentity(e.from)
+  const id = await d.findIdentity(e.from)
   if (!(await claim(id?.business_id ?? null, id?.profile_id ?? null, e.kind))) return
   if (!id) return out(d, { business_id: null, profile_id: null }, reply(X.unknown), 'reply')
   await d.touchIdentity(id.id, now)

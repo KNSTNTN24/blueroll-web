@@ -1,13 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { createHmac } from 'crypto'
-import start from './fixtures/tg-start.json'
-import command from './fixtures/tg-command.json'
-import callback from './fixtures/tg-callback.json'
 import group from './fixtures/tg-group.json'
-import { verifyWebhookSecret, parseUpdate, tgText, tgButtons, tgWebAppButton, verifyInitData, makeTelegramSender, answerCallback, setupBot, BOT_USERNAME,
+import { verifyWebhookSecret, tgText, tgButtons, tgWebAppButton, verifyInitData, makeTelegramSender, setupBot, BOT_USERNAME,
   parseGroupUpdate, makeTelegramApi, tgHtml, tgEditHtml, escapeHtml, tgOutcome, memberStatus, membersCanInvite, miniAppLink, TG_MINI_APP_SHORT_NAME, type TgApiResult } from '../../../../supabase/functions/_shared/channels/telegram'
-
-const priv = (text: unknown, extra: Record<string, unknown> = {}) => ({ update_id: 9, message: { from: { id: 42, is_bot: false }, chat: { id: 42, type: 'private' }, text, ...extra } })
 
 describe('verifyWebhookSecret', () => {
   it('true/false/null', () => {
@@ -15,34 +10,6 @@ describe('verifyWebhookSecret', () => {
     expect(verifyWebhookSecret('abd', 'abc')).toBe(false)
     expect(verifyWebhookSecret('ab', 'abc')).toBe(false)
     expect(verifyWebhookSecret(null, 'abc')).toBe(false)
-  })
-})
-
-describe('parseUpdate', () => {
-  it('/start code → LINK', () => expect(parseUpdate(start)).toEqual([{ kind: 'text', from: '123456789', text: 'LINK 482913', id: '1001' }]))
-  it('/start alone and /help → help', () => {
-    expect(parseUpdate(priv('/start'))[0]).toMatchObject({ text: 'help' })
-    expect(parseUpdate(priv('/help'))[0]).toMatchObject({ text: 'help' })
-    expect(parseUpdate(priv('/start abc'))[0]).toMatchObject({ text: 'help' })
-  })
-  it('/checks@Bot → checks; /stop; other text as is', () => {
-    expect(parseUpdate(command)).toEqual([{ kind: 'text', from: '123456789', text: 'checks', id: '1002' }])
-    expect(parseUpdate(priv('/stop'))[0]).toMatchObject({ text: 'stop' })
-    expect(parseUpdate(priv('hello there'))[0]).toMatchObject({ text: 'hello there' })
-    expect(parseUpdate(priv('/checks@OtherBot'))).toEqual([])
-    expect(BOT_USERNAME).toBe('BluerollChecksBot')
-  })
-  it('callback → button', () => expect(parseUpdate(callback)).toEqual([{ kind: 'button', from: '123456789', payload: 'fill:t1:s1', id: '1003', callbackId: 'cb-77' }]))
-  it('ignored shapes → []', () => {
-    expect(parseUpdate(group)).toEqual([])
-    expect(parseUpdate({ update_id: 1, channel_post: { chat: { id: 1, type: 'channel' }, text: 'x' } })).toEqual([])
-    expect(parseUpdate({ update_id: 1, edited_message: priv('x').message })).toEqual([])
-    expect(parseUpdate({ update_id: 1, message: { ...priv('x').message, from: { id: 42, is_bot: true } } })).toEqual([])
-    expect(parseUpdate(priv(undefined, { sticker: { file_id: 'f' } }))).toEqual([])
-    expect(parseUpdate({ update_id: 1, callback_query: { id: 'c', from: { id: 1 }, message: { chat: { id: -5, type: 'group' } }, data: 'x' } })).toEqual([])
-  })
-  it('malformed never throws', () => {
-    for (const v of [null, undefined, 5, 'x', [], {}, { message: 5 }, { message: { chat: null } }, { callback_query: 'x' }, { callback_query: { from: null } }]) expect(parseUpdate(v)).toEqual([])
   })
 })
 
@@ -119,17 +86,6 @@ describe('makeTelegramSender', () => {
     expect(await makeTelegramSender({ token: 'T', fetchFn: boom })({ chat_id: '1', text: 'x' })).toEqual({ id: null, ok: false, status: 0 })
     const bad = (async () => new Response('nope', { status: 403 })) as unknown as typeof fetch
     expect(await makeTelegramSender({ token: 'T', fetchFn: bad })({ chat_id: '1', text: 'x' })).toEqual({ id: null, ok: false, status: 403 })
-  })
-})
-
-describe('answerCallback', () => {
-  it('posts answerCallbackQuery and never throws', async () => {
-    const calls: { url: string; body: any }[] = []
-    const f = (async (url: string, init: any) => { calls.push({ url, body: JSON.parse(init.body) }); return new Response('{}') }) as unknown as typeof fetch
-    await answerCallback('T', 'cb1', f)
-    expect(calls).toEqual([{ url: 'https://api.telegram.org/botT/answerCallbackQuery', body: { callback_query_id: 'cb1' } }])
-    const boom = (async () => { throw new Error('net') }) as unknown as typeof fetch
-    await expect(answerCallback('T', 'cb1', boom)).resolves.toBeUndefined()
   })
 })
 

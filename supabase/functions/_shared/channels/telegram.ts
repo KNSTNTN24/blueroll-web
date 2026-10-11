@@ -1,6 +1,6 @@
 // Telegram Bot API adapter: webhook secret check, update parsing, message builders, Mini App initData check, sender.
 // Pure WebCrypto; no Node imports. Never logs the bot token.
-import type { InboundEvent, OutboundMessage, SendFn } from './types.ts'
+import type { OutboundMessage, SendFn } from './types.ts'
 
 export const TG_API = 'https://api.telegram.org'
 export const BOT_USERNAME = 'BluerollChecksBot'
@@ -34,42 +34,6 @@ export function verifyWebhookSecret(header: string | null, secret: string): bool
 }
 
 const isUserId = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v > 0
-
-// Never throws: anything malformed yields no events.
-export function parseUpdate(update: unknown): InboundEvent[] {
-  try {
-    const u = update as Any
-    const uid = String(u?.update_id ?? '')
-    const m = u?.message
-    if (m && typeof m === 'object') {
-      if (m.chat?.type !== 'private' || m.from?.is_bot === true || !isUserId(m.from?.id) || typeof m.text !== 'string') return []
-      const from = String(m.from.id)
-      const raw = m.text.trim()
-      const cmd = /^\/([A-Za-z_]+)(?:@(\w+))?(?:\s+([\s\S]*))?$/.exec(raw)
-      if (!cmd) return [{ kind: 'text', from, text: m.text, id: uid }]
-      const [, name, target, arg] = cmd
-      if (target && target.toLowerCase() !== BOT_USERNAME.toLowerCase()) return []
-      const text = (t: string): InboundEvent[] => [{ kind: 'text', from, text: t, id: uid }]
-      switch (name.toLowerCase()) {
-        case 'start': return /^\d{6}$/.test((arg ?? '').trim()) ? text(`LINK ${arg!.trim()}`) : text('help')
-        case 'checks': return text('checks')
-        case 'stop': return text('stop')
-        case 'help': return text('help')
-        default: return text(m.text)
-      }
-    }
-    const cq = u?.callback_query
-    if (cq && typeof cq === 'object') {
-      if (!isUserId(cq.from?.id) || cq.from?.is_bot === true) return []
-      if (cq.message?.chat?.type !== 'private') return []
-      if (typeof cq.data !== 'string' || cq.data === '') return []
-      const ev: InboundEvent = { kind: 'button', from: String(cq.from.id), payload: cq.data, id: uid }
-      if (typeof cq.id === 'string' && cq.id) ev.callbackId = cq.id
-      return [ev]
-    }
-  } catch { /* malformed: ignore */ }
-  return []
-}
 
 export type TgEvent =
   | { kind: 'private'; chatId: string; id: string }
@@ -261,13 +225,6 @@ export function makeTelegramSender(cfg: { token: string; fetchFn?: typeof fetch 
       return { id: null, ok: false, status: 0 }
     }
   }
-}
-
-/** Best-effort answerCallbackQuery (stops the button spinner). Never throws. */
-export async function answerCallback(token: string, callbackId: string, fetchFn?: typeof fetch): Promise<void> {
-  try {
-    await (fetchFn ?? fetch)(`${TG_API}/bot${token}/answerCallbackQuery`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ callback_query_id: callbackId }) })
-  } catch { /* best-effort */ }
 }
 
 export async function setupBot(cfg: { token: string; webhookUrl: string; secret: string; fetchFn?: typeof fetch }): Promise<{ ok: boolean; errors: string[] }> {
