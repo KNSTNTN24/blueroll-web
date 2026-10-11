@@ -118,9 +118,10 @@ export function fakeGroupDeps(init: Partial<FakeState> = {}, over: Partial<Group
       return s.lists.length < n
     },
     saveGroupToken: async (t) => { s.tokens.push({ ...t }) },
-    peekGroupToken: async (tok) => { const t = s.tokens.find((x) => x.token === tok); return t ? { ...t } : null },
+    // Like the real query: only group tokens are visible (an old personal 'checklist' token reads as unknown).
+    peekGroupToken: async (tok) => { const t = s.tokens.find((x) => x.token === tok && x.kind === 'group_checklist'); return t ? { ...t } : null },
     takeGroupToken: async (tok, now, by) => {
-      const t = s.tokens.find((x) => x.token === tok)
+      const t = s.tokens.find((x) => x.token === tok && x.kind === 'group_checklist')
       if (!t || t.used_at || new Date(t.expires_at) <= now) return null
       t.used_at = now.toISOString(); t.used_by_name = by
       return { ...t }

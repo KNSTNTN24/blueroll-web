@@ -1,56 +1,32 @@
 // supabase/functions/channel-form/index.ts
-// Telegram Mini App form API: GET (header X-Form-Token, or ?t=<token>) → form JSON; POST {t, answers, corrective} → record the checklist.
-// Deploy with --no-verify-jwt: callers are Telegram users, not Supabase users. Authenticity = the Mini App's signed
-// initData (header X-Telegram-Init-Data, HMAC with TG_BOT_TOKEN) + the owner-scoped single-use form token; all rules in
-// _shared/channels/form-api.ts. CORS: https://app.blueroll.app and http://localhost:3001 (dev) only.
+// Telegram Mini App form API for group checklists: GET (header X-Form-Token, or ?t=<token>) → form JSON;
+// POST {t, answers, corrective} → record. Deploy with --no-verify-jwt: callers are Telegram users, not Supabase users.
+// Authenticity = the Mini App's signed initData (header X-Telegram-Init-Data, HMAC with TG_BOT_TOKEN) + a live group
+// token + current membership of that group (getChatMember); all rules in _shared/channels/form-api.ts.
+// CORS: https://app.blueroll.app and http://localhost:3001 (dev) only.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { handleFormGet, handleFormPost, type FormApiDeps } from "../_shared/channels/form-api.ts";
-import { verifyInitData, makeTelegramSender, tgText } from "../_shared/channels/telegram.ts";
+import { makeTelegramApi, verifyInitData } from "../_shared/channels/telegram.ts";
 import { makeSender } from "../_shared/channels/whatsapp.ts";
-import { telegramUI } from "../_shared/channels/ui.ts";
-import { TG_MINI_APP_URL, alertManagers, makeAlertDeps, type Senders } from "../_shared/channels/alerts.ts";
-import { makeDeps, peekToken, releaseToken } from "../_shared/channels/db.ts";
-import { recordCompletion } from "../_shared/checklists-core/record.ts";
+import { alertManagers, makeAlertDeps } from "../_shared/channels/alerts.ts";
+import { makeGroupDeps } from "../_shared/channels/groups-db.ts";
 
 const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
 const TOKEN = Deno.env.get("TG_BOT_TOKEN") ?? "";
-const tgSend = makeTelegramSender({ token: TOKEN });
-// WhatsApp sender only when configured: manager alerts to WA-linked managers; the function works without any WA env.
+// WhatsApp sender only when configured: alerts to WhatsApp-linked managers; the function works without any WA env.
 const WA_TOKEN = Deno.env.get("WA_TOKEN") ?? "";
 const WA_PHONE = Deno.env.get("WA_PHONE_NUMBER_ID") ?? "";
-const senders: Senders = { telegram: tgSend, ...(WA_TOKEN && WA_PHONE ? { whatsapp: makeSender({ token: WA_TOKEN, phoneNumberId: WA_PHONE }) } : {}) };
+const waSend = WA_TOKEN && WA_PHONE ? makeSender({ token: WA_TOKEN, phoneNumberId: WA_PHONE }) : undefined;
 
 const ALLOWED_ORIGINS = new Set(["https://app.blueroll.app", "http://localhost:3001"]);
 const MAX_BODY = 64 * 1024;
 
-const bot = makeDeps(admin, { channel: "telegram", ui: telegramUI(TG_MINI_APP_URL), send: tgSend, senders });
 const alertDeps = makeAlertDeps(admin);
-
 const deps: FormApiDeps = {
-  now: () => new Date(),
+  g: makeGroupDeps(admin, "telegram"),
+  api: makeTelegramApi({ token: TOKEN }),
   verifyInitData: (s) => (TOKEN ? verifyInitData(s, TOKEN, new Date()) : Promise.resolve(null)),
-  identityByExternal: async (_ch, x) => {
-    const id = await bot.findIdentity(x);   // channel 'telegram', not revoked
-    return id ? { profile_id: id.profile_id, business_id: id.business_id } : null;
-  },
-  peekToken: (t) => peekToken(admin, t),
-  takeToken: bot.takeToken,
-  releaseToken: (t, at) => releaseToken(admin, t, at),
-  ready: bot.ready,
-  person: bot.person,
-  sitesFor: bot.sitesFor,
-  templates: bot.templates,
-  items: bot.items,
-  recordCompletionWithCorrective: async (a) => {
-    const r = await recordCompletion(bot, { person: a.person, siteId: a.siteId, template: a.template, items: a.items, answers: a.answers,
-      source: "telegram", now: new Date(), correctiveNotes: a.corrective });
-    return { completionId: r.completionId, flagged: r.flagged.map((f) => ({ item: f.item, value: f.value, notes: f.notes ?? "" })) };
-  },
-  alert: (b, a) => alertManagers(alertDeps, senders, b, a, new Date()),
-  notifyUser: async (chatId, text) => {
-    const r = await tgSend(tgText(chatId, text));
-    if (!r.ok) console.error("form confirmation send failed", r.status);
-  },
+  alertManagers: (b, a) => (waSend ? alertManagers(alertDeps, { whatsapp: waSend }, b, a, new Date()) : Promise.resolve()),
 };
 
 function cors(origin: string | null): Record<string, string> {

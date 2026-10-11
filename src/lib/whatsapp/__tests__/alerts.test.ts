@@ -1,6 +1,7 @@
 // src/lib/whatsapp/__tests__/alerts.test.ts
 import { describe, it, expect } from 'vitest'
-import { alertManagers, type AlertDeps, type AlertRecipient } from '../../../../supabase/functions/_shared/channels/alerts'
+import { alertManagers, makeAlertDeps, alertGroups, groupAlertText, type AlertDeps, type AlertRecipient } from '../../../../supabase/functions/_shared/channels/alerts'
+import { fakeGroupDeps, fakeTgApi, groupRow, GROUP } from './fakes/group-deps'
 import type { SendFn } from '../../../../supabase/functions/_shared/channels/types'
 
 const NOW = new Date('2026-10-14T09:40:00Z')
@@ -89,5 +90,42 @@ describe('alertManagers (cross-channel)', () => {
     f.senders.telegram = async () => { throw new Error('boom') }
     await alertManagers(f.deps, f.senders, 'b', A, NOW)
     expect(f.sent.whatsapp).toHaveLength(1)
+  })
+})
+
+describe('makeAlertDeps.managerRecipients', () => {
+  it('reads WhatsApp identities only (group members\' Telegram identities never get personal alerts)', async () => {
+    const calls: string[] = []
+    const table = (t: string, rows: any[]) => {
+      const q: any = {}
+      for (const m of ['select', 'eq', 'in', 'is']) q[m] = (...args: any[]) => { calls.push(`${t}.${m}${JSON.stringify(args)}`); return q }
+      q.then = (res: any, rej: any) => Promise.resolve({ data: rows, error: null }).then(res, rej)
+      return q
+    }
+    const admin = { from: (t: string) => table(t, t === 'profiles' ? [{ id: 'm1' }] : [{ channel: 'whatsapp', external_id: '447700900999', last_inbound_at: null }]) }
+    expect(await makeAlertDeps(admin).managerRecipients('b')).toEqual([{ channel: 'whatsapp', external_id: '447700900999', last_inbound_at: null }])
+    expect(calls).toContain('channel_identities.eq["channel","whatsapp"]')
+    expect(calls.some((c) => c.includes('telegram'))).toBe(false)
+  })
+})
+
+describe('alertGroups', () => {
+  it('source group + every alerts group, once each; a kicked bot unlinks that group', async () => {
+    const g2 = groupRow({ id: 'g2', business_id: 'b', channel: 'telegram', chat_id: '-1002', title: 'Managers', alerts: true })
+    const g3 = groupRow({ id: 'g3', business_id: 'b', channel: 'telegram', chat_id: '-1003', title: 'Owners', alerts: true })
+    const { d, s } = fakeGroupDeps({ groups: [groupRow(GROUP), g2, g3] })
+    const { api, calls } = fakeTgApi((_m, body) => (body.chat_id === '-1003' ? { ok: false, status: 403, description: 'Forbidden: bot was kicked from the group chat' } : undefined))
+    await alertGroups(d, api, 'b', 'g1', A)
+    expect(calls.map((c) => c.body)).toEqual([
+      { chat_id: '-1001', text: groupAlertText(A) }, { chat_id: '-1002', text: groupAlertText(A) }, { chat_id: '-1003', text: groupAlertText(A) },
+    ])
+    expect(groupAlertText(A)).toBe('⚠ Wharf Side · Walk-in fridge 9 °C at 10:40 (Anna). Action: Moved food to another fridge. — via Blueroll')
+    expect(s.groups.find((g) => g.id === 'g3')!.unlinked_at).not.toBeNull()
+  })
+  it('a source group of another business is ignored', async () => {
+    const { d } = fakeGroupDeps({ groups: [groupRow({ ...GROUP, business_id: 'other' })] })
+    const { api, calls } = fakeTgApi()
+    await alertGroups(d, api, 'b', 'g1', A)
+    expect(calls).toEqual([])
   })
 })
