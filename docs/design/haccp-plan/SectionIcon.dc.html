@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Section icon</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: {{box}}; height: {{box}}; border-radius: {{radius}}; background: {{bg}}; display: flex; align-items: center; justify-content: center; flex: none">
+  <svg width="{{glyph}}" height="{{glyph}}" viewBox="0 0 24 24" fill="none" stroke="{{stroke}}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <sc-if value="{{is.cross}}" hint-placeholder-val="{{false}}">
+      <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"></path><path d="M12 8v4"></path><path d="M12 16h.01"></path>
+    </sc-if>
+    <sc-if value="{{is.cleaning}}" hint-placeholder-val="{{false}}">
+      <path d="M3 3h.01"></path><path d="M7 5h.01"></path><path d="M11 7h.01"></path><path d="M3 7h.01"></path><path d="M7 9h.01"></path><path d="M3 11h.01"></path><rect width="4" height="4" x="15" y="5"></rect><path d="m19 9 2 2v10c0 .6-.4 1-1 1h-6c-.6 0-1-.4-1-1V11l2-2"></path><path d="m13 14 8-2"></path><path d="m13 19 8-2"></path>
+    </sc-if>
+    <sc-if value="{{is.chilling}}" hint-placeholder-val="{{false}}">
+      <path d="m10 20-1.25-2.5L6 18"></path><path d="M10 4 8.75 6.5 6 6"></path><path d="m14 20 1.25-2.5L18 18"></path><path d="m14 4 1.25 2.5L18 6"></path><path d="m17 21-3-6h-4"></path><path d="m17 3-3 6 1.5 3"></path><path d="M2 12h6.5L10 9"></path><path d="m20 10-1.5 2 1.5 2"></path><path d="M22 12h-6.5L14 15"></path><path d="m4 10 1.5 2L4 14"></path><path d="m7 21 3-6-1.5-3"></path><path d="m7 3 3 6h4"></path>
+    </sc-if>
+    <sc-if value="{{is.cooking}}" hint-placeholder-val="{{false}}">
+      <path d="M12 3q1 4 4 6.5t3 5.5a1 1 0 0 1-14 0 5 5 0 0 1 1-3 1 1 0 0 0 5 0c0-2-1.5-3-1.5-5q0-2 2.5-4"></path>
+    </sc-if>
+    <sc-if value="{{is.management}}" hint-placeholder-val="{{false}}">
+      <rect width="8" height="4" x="8" y="2" rx="1" ry="1"></rect><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><path d="m9 14 2 2 4-4"></path>
+    </sc-if>
+    <sc-if value="{{is.fridge}}" hint-placeholder-val="{{false}}">
+      <path d="M5 6a4 4 0 0 1 4-4h6a4 4 0 0 1 4 4v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6Z"></path><path d="M5 10h14"></path><path d="M15 7v6"></path>
+    </sc-if>
+    <sc-if value="{{is.allergens}}" hint-placeholder-val="{{false}}">
+      <path d="M2 22 16 8"></path><path d="M3.47 12.53 5 11l1.53 1.53a3.5 3.5 0 0 1 0 4.940L5 19l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"></path><path d="M7.47 8.53 9 7l1.53 1.53a3.5 3.5 0 0 1 0 4.94L9 15l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"></path><path d="M11.47 4.53 13 3l1.53 1.53a3.5 3.5 0 0 1 0 4.94L13 11l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"></path><path d="M20 2h2v2a4 4 0 0 1-4 4h-2V6a4 4 0 0 1 4-4Z"></path><path d="M11.47 17.47 13 19l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L5 19l1.53-1.53a3.5 3.5 0 0 1 4.94 0Z"></path><path d="M15.47 13.47 17 15l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L9 15l1.530-1.53a3.5 3.5 0 0 1 4.94 0Z"></path><path d="M19.47 9.47 21 11l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L13 11l1.53-1.53a3.5 3.5 0 0 1 4.94 0Z"></path>
+    </sc-if>
+    <sc-if value="{{is.thermometer}}" hint-placeholder-val="{{false}}">
+      <path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"></path>
+    </sc-if>
+    <sc-if value="{{is.review}}" hint-placeholder-val="{{false}}">
+      <path d="M12 3V2"></path><path d="m15.4 17.4 3.2-2.8a2 2 0 1 1 2.8 2.9l-3.6 3.3c-.7.8-1.7 1.2-2.8 1.2h-4c-1.1 0-2.1-.4-2.8-1.2l-1.302-1.464A1 1 0 0 0 6.151 19H5"></path><path d="M2 14h12a2 2 0 0 1 0 4h-2"></path><path d="M4 10h16"></path><path d="M5 10a7 7 0 0 1 14 0"></path><path d="M5 14v6a1 1 0 0 1-1 1H2"></path>
+    </sc-if>
+  </svg>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"icon":{"editor":"enum","options":["cross","cleaning","chilling","cooking","management","fridge","allergens","thermometer","review"],"default":"chilling"},"size":{"editor":"int","default":40,"min":16,"max":160},"tone":{"editor":"enum","options":["tint","solid","onDark","plain"],"default":"tint"},"$preview":{"width":40,"height":40}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const icon = this.props.icon ?? 'chilling';
+    const n = Number(this.props.size ?? 40) || 40;
+    const tone = this.props.tone ?? 'tint';
+    const tones = {
+      tint: { bg: '#e9f4ee', stroke: '#1f7a52' },
+      solid: { bg: '#1f7a52', stroke: '#ffffff' },
+      onDark: { bg: 'rgba(255,255,255,0.14)', stroke: '#ffffff' },
+      plain: { bg: 'transparent', stroke: '#1f7a52' }
+    };
+    const t = tones[tone] || tones.tint;
+    const keys = ['cross', 'cleaning', 'chilling', 'cooking', 'management', 'fridge', 'allergens', 'thermometer', 'review'];
+    const is = {};
+    keys.forEach((k) => { is[k] = k === icon; });
+    return {
+      is,
+      box: n + 'px',
+      glyph: tone === 'plain' ? n : Math.round(n * 0.52),
+      radius: Math.round(n * 0.28) + 'px',
+      bg: t.bg,
+      stroke: t.stroke
+    };
+  }
+}
+</script>
+</body>
+</html>

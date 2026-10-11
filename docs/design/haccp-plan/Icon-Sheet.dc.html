@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>HACCP Pack — Section icons</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#ffffff}
+</style>
+</helmet>
+<div style="width: 880px; height: 560px; box-sizing: border-box; padding: 48px; background: #ffffff; font-family: Geist, system-ui, sans-serif; color: #16181d; display: flex; flex-direction: column; gap: 28px">
+  <div style="display: flex; flex-direction: column; gap: 6px">
+    <h1 style="margin: 0; font-size: 28px; font-weight: 800; letter-spacing: -0.6px">Section icons</h1>
+    <p style="margin: 0; font-size: 14px; color: #5f6670">Lucide (ISC licence), stroke 1.6 — same set as blueroll.app and the web app.</p>
+  </div>
+  <div style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 16px">
+    <sc-for list="{{sections}}" as="s" hint-placeholder-count="5">
+      <div style="border: 1px solid #e9eaed; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 12px; align-items: flex-start">
+        <dc-import name="SectionIcon" icon="{{s.icon}}" size="56" tone="tint" hint-size="56px,56px"></dc-import>
+        <div style="display: flex; flex-direction: column; gap: 2px">
+          <div style="font-size: 12px; font-weight: 600; color: #1f7a52">{{s.num}}</div>
+          <div style="font-size: 14px; font-weight: 700; line-height: 1.25">{{s.name}}</div>
+        </div>
+      </div>
+    </sc-for>
+  </div>
+  <div style="display: flex; gap: 28px; align-items: center">
+    <div style="display: flex; gap: 10px; align-items: center">
+      <sc-for list="{{sections}}" as="s" hint-placeholder-count="5">
+        <dc-import name="SectionIcon" icon="{{s.icon}}" size="40" tone="solid" hint-size="40px,40px"></dc-import>
+      </sc-for>
+    </div>
+    <div style="display: flex; gap: 10px; align-items: center">
+      <sc-for list="{{extras}}" as="e" hint-placeholder-count="4">
+        <dc-import name="SectionIcon" icon="{{e}}" size="40" tone="tint" hint-size="40px,40px"></dc-import>
+      </sc-for>
+    </div>
+  </div>
+  <div style="font-size: 13px; color: #5f6670">Tones: tint (pages, contents) · solid (section openers) · onDark (cover band) · plain (inline with text). Extras: fridge, allergens, thermometer, review.</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":880,"height":560}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      sections: [
+        { num: '1', name: 'Cross-contamination', icon: 'cross' },
+        { num: '2', name: 'Cleaning', icon: 'cleaning' },
+        { num: '3', name: 'Chilling', icon: 'chilling' },
+        { num: '4', name: 'Cooking', icon: 'cooking' },
+        { num: '5', name: 'Management', icon: 'management' }
+      ],
+      extras: ['fridge', 'allergens', 'thermometer', 'review']
+    };
+  }
+}
+</script>
+</body>
+</html>
