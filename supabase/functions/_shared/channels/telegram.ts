@@ -213,11 +213,7 @@ export function makeTelegramSender(cfg: { token: string; fetchFn?: typeof fetch 
     f(`${TG_API}/bot${cfg.token}/${method}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
   return async (msg) => {
     try {
-      const { callback_query_id, ...body } = msg as Record<string, unknown>
-      if (typeof callback_query_id === 'string' && callback_query_id) {
-        await post('answerCallbackQuery', { callback_query_id }).catch(() => undefined)   // best-effort: stops the button spinner
-      }
-      const r = await post('sendMessage', body)
+      const r = await post('sendMessage', msg)
       const j = await r.json().catch(() => ({}))
       const mid = j?.result?.message_id
       return { id: r.ok && mid != null ? String(mid) : null, ok: r.ok, status: r.status }

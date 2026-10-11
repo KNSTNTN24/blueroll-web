@@ -73,14 +73,6 @@ describe('makeTelegramSender', () => {
     expect(calls[0].url).toBe('https://api.telegram.org/botT0K/sendMessage')
     expect(calls[0].body).toEqual({ chat_id: '1', text: 'hi' })
   })
-  it('answers callback query when callback_query_id present', async () => {
-    const urls: string[] = []; const bodies: any[] = []
-    const f = (async (url: string, init: any) => { urls.push(url); bodies.push(JSON.parse(init.body)); return new Response(JSON.stringify({ ok: true, result: { message_id: 1 } })) }) as unknown as typeof fetch
-    await makeTelegramSender({ token: 'T', fetchFn: f })({ chat_id: '1', text: 'x', callback_query_id: 'cb' })
-    expect(urls.map((u) => u.split('/').pop())).toEqual(['answerCallbackQuery', 'sendMessage'])
-    expect(bodies[0]).toEqual({ callback_query_id: 'cb' })
-    expect(bodies[1]).toEqual({ chat_id: '1', text: 'x' })
-  })
   it('never throws', async () => {
     const boom = (async () => { throw new Error('net') }) as unknown as typeof fetch
     expect(await makeTelegramSender({ token: 'T', fetchFn: boom })({ chat_id: '1', text: 'x' })).toEqual({ id: null, ok: false, status: 0 })
