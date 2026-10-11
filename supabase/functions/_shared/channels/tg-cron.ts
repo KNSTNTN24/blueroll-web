@@ -17,8 +17,13 @@ export async function runTelegramGroups(d: GroupDeps, api: TgApi, now: Date): Pr
   const res: GroupRunResult = { reposted: 0, refreshed: 0, removed: 0, warned: 0, failed: 0 }
 
   // Unlinked in Settings (the web app can't call the Bot API): delete the message, then the row.
-  for (const { row, chat_id } of await d.orphanLiveLists()) {
-    if (await d.deleteLiveList(row.id, row.message_id)) { await deleteListMessage(api, chat_id, row.message_id); res.removed++ }
+  try {
+    for (const { row, chat_id } of await d.orphanLiveLists()) {
+      if (await d.deleteLiveList(row.id, row.message_id)) { await deleteListMessage(api, chat_id, row.message_id); res.removed++ }
+    }
+  } catch (err) {
+    res.failed++
+    console.error('telegram orphan list cleanup failed', errMsg(err))   // must not stop the per-group work below
   }
 
   const ready = new Map<string, boolean>()
@@ -47,13 +52,19 @@ export async function runTelegramGroups(d: GroupDeps, api: TgApi, now: Date): Pr
           const keys = job.items.map((it) => ({ template_id: it.template.id, period_key: it.period_key }))
           const claimed = await d.claimGroupReminders(group.id, job.site_id, keys)
           if (!claimed.size) continue
-          const o = await repostList(d, api, group, sites.find((s) => s.id === job.site_id)!, now)
+          const mine = keys.filter((k) => claimed.has(`${k.template_id}:${k.period_key}`))
+          let o: Awaited<ReturnType<typeof repostList>>
+          try { o = await repostList(d, api, group, sites.find((s) => s.id === job.site_id)!, now) }
+          catch (err) {
+            await d.releaseGroupReminders(group.id, job.site_id, mine)   // give the keys back, then let the group-level catch count it
+            throw err
+          }
           if (o === 'posted') { res.reposted++; reposted.add(job.site_id) }
           else if (o === 'empty') reposted.add(job.site_id)
           else if (o === 'unlinked') { unlinked = true; break }
           else {
             res.failed++
-            await d.releaseGroupReminders(group.id, job.site_id, keys.filter((k) => claimed.has(`${k.template_id}:${k.period_key}`)))
+            await d.releaseGroupReminders(group.id, job.site_id, mine)
           }
         }
       }

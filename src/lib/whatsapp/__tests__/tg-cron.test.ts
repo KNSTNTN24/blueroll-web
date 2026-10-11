@@ -76,4 +76,24 @@ describe('runTelegramGroups', () => {
     expect(open.calls.filter((c) => c.method === 'getChat')).toHaveLength(1)
     expect(s.notifications).toHaveLength(1)
   })
+  it('orphan cleanup throwing does not stop the per-group work', async () => {
+    const { d, s } = fakeGroupDeps({ templates: [FRIDGE], mappings: [MAP[0]] }, { orphanLiveLists: async () => { throw new Error('db down') } })
+    const { api } = fakeTgApi(quiet)
+    expect(await runTelegramGroups(d, api, NOW)).toMatchObject({ reposted: 1, failed: 1 })
+    expect(s.reminders.size).toBe(1)
+  })
+  it('a group whose deps throw does not stop the next group; a throwing repost releases its keys', async () => {
+    const G2 = { id: 'g2', business_id: 'b', channel: 'telegram' as const, chat_id: '-1002', title: 'Bar', alerts: false }
+    const { d, s } = fakeGroupDeps({ groups: [groupRow(GROUP), groupRow(G2)], templates: [FRIDGE], mappings: [MAP[0], { group_id: 'g2', template_id: 'tA' }] })
+    const real = d.liveLists
+    d.liveLists = async (gid) => { if (gid === 'g1') throw new Error('boom'); return real(gid) }
+    const { api } = fakeTgApi(quiet)
+    expect(await runTelegramGroups(d, api, NOW)).toMatchObject({ reposted: 1, failed: 1 })
+    expect(s.reminders).toEqual(new Set(['g2:tA:s1:2026-10-14']))
+    // repost throws after the claim: keys are released
+    const f2 = fakeGroupDeps({ templates: [FRIDGE], mappings: [MAP[0]] }, { saveLiveList: async () => { throw new Error('db') } })
+    const r = await runTelegramGroups(f2.d, fakeTgApi(quiet).api, NOW)
+    expect(r.failed).toBe(1)
+    expect(f2.s.reminders.size).toBe(0)
+  })
 })
