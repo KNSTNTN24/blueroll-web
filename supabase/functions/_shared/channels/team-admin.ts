@@ -23,7 +23,8 @@ const post = (w: Who, msg: OutboundMessage) => sendTracked(w.t, w.send, { to: w.
   profile_id: w.person.profile_id, kind: 'reply', lastInboundAt: w.t.now().toISOString() })
 const say = (w: Who, body: string) => post(w, textMessage(w.from, body))
 
-const cleanName = (raw: string) => [...raw.replace(/\s+/g, ' ').trim()].slice(0, NAME_MAX).join('')
+/** Collapse whitespace, trim, cap at NAME_MAX characters (code points). Shared with the Settings API (team-api.ts). */
+export const cleanName = (raw: string) => [...raw.replace(/\s+/g, ' ').trim()].slice(0, NAME_MAX).join('')
 const memberName = (m: TeamMember) => m.full_name || maskPhone(m.phone)
 export const memberStatusText = (m: Pick<TeamMember, 'status' | 'unreachable_at'>): 'Not reachable' | 'Active' | 'Invited' =>
   m.unreachable_at ? 'Not reachable' : m.status === 'active' ? 'Active' : 'Invited'
