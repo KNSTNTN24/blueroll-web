@@ -71,9 +71,11 @@ Success criteria:
 **Morning list** (template `checklist_reminder_list`, already approved): team, site and open checklists with deadlines;
 quick reply **Fill in checks**. Sent once per (team, member, site-local date). Nothing open → nothing sent.
 
-**Filling in.** "Fill in checks" or `checks` → interactive list of the member's open team checklists (all their active
-teams; at most 10 rows, earliest deadline first; "+N more — type checks again after these" when cut) → pick → the
-checklist's Flow (unchanged builder). Submit:
+**Filling in.** "Fill in checks" or `checks` → one menu per team in the format shipped in PR #48 (`due-menu.ts`):
+header "📋 <team> · <site> — N of M done", body with every open checklist (🔴/🟠/⚪ + "due HH:MM") and done ones
+("✅ <name> — HH:MM <first name>"), footer "Forms open on your phone", "Choose a check" list of up to 10 rows (title ≤24,
+description = status + due time, full name when cut; "+N more" line when cut) → pick → the checklist's Flow (unchanged
+builder). Submit:
 1. Token valid; member still `active` in the token's team; checklist still mapped to the team.
 2. Atomic take on `channel_group_takes (group_id, template_id, site_id, period_key)`. Lost, or a completion from any source
    already exists in the period → "Already done ✓ by <first name> <HH:MM>" + the fresh menu; nothing recorded.
