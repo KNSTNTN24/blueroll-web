@@ -73,7 +73,7 @@ export async function runTelegramGroups(d: GroupDeps, api: TgApi, now: Date): Pr
       for (const row of lists) {
         if (reposted.has(row.site_id)) continue   // replaced this run
         const o = await refreshList(d, api, group, row, sites.find((s) => s.id === row.site_id) ?? null, now)
-        if (o === 'edited') res.refreshed++
+        if (o === 'edited' || o === 'celebrated') res.refreshed++
         else if (o === 'deleted') res.removed++
         else if (o === 'failed') res.failed++
         else if (o === 'unlinked') break

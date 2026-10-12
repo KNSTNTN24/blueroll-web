@@ -20,7 +20,7 @@ describe('runTelegramGroups', () => {
     expect(r2).toMatchObject({ reposted: 0, refreshed: 0 })
     expect(calls.map((c) => c.method)).toEqual([])   // permission already checked today, list unchanged
   })
-  it('refresh: a completion turns into a ✅ line by edit; everything done deletes the list', async () => {
+  it('refresh: a completion turns into a ✅ line by edit; everything done → 🎉, removed 10 minutes later', async () => {
     const { d, s } = fakeGroupDeps({ templates: [FRIDGE, CLEAN], mappings: MAP })
     const { api, calls } = fakeTgApi(quiet)
     await runTelegramGroups(d, api, NOW)
@@ -31,7 +31,10 @@ describe('runTelegramGroups', () => {
     expect(calls[0].body.text).toContain('✅ Fridge temps · 10:41')
     s.completions.push({ template_id: 'tB', site_id: 's1', completed_at: '2026-10-14T09:42:00Z', completed_by: null })
     calls.length = 0
-    expect(await runTelegramGroups(d, api, NOW)).toMatchObject({ removed: 1 })
+    expect(await runTelegramGroups(d, api, NOW)).toMatchObject({ refreshed: 1 })
+    expect(calls.map((c) => [c.method, c.body.text])).toEqual([['sendMessage', '🎉'], ['deleteMessage', undefined]])
+    calls.length = 0
+    expect(await runTelegramGroups(d, api, new Date(NOW.getTime() + 10 * 60_000))).toMatchObject({ removed: 1 })
     expect(calls.map((c) => c.method)).toEqual(['deleteMessage'])
     expect(s.lists).toEqual([])
   })
