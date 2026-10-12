@@ -55,7 +55,7 @@ function Setup({ businessId, siteId }: { businessId: string; siteId: string }) {
 
 type Tab = TabId | 'review'
 const TAB_NAMES: Record<TabId, string> = {
-  profile: 'Profile', cross: 'Cross-Contamination', cleaning: 'Cleaning', chilling: 'Chilling', cooking: 'Cooking', management: 'Management',
+  profile: 'Profile', cross: 'Cross-Contamination', cleaning: 'Cleaning', chilling: 'Chilling', cooking: 'Cooking', management: 'Management', documents: 'Documents',
 }
 
 function SetupInner({ session, businessId, siteId }: {
