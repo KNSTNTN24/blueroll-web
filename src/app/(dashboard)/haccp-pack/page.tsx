@@ -15,6 +15,7 @@ import { useAuth } from '@/hooks/use-auth'
 import { ChevronDown, FileText, X, Eye, Link2 } from 'lucide-react'
 import { DocumentPickerModal, type PickedDocument } from '@/components/shared/document-picker-modal'
 import { SiteSignoffBadge } from './site-signoff'
+import { SetupHero } from './setup-hero'
 import { AllSitesDashboard } from './all-sites-dashboard'
 import { HACCP_METHODS, type FieldType, type SectionId, type HaccpField, type HaccpMethod } from '@/lib/haccp-pack/methods'
 
@@ -541,10 +542,6 @@ export default function HaccpPackPage() {
             </span>
           </button>
 
-          {isManager && (
-            <Link href="/haccp-setup" className="rounded-md border px-3 py-1.5 text-[13px] font-medium">Set up with questions</Link>
-          )}
-
           <Link
             href="/haccp-pack/document"
             className="inline-flex h-8 items-center gap-2 rounded-lg bg-foreground px-3.5 text-[12px] font-medium text-background transition-colors hover:bg-foreground/90"
@@ -554,6 +551,14 @@ export default function HaccpPackPage() {
           </Link>
         </div>
       </div>
+
+      {isManager && packSiteId && <SetupHero businessId={businessId} siteId={packSiteId} />}
+      {isManager && packSiteId && (
+        <div className="flex flex-col gap-0.5">
+          <h2 className="text-[15px] font-bold">Edit the pack by hand</h2>
+          <p className="text-[12.5px] text-muted-foreground">For quick fixes after setup. Answers from Set up my HACCP are marked “From setup”.</p>
+        </div>
+      )}
 
       {/* \u2500\u2500 Progress strip \u2500\u2500 */}
       <div className="flex items-center gap-4">
@@ -853,6 +858,7 @@ function FieldRenderer({
             )}
           >
             {field.label}
+            {data.sources?.[field.id] === 'questionnaire' && <span className="ml-2 rounded-full bg-[#e9f4ee] px-2 py-0.5 text-[11px] font-semibold text-[#1f7a52]">From setup</span>}
           </span>
         </label>
       )
@@ -860,7 +866,7 @@ function FieldRenderer({
     case 'text':
       return (
         <div className="space-y-2 py-3">
-          <label className="block text-[13px] font-medium text-foreground">{field.label}</label>
+          <label className="block text-[13px] font-medium text-foreground">{field.label}{data.sources?.[field.id] === 'questionnaire' && <span className="ml-2 rounded-full bg-[#e9f4ee] px-2 py-0.5 text-[11px] font-semibold text-[#1f7a52]">From setup</span>}</label>
 
           {showAuto ? (
             <div

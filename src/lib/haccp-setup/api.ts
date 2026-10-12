@@ -150,3 +150,15 @@ export async function loadSetupContext(businessId: string, siteId: string): Prom
   }
   return buildSetupContext(sources, siteId, sources.documents)
 }
+
+/** The site's current setup for the pack page panel: the open session, else the last applied one, else none. Read-only (never creates a session). */
+export async function loadSessionSummary(businessId: string, siteId: string): Promise<{ status: string; answers: Answers | null } | null> {
+  const { data, error } = await supabase
+    .from('haccp_setup_sessions')
+    .select('status, answers, created_at')
+    .eq('business_id', businessId).eq('site_id', siteId).in('status', ['in_progress', 'applied'])
+    .order('created_at', { ascending: false }).limit(5)
+  if (error) throw error
+  const rows = (data ?? []) as { status: string; answers: Answers | null }[]
+  return rows.find((r) => r.status === 'in_progress') ?? rows.find((r) => r.status === 'applied') ?? null
+}
