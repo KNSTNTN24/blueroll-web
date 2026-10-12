@@ -1,5 +1,6 @@
 import { HACCP_METHODS, type HaccpField, type SectionId } from '@/lib/haccp-pack/methods'
 import { computeAutoData, AUTO_SOURCE_LABEL } from '@/lib/haccp-pack/auto-data'
+import { menuHasAllergens, packFields } from '@/lib/haccp-pack/scope'
 import { resolveAllergens } from '@/lib/dishes'
 import { ALLERGEN_LABELS, type EUAllergen } from '@/lib/constants'
 import { METHOD_COPY, SECTION_NAME, SECTION_ORDER } from './copy'
@@ -46,6 +47,7 @@ function answerFor(field: HaccpField, data: PackData, auto: Record<string, strin
 export function buildPlan(bundle: PlanBundle, now: Date = new Date()): PlanDoc {
   const data = bundle.pack.data
   const auto = bundle.business.autoFill ? computeAutoData(bundle.sources) : {}
+  const scope = { menuHasAllergens: menuHasAllergens(bundle.sources.dishes, bundle.site?.id ?? null) }
 
   let filled = 0
   let total = 0
@@ -56,13 +58,20 @@ export function buildPlan(bundle: PlanBundle, now: Date = new Date()): PlanDoc {
     const planMethods: PlanMethod[] = methods.map((m, mi) => {
       const ref = `${si + 1}.${mi + 1}`
       const copy = METHOD_COPY[m.id]
-      const toggles = m.fields.filter((f) => f.type === 'toggle')
+      const fields = packFields(m, scope)
+      const toggles = fields.filter((f) => f.type === 'toggle')
       const doList: string[] = []
       const answers: PlanAnswer[] = []
       const attachments: { title: string }[] = []
       const open: { ref: string; label: string }[] = []
       let otherFilled = 0
+      // Attached documents show even when the pack no longer asks for them.
       for (const f of m.fields) {
+        if (f.type !== 'file' || fields.includes(f)) continue
+        const ref = parseFileRef(data.files[f.id])
+        if (ref) attachments.push({ title: ref.title })
+      }
+      for (const f of fields) {
         let isFilled = false
         if (f.type === 'toggle') {
           isFilled = data.toggles[f.id] === true
@@ -82,7 +91,7 @@ export function buildPlan(bundle: PlanBundle, now: Date = new Date()): PlanDoc {
         if (isFilled) sFilled++
       }
       const inPlace = doList.length
-      const nonToggle = m.fields.length - toggles.length
+      const nonToggle = fields.length - toggles.length
       let status: PlanMethod['status']
       if (toggles.length) status = inPlace === toggles.length ? 'in_place' : inPlace === 0 ? 'open' : 'partial'
       else status = otherFilled === nonToggle ? 'in_place' : otherFilled === 0 ? 'open' : 'partial'
@@ -165,6 +174,7 @@ export function buildPlan(bundle: PlanBundle, now: Date = new Date()): PlanDoc {
     generatedAt: bundle.generatedAt, periodStart: bundle.periodStart, periodEnd: bundle.periodEnd,
     filled, total, pct,
     inspectionReady: pct >= 90 && !!signoff && !signoff.editedAfter,
+    menuHasAllergens: scope.menuHasAllergens,
     sections, stats, people, openPoints,
     corrective: bundle.proof.corrective,
     review, signoff, dishes, cleaningFrequency,

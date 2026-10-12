@@ -126,7 +126,16 @@ export function MethodPage({ doc, method, first }: { doc: PlanDoc; method: PlanM
       {method.infographic.includes('twoStageClean') && <TwoStageClean />}
       {method.infographic.includes('cleaningFrequency') && <CleaningFrequency buckets={doc.cleaningFrequency} />}
       {method.infographic.includes('panToPass') && <PanToPass />}
-      {method.infographic.includes('allergenMatrix') && <AllergenMatrix dishes={doc.dishes} />}
+      {method.infographic.includes('allergenMatrix') && (doc.menuHasAllergens ? <AllergenMatrix dishes={doc.dishes} /> : (
+        <div className="pd-box plan-keep" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <div className="pd-h2">Allergen matrix</div>
+          <div style={{ fontSize: 13.5, lineHeight: 1.5, color: '#3b3f47' }}>
+            {method.attachments.length
+              ? `See the attached allergen matrix: ${method.attachments.map((f) => f.title).join(', ')}.`
+              : 'No dish on this site’s menu has allergens recorded in Blueroll yet. Add allergens to the menu, or attach your allergen matrix.'}
+          </div>
+        </div>
+      ))}
 
       {method.open.length > 0 && (
         <div className="pd-open plan-keep">

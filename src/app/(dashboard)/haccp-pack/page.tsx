@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { HACCP_SECTIONS } from '@/lib/constants'
 import { type Dish } from '@/lib/dishes'
 import { computeAutoData, type AutoDataSources } from '@/lib/haccp-pack/auto-data'
+import { menuHasAllergens, packFields, type PackScope } from '@/lib/haccp-pack/scope'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import Link from 'next/link'
@@ -79,13 +80,14 @@ function computeSectionProgress(
   data: HaccpPackRow,
   autoData: Record<string, string>,
   autoFill: boolean,
+  scope: PackScope,
 ) {
   const methods = getSectionMethods(sectionId)
   let filled = 0
   let total = 0
   let xp = 0
   for (const method of methods) {
-    for (const field of method.fields) {
+    for (const field of packFields(method, scope)) {
       total++
       if (isFieldFilled(field, data, autoData, autoFill)) {
         filled++
@@ -96,12 +98,12 @@ function computeSectionProgress(
   return { filled, total, pct: total > 0 ? Math.round((filled / total) * 100) : 0, xp }
 }
 
-function computeTotalProgress(data: HaccpPackRow, autoData: Record<string, string>, autoFill: boolean) {
+function computeTotalProgress(data: HaccpPackRow, autoData: Record<string, string>, autoFill: boolean, scope: PackScope) {
   let filled = 0
   let total = 0
   let xp = 0
   for (const method of HACCP_METHODS) {
-    for (const field of method.fields) {
+    for (const field of packFields(method, scope)) {
       total++
       if (isFieldFilled(field, data, autoData, autoFill)) {
         filled++
@@ -207,13 +209,13 @@ export default function HaccpPackPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('menu_items')
-        .select('id, name, category, active, allergen_source, recipe_id, declared_allergens, may_contain, dietary, attested_by_name, attested_at, recipe:recipes(id, name, recipe_ingredients(ingredient:ingredients(name, allergens)))')
+        .select('id, name, category, active, allergen_source, recipe_id, declared_allergens, may_contain, dietary, attested_by_name, attested_at, site_ids, recipe:recipes(id, name, recipe_ingredients(ingredient:ingredients(name, allergens)))')
         .eq('business_id', businessId)
         .order('name')
       if (error) console.error('[haccp-pack] dishes query error:', error)
       return (data ?? []) as unknown as Dish[]
     },
-    enabled: !!businessId && autoFillEnabled,
+    enabled: !!businessId,
     staleTime: 0,
     refetchOnMount: 'always',
   })
@@ -361,18 +363,21 @@ export default function HaccpPackPage() {
     },
   })
 
+  // Allergens come from the menu: when it has them, the pack doesn't ask for a matrix file.
+  const scope = useMemo<PackScope>(() => ({ menuHasAllergens: menuHasAllergens(dishes ?? [], packSiteId) }), [dishes, packSiteId])
+
   // ── Section progress ──
   const sectionProgress = useMemo(() => {
     const result: Record<SectionId, { filled: number; total: number; pct: number; xp: number }> = {} as any
     for (const s of HACCP_SECTIONS) {
-      result[s.id as SectionId] = computeSectionProgress(s.id as SectionId, localData, autoData, autoFillEnabled)
+      result[s.id as SectionId] = computeSectionProgress(s.id as SectionId, localData, autoData, autoFillEnabled, scope)
     }
     return result
-  }, [localData, autoData, autoFillEnabled])
+  }, [localData, autoData, autoFillEnabled, scope])
 
   const totalProgress = useMemo(
-    () => computeTotalProgress(localData, autoData, autoFillEnabled),
-    [localData, autoData, autoFillEnabled],
+    () => computeTotalProgress(localData, autoData, autoFillEnabled, scope),
+    [localData, autoData, autoFillEnabled, scope],
   )
 
   // Per-site packs (packs are separate documents per site now) — feeds the
@@ -399,12 +404,12 @@ export default function HaccpPackPage() {
         files: inner.files ?? {}, selects: inner.selects ?? {},
         overrides: inner.overrides ?? {}, sources: inner.sources ?? {},
       }
-      const p = computeTotalProgress(rowData, autoData, autoFillEnabled)
+      const p = computeTotalProgress(rowData, autoData, autoFillEnabled, { menuHasAllergens: menuHasAllergens(dishes ?? [], r.site_id) })
       m[r.site_id] = { filled: p.filled, total: p.total, pct: p.pct }
     }
     return m
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allPackRows, autoData, autoFillEnabled])
+  }, [allPackRows, autoData, autoFillEnabled, dishes])
 
   // ── 4-week review ──
   const reviewInfo = useMemo(() => {
@@ -639,10 +644,11 @@ export default function HaccpPackPage() {
       {/* \u2500\u2500 Methods list \u2500\u2500 */}
       <div className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
         {activeMethods.map((method, idx) => {
-          const methodFilled = method.fields.filter((f) =>
+          const fields = packFields(method, scope)
+          const methodFilled = fields.filter((f) =>
             isFieldFilled(f, localData, autoData, autoFillEnabled),
           ).length
-          const methodTotal = method.fields.length
+          const methodTotal = fields.length
           const methodPct = methodTotal > 0 ? Math.round((methodFilled / methodTotal) * 100) : 0
           const isDone = methodPct === 100
           const isExpanded = expandedMethods[method.id] === true
@@ -720,7 +726,7 @@ export default function HaccpPackPage() {
                       isExpanded ? 'translate-y-0 opacity-100 delay-[80ms]' : '-translate-y-1 opacity-0',
                     )}
                   >
-                    {method.fields.map((field) => (
+                    {fields.map((field) => (
                       <FieldRenderer
                         key={field.id}
                         field={field}
