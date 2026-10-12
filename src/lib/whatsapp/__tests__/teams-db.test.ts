@@ -37,11 +37,12 @@ describe('makeTeamDeps', () => {
     code = '42P01'
     await expect(t.claimEvent('g1', 'day_end', '2026-10-14')).rejects.toMatchObject({ code: '42P01' })
   })
-  it('claimTake: one multi-row INSERT for every live WhatsApp team mapping the checklist at the site, the taker\'s team first', async () => {
+  it('claimTake: one multi-row INSERT for every live WhatsApp team mapping the checklist at the site, in group id order', async () => {
     const { admin, queries } = proxyAdmin((q) => (q.table === 'channel_group_checklists'
       ? { data: [{ group_id: 'g2' }, { group_id: 'g1' }], error: null } : { data: null, error: null }))
     const now = new Date('2026-10-14T09:40:00Z')
-    expect(await makeTeamDeps(admin).claimTake(KEY, 'p1', now)).toBe(true)
+    // Submitted from g2: rows still go g1, g2 — concurrent claims lock in the same order (no deadlock).
+    expect(await makeTeamDeps(admin).claimTake({ ...KEY, group_id: 'g2' }, 'p1', now)).toBe(true)
     const [look, ins] = queries
     expect(look.table).toBe('channel_group_checklists')
     expect(String(op(look, 'select')![1])).toContain('team:channel_groups!inner(')
@@ -52,10 +53,12 @@ describe('makeTeamDeps', () => {
     expect(op(ins, 'insert')![1]).toEqual([{ group_id: 'g1', ...row }, { group_id: 'g2', ...row }])
     expect(queries).toHaveLength(2)
   })
-  it('claimTake: a conflict on any row loses the take (23505 → false); other errors throw', async () => {
+  it('claimTake: a conflict on any row (23505) or a deadlock with a concurrent claim (40P01) loses the take; other errors throw', async () => {
     let code = '23505'
     const { admin } = proxyAdmin((q) => (q.table === 'channel_group_checklists' ? { data: [], error: null } : { data: null, error: { code, message: 'x' } }))
     const t = makeTeamDeps(admin)
+    expect(await t.claimTake(KEY, 'p1', new Date())).toBe(false)
+    code = '40P01'
     expect(await t.claimTake(KEY, 'p1', new Date())).toBe(false)
     code = '42P01'
     await expect(t.claimTake(KEY, 'p1', new Date())).rejects.toMatchObject({ code: '42P01' })
@@ -97,6 +100,17 @@ describe('makeTeamDeps', () => {
       expect(ops(q, 'is')).toContainEqual(['is', 'site.removed_at', null])
       expect(op(q, 'eq')).toEqual(['eq', 'channel', 'whatsapp'])
     }
+  })
+  it('activeMemberships skips deleted teams and teams of soft-removed sites, and returns plain members', async () => {
+    const row = (id: string, status: string) => ({ id, group_id: 'g1', profile_id: 'p1', phone: '447700900123', status: 'active',
+      profile: { full_name: 'Anna Smith' }, team: { channel: 'whatsapp', unlinked_at: null, site: { removed_at: null, status } } })
+    const { admin, queries } = proxyAdmin(() => ({ data: [row('gm1', 'active'), row('gm2', 'removed')], error: null }))
+    const out = await makeTeamDeps(admin).activeMemberships('p1')
+    expect(out.map((m) => m.id)).toEqual(['gm1'])
+    expect(out[0]).not.toHaveProperty('team')
+    expect(out[0].full_name).toBe('Anna Smith')
+    expect(String(op(queries[0], 'select')![1])).toContain('team:channel_groups!inner(channel, unlinked_at, site:sites!inner(removed_at, status))')
+    expect(ops(queries[0], 'is')).toEqual([['is', 'team.unlinked_at', null], ['is', 'team.site.removed_at', null]])
   })
   it('teamTemplates keeps active templates of the team business at its site (or all sites)', async () => {
     const t = (o: any) => ({ id: 'x', business_id: 'b', site_id: null, name: 'n', frequency: 'daily', deadline_time: null, multi_per_day: false, min_per_day: null, assigned_roles: null, assigned_role_ids: null, active: true, ...o })
@@ -156,6 +170,14 @@ describe('fakeTeamDeps takes (first submit wins across teams)', () => {
     await d.releaseTake(k('g1'), ANNA.profile_id)
     expect(s.takes.size).toBe(0)
     expect(await d.claimTake(k('g2'), BEN.profile_id, s.now)).toBe(true)
+  })
+  it('memberships and team lists skip a soft-removed site (missing from s.sites)', async () => {
+    const { d, s } = twoTeams()
+    s.teams.push({ id: 'g4', business_id: 'b', title: 'Far', site_id: 's2' })
+    s.members.push(member({ id: 'gm4', group_id: 'g4', profile_id: ANNA.profile_id, phone: ANNA.phone }))
+    expect((await d.activeMemberships(ANNA.profile_id)).map((m) => m.group_id)).toEqual(['g1'])
+    expect((await d.liveTeams()).map((t) => t.id)).toEqual(['g1', 'g2'])
+    expect(await d.teamById('g4')).toBeNull()
   })
   it('a deleted team or a team at another site gets no take row', async () => {
     const { d, s } = twoTeams()

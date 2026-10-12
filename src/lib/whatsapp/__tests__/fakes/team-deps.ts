@@ -84,7 +84,7 @@ export function fakeTeamDeps(init: Partial<FakeTeamState> = {}, over: Partial<Te
     members: async (gid) => s.members.filter((m) => m.group_id === gid).map((m) => ({ ...m })),
     memberById: async (id) => { const m = s.members.find((x) => x.id === id); return m ? { ...m } : null },
     memberFor: async (gid, pid) => { const m = s.members.find((x) => x.group_id === gid && x.profile_id === pid); return m ? { ...m } : null },
-    activeMemberships: async (pid) => s.members.filter((m) => m.profile_id === pid && m.status === 'active' && s.teams.some((t) => t.id === m.group_id && !t.deleted)).map((m) => ({ ...m })),
+    activeMemberships: async (pid) => s.members.filter((m) => m.profile_id === pid && m.status === 'active' && live(m.group_id)).map((m) => ({ ...m })),
     upsertInvited: async (a) => {
       const at = a.now.toISOString()
       let m = s.members.find((x) => x.group_id === a.group_id && x.profile_id === a.profile_id)
@@ -138,9 +138,11 @@ export function fakeTeamDeps(init: Partial<FakeTeamState> = {}, over: Partial<Te
     releaseEvent: async (g, kind, key) => { s.events.delete(`${g}|${kind}|${key}`) },
     // First submit wins across teams: the taker's team + every other live team mapping it at that site, all or nothing.
     claimTake: async (k, pid, now) => {
+      await Promise.resolve()   // the team lookup is a round trip: lets concurrent claims interleave before the atomic insert
       const others = s.mappings.filter((m) => m.template_id === k.template_id && m.group_id !== k.group_id
         && s.teams.some((t) => t.id === m.group_id && !t.deleted && t.site_id === k.site_id)).map((m) => m.group_id)
-      const keys = [...new Set([k.group_id, ...others])].map((group_id) => takeKey({ ...k, group_id }))
+      const keys = [...new Set([k.group_id, ...others])].sort().map((group_id) => takeKey({ ...k, group_id }))
+      // Check-and-set with no await in between = the single all-or-nothing INSERT.
       if (keys.some((x) => s.takes.has(x))) return false
       for (const x of keys) s.takes.set(x, { profile_id: pid, taken_at: now.toISOString() })
       return true

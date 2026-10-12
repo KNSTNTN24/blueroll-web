@@ -48,7 +48,7 @@ export interface TeamDeps extends CoreDb {
   members(groupId: string): Promise<TeamMember[]>
   memberById(memberId: string): Promise<TeamMember | null>
   memberFor(groupId: string, profileId: string): Promise<TeamMember | null>
-  /** Status 'active' in WhatsApp teams not deleted. */
+  /** Status 'active' in WhatsApp teams not deleted, at a site not removed. */
   activeMemberships(profileId: string): Promise<TeamMember[]>
   /** → status 'invited' (keeps last_invite_sent_at). */
   upsertInvited(a: { group_id: string; profile_id: string; phone: string; invited_by: string | null; now: Date }): Promise<TeamMember>
@@ -113,6 +113,7 @@ export function makeTeamDeps(admin: Any): TeamDeps {
     if (error.code === '23505') return false
     throw error
   }
+  const TAKE_LOST = new Set(['23505', '40P01'])   // duplicate key, or a deadlock with a concurrent claim of the same take
 
   return {
     now: () => new Date(),
@@ -139,9 +140,10 @@ export function makeTeamDeps(admin: Any): TeamDeps {
       return r ? asMember(r) : null
     },
     activeMemberships: async (pid) => {
-      const rows = await one(admin.from('channel_group_members').select(`${MEMBER_COLS}, team:channel_groups!inner(channel, unlinked_at)`)
-        .eq('profile_id', pid).eq('status', 'active').eq('team.channel', 'whatsapp').is('team.unlinked_at', null))
-      return ((rows ?? []) as Any[]).map(({ team: _team, ...r }) => asMember(r))
+      const rows = await one(admin.from('channel_group_members')
+        .select(`${MEMBER_COLS}, team:channel_groups!inner(channel, unlinked_at, site:sites!inner(removed_at, status))`)
+        .eq('profile_id', pid).eq('status', 'active').eq('team.channel', 'whatsapp').is('team.unlinked_at', null).is('team.site.removed_at', null))
+      return ((rows ?? []) as Any[]).filter((r) => liveSite(r.team ?? {})).map(({ team: _team, ...r }) => asMember(r))
     },
     upsertInvited: async (a) => asMember(await one(admin.from('channel_group_members').upsert({
       group_id: a.group_id, profile_id: a.profile_id, phone: a.phone, status: 'invited', invited_by: a.invited_by,
@@ -228,12 +230,16 @@ export function makeTeamDeps(admin: Any): TeamDeps {
     claimTake: async (k, pid, now) => {
       const mapped: Any[] = (await one(admin.from('channel_group_checklists').select('group_id, team:channel_groups!inner(channel, site_id, unlinked_at)')
         .eq('template_id', k.template_id).eq('team.channel', 'whatsapp').eq('team.site_id', k.site_id).is('team.unlinked_at', null))) ?? []
-      const groups = [...new Set([k.group_id, ...mapped.map((m) => m.group_id as string)])]
+      // Sorted: concurrent claims insert in the same order, so they block rather than deadlock.
+      const groups = [...new Set([k.group_id, ...mapped.map((m) => m.group_id as string)])].sort()
       const at = now.toISOString()
       // One statement: Postgres inserts every row or none, so a take held by any team loses the whole claim.
-      return claimInsert('channel_group_takes', groups.map((g) => ({
+      const { error } = await admin.from('channel_group_takes').insert(groups.map((g) => ({
         group_id: g, template_id: k.template_id, site_id: k.site_id, period_key: k.period_key, profile_id: pid, taken_at: at,
       })))
+      if (!error) return true
+      if (TAKE_LOST.has(error.code)) return false
+      throw error
     },
     takeOwner: async (k) => ((await one(admin.from('channel_group_takes').select('profile_id, taken_at')
       .eq('template_id', k.template_id).eq('site_id', k.site_id).eq('period_key', k.period_key).order('taken_at').limit(1))) ?? [])[0] ?? null,
