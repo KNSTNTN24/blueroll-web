@@ -3,7 +3,10 @@ import { buildPlan } from './build'
 import { makeBundle } from './fixtures'
 import { HACCP_METHODS } from '@/lib/haccp-pack/methods'
 
-const TOTAL = HACCP_METHODS.reduce((n, m) => n + m.fields.length, 0)
+// fa_allergens_list is retired from the plan (the matrix replaces it).
+const allergenDish = (name: string, site_ids: string[]) => ({ id: name, name, category: null, active: true, allergen_source: 'manual' as const,
+  recipe_id: null, declared_allergens: ['milk'], may_contain: [], dietary: [], attested_by_name: null, attested_at: null, site_ids, site_categories: {} })
+const TOTAL = HACCP_METHODS.reduce((n, m) => n + m.fields.length, 0) - 1
 
 describe('buildPlan', () => {
   it('renders an empty pack as all-open without NaN', () => {
@@ -87,6 +90,42 @@ describe('buildPlan', () => {
     expect(buildPlan(b).address).toBe("ST JAMES'S PARK THE MALL, LONDON, SW1A 1AA")
     const c = makeBundle({ site: { address: '12 Bankside, London', postcode: 'SE1 9JE' } })
     expect(buildPlan(c).address).toBe('12 Bankside, London, SE1 9JE')
+  })
+
+  it('never lists allergens as text, even when auto-fill has them', () => {
+    const b = makeBundle({ sources: { dishes: [allergenDish('Flat white', ['site-1'])] } })
+    const fa = buildPlan(b).sections[0].methods.find((m) => m.id === 'food_allergies')!
+    expect(fa.answers.map((a) => a.label)).not.toContain('List allergens present in your menu items')
+    expect(fa.open.map((o) => o.label)).not.toContain('List allergens present in your menu items')
+  })
+
+  it('does not ask for a matrix file when the menu has allergens', () => {
+    const b = makeBundle({ sources: { dishes: [allergenDish('Flat white', ['site-1'])] } })
+    const d = buildPlan(b)
+    const fa = d.sections[0].methods.find((m) => m.id === 'food_allergies')!
+    expect(fa.open.map((o) => o.label)).not.toContain('Upload allergen matrix document')
+    expect(d.total).toBe(TOTAL - 1)
+    expect(d.menuHasAllergens).toBe(true)
+  })
+
+  it('asks for a matrix file when no dish on this site has allergens', () => {
+    const b = makeBundle({ sources: { dishes: [allergenDish('Other site', ['site-2'])] } })
+    const d = buildPlan(b)
+    const fa = d.sections[0].methods.find((m) => m.id === 'food_allergies')!
+    expect(fa.open.map((o) => o.label)).toContain('Upload allergen matrix document')
+    expect(d.total).toBe(TOTAL)
+    expect(d.menuHasAllergens).toBe(false)
+  })
+
+  it('still shows an attached matrix file when it is not required', () => {
+    const files = { fa_matrix_file: JSON.stringify({ id: 'd1', title: 'Matrix.pdf' }) }
+    const b = makeBundle({
+      pack: { data: { toggles: {}, texts: {}, files, selects: {}, overrides: {}, sources: {} }, updatedAt: null },
+      sources: { dishes: [allergenDish('Flat white', ['site-1'])] },
+    })
+    const d = buildPlan(b)
+    expect(d.sections[0].methods.find((m) => m.id === 'food_allergies')!.attachments).toEqual([{ title: 'Matrix.pdf' }])
+    expect(d.filled).toBe(0)
   })
 
   it('names the file and footer', () => {

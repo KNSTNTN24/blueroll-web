@@ -41,6 +41,8 @@ export interface PlanDoc {
   businessName: string; siteName: string | null; address: string | null; fsaRating: string | null
   generatedAt: string; periodStart: string; periodEnd: string
   filled: number; total: number; pct: number; inspectionReady: boolean
+  /** The menu has at least one active dish with allergens on this site — the matrix is built from it. */
+  menuHasAllergens: boolean
   sections: PlanSection[]
   stats: { value: string; label: string; sub: string; tone: 'default' | 'amber' }[]
   people: { role: string; name: string }[]
