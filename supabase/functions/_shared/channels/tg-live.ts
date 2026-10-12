@@ -1,6 +1,7 @@
 // supabase/functions/_shared/channels/tg-live.ts
 // Telegram live list service (spec §4): one message per (group, site). Repost = send (notifies) → store → delete the
-// previous one. Refresh = edit silently when the rendered list changed; delete it when stale or all done.
+// previous one. Refresh = edit silently when the rendered list changed; delete it when stale; replace it with a 🎉 when
+// all done (the 🎉 is removed CELEBRATION_MS later).
 import type { SiteInfo } from './bot.ts'
 import { telegramFormItemIds } from './bot.ts'
 import type { ChannelGroup, GroupDeps, LiveListRow } from './groups-db.ts'
@@ -13,7 +14,16 @@ export const GROUP_TOKEN_TTL_MS = 24 * 3600_000
 /** A kept token must stay valid long enough for someone to open and fill in the form. */
 const TOKEN_REUSE_MARGIN_MS = 3600_000
 
-export type ListOutcome = 'posted' | 'empty' | 'edited' | 'unchanged' | 'deleted' | 'failed' | 'unlinked'
+export type ListOutcome = 'posted' | 'empty' | 'edited' | 'unchanged' | 'deleted' | 'celebrated' | 'failed' | 'unlinked'
+
+/**
+ * When the last open item of a list is done, the list is replaced by a 🎉 (a lone emoji plays as a big animation) that
+ * stays for CELEBRATION_MS. It lives in the same channel_live_lists row: rendered_hash = 'celebration:<sent at, ms>'.
+ */
+export const CELEBRATION_MS = 10 * 60_000
+const CELEBRATION_PREFIX = 'celebration:'
+const celebrationSentAt = (row: Pick<LiveListRow, 'rendered_hash'>): number | null =>
+  row.rendered_hash?.startsWith(CELEBRATION_PREFIX) ? Number(row.rendered_hash.slice(CELEBRATION_PREFIX.length)) || 0 : null
 
 const sameIds = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i])
 
@@ -138,11 +148,15 @@ export async function refreshList(d: GroupDeps, api: TgApi, group: ChannelGroup,
     return fresh ? refreshList(d, api, group, fresh, site, now, true) : 'unchanged'
   }
   if (!site || row.list_date !== localDate(now, site.timezone)) { return (await dropList(d, api, group, row)) ? 'deleted' : lost() }
-  const { rendered, tokens } = await buildList(d, group, site, now, row.tokens ?? {})
-  const decision = refreshDecision({ listDate: row.list_date, today: localDate(now, site.timezone), openCount: rendered.openCount, storedHash: row.rendered_hash, newHash: rendered.hash })
-  if (decision === 'delete_stale' || decision === 'delete_done') {
+  const celebrated = celebrationSentAt(row)
+  if (celebrated !== null) {
+    if (now.getTime() - celebrated < CELEBRATION_MS) return 'unchanged'
     return (await dropList(d, api, group, row)) ? 'deleted' : lost()
   }
+  const { rendered, tokens } = await buildList(d, group, site, now, row.tokens ?? {})
+  const decision = refreshDecision({ listDate: row.list_date, today: localDate(now, site.timezone), openCount: rendered.openCount, storedHash: row.rendered_hash, newHash: rendered.hash })
+  if (decision === 'delete_stale') return (await dropList(d, api, group, row)) ? 'deleted' : lost()
+  if (decision === 'delete_done') return celebrate(d, api, group, row, now, lost)
   if (decision === 'unchanged') return 'unchanged'
   const r = await api('editMessageText', tgEditHtml(group.chat_id, row.message_id, rendered.text, rendered.keyboard))
   const o = tgOutcome(r)
@@ -154,6 +168,23 @@ export async function refreshList(d: GroupDeps, api: TgApi, group: ChannelGroup,
   if (o === 'migrated' && r.migrateTo) await d.migrateGroupChat(group.chat_id, r.migrateTo)
   console.error('live list edit failed', group.chat_id, r.status, r.description.slice(0, 120))
   return 'failed'   // row kept; next run retries
+}
+
+/**
+ * Everything done: send 🎉 (silently), point the row at it (compare-and-set), then delete the list message. If a repost
+ * or another refresh got to the row first, the 🎉 is taken back. If the 🎉 can't be sent, the list is just removed.
+ */
+async function celebrate(d: GroupDeps, api: TgApi, group: ChannelGroup, row: LiveListRow, now: Date, lost: () => Promise<ListOutcome>): Promise<ListOutcome> {
+  const r = await api('sendMessage', { chat_id: group.chat_id, text: '🎉', disable_notification: true })
+  const messageId = r.ok ? String(r.result?.message_id ?? '') : ''
+  if (!messageId) return (await dropList(d, api, group, row)) ? 'deleted' : lost()
+  const listMessageId = row.message_id
+  if (!(await d.updateLiveList({ ...row }, { message_id: messageId, tokens: {}, rendered_hash: `${CELEBRATION_PREFIX}${now.getTime()}` }))) {
+    await deleteListMessage(api, group.chat_id, messageId)
+    return lost()
+  }
+  await deleteListMessage(api, group.chat_id, listMessageId)
+  return 'celebrated'
 }
 
 export async function refreshGroupSite(d: GroupDeps, api: TgApi, groupId: string, siteId: string, now: Date): Promise<ListOutcome | null> {

@@ -2,6 +2,7 @@
 
 import Script from 'next/script'
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { Celebration } from './celebration'
 import { buildPayload, FORM_MSG, isFlagged, resolveToken, statusMessage, validateForm, type Answers, type Corrective, type FormData, type FormItem } from '@/lib/whatsapp/tg-form'
 
 // Minimal typing of the Telegram WebApp surface we use (https://core.telegram.org/bots/webapps).
@@ -125,7 +126,8 @@ export function TgForm({ token }: { token: string }) {
       if (r.ok) {
         done.current = true
         setPhase({ kind: 'done' })
-        setTimeout(() => wa.close(), 1500)
+        wa.HapticFeedback?.notificationOccurred('success')
+        setTimeout(() => wa.close(), 2600)   // long enough for the celebration to play
       } else if (r.status === 400 && (body?.error === 'missing' || body?.error === 'corrective_required')) {
         setShowRequired(true)
         setSubmitError({
@@ -177,7 +179,7 @@ export function TgForm({ token }: { token: string }) {
       <main className="mx-auto max-w-lg px-4 py-5">
         {phase.kind === 'loading' && <p className="text-sm text-[var(--tg-hint,var(--muted-foreground))]">Loading…</p>}
         {phase.kind === 'message' && <p className="mt-10 text-center text-base">{phase.text}</p>}
-        {phase.kind === 'done' && <p className="mt-10 text-center text-xl font-semibold">Done ✓</p>}
+        {phase.kind === 'done' && <Celebration />}
         {phase.kind === 'form' && (
           <>
             <h1 className="text-lg font-semibold leading-tight">{phase.data.templateName}</h1>

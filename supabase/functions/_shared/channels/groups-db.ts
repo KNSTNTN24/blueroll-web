@@ -51,8 +51,11 @@ export interface GroupDeps extends CoreDb {
   liveLists(groupId: string): Promise<LiveListRow[]>
   orphanLiveLists(): Promise<{ row: LiveListRow; chat_id: string }[]>
   saveLiveList(r: Omit<LiveListRow, 'id'>): Promise<void>
-  /** Compare-and-set: applies only while the row still has the message_id and rendered_hash the caller read. Returns whether it applied. */
-  updateLiveList(row: Pick<LiveListRow, 'id' | 'message_id' | 'rendered_hash'>, patch: { tokens: Record<string, string>; rendered_hash: string }): Promise<boolean>
+  /**
+   * Compare-and-set: applies only while the row still has the message_id and rendered_hash the caller read. Returns whether
+   * it applied. `message_id` in the patch points the row at another message (the 🎉 that replaces a finished list).
+   */
+  updateLiveList(row: Pick<LiveListRow, 'id' | 'message_id' | 'rendered_hash'>, patch: { tokens: Record<string, string>; rendered_hash: string; message_id?: string }): Promise<boolean>
   /** Deletes only while the row still points at `messageId` (a repost keeps the id but changes the message). Returns whether it applied. */
   deleteLiveList(id: string, messageId: string): Promise<boolean>
   saveGroupToken(t: GroupFormToken): Promise<void>

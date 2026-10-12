@@ -132,11 +132,47 @@ describe('refreshList', () => {
     } }])
     expect(f.s.lists[0].tokens).toEqual({ tB: 'tok2' })
   })
-  it('everything done → message deleted and row removed', async () => {
+  const allDone = (f: { s: { completions: unknown[] } }) => f.s.completions.push(
+    { template_id: 'tA', site_id: 's1', completed_at: '2026-10-14T09:30:00Z', completed_by: null },
+    { template_id: 'tB', site_id: 's1', completed_at: '2026-10-14T09:31:00Z', completed_by: null })
+  it('everything done → a silent 🎉 replaces the list; the row points at the 🎉', async () => {
     const f = await posted()
-    f.s.completions.push({ template_id: 'tA', site_id: 's1', completed_at: '2026-10-14T09:30:00Z', completed_by: null }, { template_id: 'tB', site_id: 's1', completed_at: '2026-10-14T09:31:00Z', completed_by: null })
-    expect(await refreshList(f.d, f.api, GROUP, f.s.lists[0], SITE, NOW)).toBe('deleted')
-    expect(f.calls).toEqual([{ method: 'deleteMessage', body: { chat_id: '-1001', message_id: 101 } }])
+    allDone(f)
+    expect(await refreshList(f.d, f.api, GROUP, f.s.lists[0], SITE, NOW)).toBe('celebrated')
+    expect(f.calls).toEqual([
+      { method: 'sendMessage', body: { chat_id: '-1001', text: '🎉', disable_notification: true } },
+      { method: 'deleteMessage', body: { chat_id: '-1001', message_id: 101 } },
+    ])
+    expect(f.s.lists).toEqual([expect.objectContaining({ message_id: '102', tokens: {}, rendered_hash: `celebration:${NOW.getTime()}` })])
+  })
+  it('the 🎉 stays for 10 minutes, then is deleted with its row', async () => {
+    const f = await posted()
+    allDone(f)
+    await refreshList(f.d, f.api, GROUP, f.s.lists[0], SITE, NOW)
+    f.calls.length = 0
+    expect(await refreshList(f.d, f.api, GROUP, f.s.lists[0], SITE, new Date(NOW.getTime() + 9 * 60_000))).toBe('unchanged')
+    expect(f.calls).toEqual([])
+    expect(await refreshList(f.d, f.api, GROUP, f.s.lists[0], SITE, new Date(NOW.getTime() + 10 * 60_000))).toBe('deleted')
+    expect(f.calls).toEqual([{ method: 'deleteMessage', body: { chat_id: '-1001', message_id: 102 } }])
+    expect(f.s.lists).toEqual([])
+  })
+  it('a reminder repost during the 🎉 posts a new list and deletes the 🎉', async () => {
+    const f = await posted()
+    allDone(f)
+    await refreshList(f.d, f.api, GROUP, f.s.lists[0], SITE, NOW)
+    f.s.completions.length = 0   // e.g. a checklist due again
+    f.calls.length = 0
+    expect(await repostList(f.d, f.api, GROUP, SITE, NOW)).toBe('posted')
+    expect(f.calls.map((c) => c.method)).toEqual(['sendMessage', 'deleteMessage'])
+    expect(f.calls[1].body).toEqual({ chat_id: '-1001', message_id: 102 })
+    expect(f.s.lists[0].rendered_hash).toMatch(/^[0-9a-f]{64}$/)
+  })
+  it('🎉 cannot be sent → the list is just removed', async () => {
+    const f = await posted()
+    allDone(f)
+    const t = fakeTgApi((m) => (m === 'sendMessage' ? { ok: false, status: 429, description: 'Too Many Requests' } : undefined))
+    expect(await refreshList(f.d, t.api, GROUP, f.s.lists[0], SITE, NOW)).toBe('deleted')
+    expect(t.calls.map((c) => c.method)).toEqual(['sendMessage', 'deleteMessage'])
     expect(f.s.lists).toEqual([])
   })
   it('a list from a previous local day is deleted without minting tokens', async () => {
@@ -179,6 +215,8 @@ describe('refreshList', () => {
 })
 
 describe('refreshList races (compare-and-set)', () => {
+  /** Message ids 901, 902, … so new messages can't be mistaken for the list posted earlier (101). */
+  const freshIds = () => { let n = 900; return (m: string) => (m === 'sendMessage' ? { result: { message_id: ++n } } : undefined) }
   const posted = async () => {
     const f = setup(); const t = fakeTgApi()
     await repostList(f.d, t.api, GROUP, SITE, NOW)
@@ -205,10 +243,23 @@ describe('refreshList races (compare-and-set)', () => {
     const f = await posted()
     const stale = { ...f.s.lists[0] }
     f.s.lists[0] = { ...stale, message_id: '777' }
-    const t = fakeTgApi()
+    const t = fakeTgApi(freshIds())
     f.s.completions.push({ template_id: 'tA', site_id: 's1', completed_at: '2026-10-14T09:30:00Z', completed_by: null }, { template_id: 'tB', site_id: 's1', completed_at: '2026-10-14T09:31:00Z', completed_by: null })
     await refreshList(f.d, t.api, GROUP, stale, SITE, NOW)
     expect(t.calls.filter((c) => c.method === 'deleteMessage' && c.body.message_id === 101)).toEqual([])
+  })
+  it('(a3) a 🎉 that lost the row to a concurrent writer is taken back', async () => {
+    const f = await posted()
+    f.s.lists[0] = { ...f.s.lists[0], rendered_hash: 'other-writer' }
+    const stale = { ...f.s.lists[0], rendered_hash: 'old' }
+    f.s.completions.push({ template_id: 'tA', site_id: 's1', completed_at: '2026-10-14T09:30:00Z', completed_by: null }, { template_id: 'tB', site_id: 's1', completed_at: '2026-10-14T09:31:00Z', completed_by: null })
+    const t = fakeTgApi(freshIds())
+    expect(await refreshList(f.d, t.api, GROUP, stale, SITE, NOW)).toBe('celebrated')   // retried against the fresh row
+    expect(t.calls.map((c) => [c.method, c.body.message_id ?? c.body.text])).toEqual([
+      ['sendMessage', '🎉'], ['deleteMessage', 901],   // first 🎉 lost the compare-and-set → deleted
+      ['sendMessage', '🎉'], ['deleteMessage', 101],   // retry wins → the list goes
+    ])
+    expect(f.s.lists).toEqual([expect.objectContaining({ message_id: '902' })])
   })
   it('(b) a lost update is retried: the stored row ends up matching the last edit', async () => {
     const f = await posted()
