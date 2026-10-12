@@ -55,7 +55,7 @@ const liveSite = (s: SiteSel) => s?.status !== 'removed'
 
 export async function listTeams(businessId: string): Promise<WhatsAppTeam[]> {
   const { data, error } = await supabase.from('channel_groups')
-    .select('id, title, site_id, site:sites!inner(removed_at, status), channel_group_checklists(template_id), channel_group_members(id, profile_id, phone, status, unreachable_at, last_invite_sent_at, profile:profiles!channel_group_members_profile_id_fkey(full_name))')
+    .select('id, title, site_id, site:sites!channel_groups_site_id_fkey!inner(removed_at, status), channel_group_checklists(template_id), channel_group_members(id, profile_id, phone, status, unreachable_at, last_invite_sent_at, profile:profiles!channel_group_members_profile_id_fkey(full_name))')
     .eq('business_id', businessId).eq('channel', 'whatsapp').is('unlinked_at', null).is('site.removed_at', null).order('title')
   if (error) throw error
   return ((data ?? []) as unknown as TeamSel[]).filter((t) => liveSite(t.site)).map((t) => ({
@@ -76,7 +76,7 @@ export async function listPeople(businessId: string): Promise<Person[]> {
 /** profile id → their WhatsApp teams (not removed) for the Team page. */
 export async function listMemberTeams(businessId: string): Promise<Map<string, { title: string; status: MemberStatus }[]>> {
   const { data, error } = await supabase.from('channel_group_members')
-    .select('profile_id, status, team:channel_groups!inner(title, channel, business_id, unlinked_at, site:sites!inner(removed_at, status))')
+    .select('profile_id, status, team:channel_groups!inner(title, channel, business_id, unlinked_at, site:sites!channel_groups_site_id_fkey!inner(removed_at, status))')
     .eq('team.business_id', businessId).eq('team.channel', 'whatsapp').is('team.unlinked_at', null).is('team.site.removed_at', null).neq('status', 'removed')
   if (error) throw error
   const out = new Map<string, { title: string; status: MemberStatus }[]>()

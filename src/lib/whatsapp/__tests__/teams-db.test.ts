@@ -96,7 +96,7 @@ describe('makeTeamDeps', () => {
     expect(await t.liveTeams()).toEqual([{ id: 'g1', business_id: 'b', title: 'Kitchen', site_id: 's1' }])
     expect(await t.teamsForBusiness('b')).toEqual([{ id: 'g1', business_id: 'b', title: 'Kitchen', site_id: 's1' }])
     for (const q of queries) {
-      expect(String(op(q, 'select')![1])).toContain('site:sites!inner(removed_at, status)')
+      expect(String(op(q, 'select')![1])).toContain('site:sites!channel_groups_site_id_fkey!inner(removed_at, status)')
       expect(ops(q, 'is')).toContainEqual(['is', 'site.removed_at', null])
       expect(op(q, 'eq')).toEqual(['eq', 'channel', 'whatsapp'])
     }
@@ -109,7 +109,7 @@ describe('makeTeamDeps', () => {
     expect(out.map((m) => m.id)).toEqual(['gm1'])
     expect(out[0]).not.toHaveProperty('team')
     expect(out[0].full_name).toBe('Anna Smith')
-    expect(String(op(queries[0], 'select')![1])).toContain('team:channel_groups!inner(channel, unlinked_at, site:sites!inner(removed_at, status))')
+    expect(String(op(queries[0], 'select')![1])).toContain('team:channel_groups!inner(channel, unlinked_at, site:sites!channel_groups_site_id_fkey!inner(removed_at, status))')
     expect(ops(queries[0], 'is')).toEqual([['is', 'team.unlinked_at', null], ['is', 'team.site.removed_at', null]])
   })
   it('teamTemplates keeps active templates of the team business at its site (or all sites)', async () => {

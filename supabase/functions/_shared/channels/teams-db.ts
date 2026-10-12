@@ -102,7 +102,7 @@ export interface TeamDeps extends CoreDb {
 export const MEMBER_PROFILE_FK = 'channel_group_members_profile_id_fkey'
 export const INVITE_RESEND_MS = 3600_000
 /** Teams carry their site embed so soft-removed sites (removed_at, or legacy status 'removed') are skipped. */
-const TEAM_COLS = 'id, business_id, title, site_id, site:sites!inner(removed_at, status)'
+const TEAM_COLS = 'id, business_id, title, site_id, site:sites!channel_groups_site_id_fkey!inner(removed_at, status)'
 const MEMBER_COLS = `id, group_id, profile_id, phone, status, invited_by, invited_at, joined_at, removed_at, last_invite_sent_at, unreachable_at, profile:profiles!${MEMBER_PROFILE_FK}(full_name)`
 
 export function makeTeamDeps(admin: Any): TeamDeps {
@@ -148,7 +148,7 @@ export function makeTeamDeps(admin: Any): TeamDeps {
     },
     activeMemberships: async (pid) => {
       const rows = await one(admin.from('channel_group_members')
-        .select(`${MEMBER_COLS}, team:channel_groups!inner(channel, unlinked_at, site:sites!inner(removed_at, status))`)
+        .select(`${MEMBER_COLS}, team:channel_groups!inner(channel, unlinked_at, site:sites!channel_groups_site_id_fkey!inner(removed_at, status))`)
         .eq('profile_id', pid).eq('status', 'active').eq('team.channel', 'whatsapp').is('team.unlinked_at', null).is('team.site.removed_at', null))
       return ((rows ?? []) as Any[]).filter((r) => liveSite(r.team ?? {})).map(({ team: _team, ...r }) => asMember(r))
     },
