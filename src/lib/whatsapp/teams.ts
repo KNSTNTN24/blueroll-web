@@ -41,6 +41,11 @@ const API_ERRORS: Record<string, string> = {
 }
 /** Sentence for an error code from whatsapp-team-member; any other message (e.g. from the database) passes through. */
 export const teamApiError = (code: string) => API_ERRORS[code] ?? code
+/** Any thrown value → readable text: Error and PostgrestError-like objects by .message (never "[object Object]"). */
+export function teamErrorText(e: unknown): string {
+  const m = typeof e === 'object' && e !== null && typeof (e as { message?: unknown }).message === 'string' ? (e as { message: string }).message : null
+  return teamApiError(m ?? (typeof e === 'string' ? e : 'Something went wrong'))
+}
 
 type MemberSel = { id: string; profile_id: string; phone: string; status: MemberStatus; unreachable_at: string | null; last_invite_sent_at: string | null; profile: { full_name: string | null } | null }
 type SiteSel = { status: string | null } | null

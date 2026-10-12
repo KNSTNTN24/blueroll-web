@@ -11,10 +11,9 @@ import { listChecklistOptions, mappingDiff, saveGroupChecklists, type ChecklistO
 import { maskNumber } from '@/lib/whatsapp/client'
 import {
   TEAM_SHARE_HINT, addTeamPerson, canResend, createTeam, deleteTeam, listPeople, listTeams, memberStatusLabel,
-  removeTeamMember, resendTeamInvite, teamApiError, type Person, type TeamMemberRow, type WhatsAppTeam,
+  removeTeamMember, resendTeamInvite, teamErrorText, type Person, type TeamMemberRow, type WhatsAppTeam,
 } from '@/lib/whatsapp/teams'
 
-const errText = (e: unknown) => teamApiError(e instanceof Error ? e.message : String(e))
 const STATUS_STYLE: Record<string, string> = {
   Active: 'bg-emerald-50 text-emerald-700',
   Invited: 'bg-amber-50 text-amber-700',
@@ -79,7 +78,7 @@ function NewTeamForm({ businessId, sites, onClose }: { businessId: string; sites
   const create = async () => {
     setBusy(true)
     try { await createTeam({ businessId, title, siteId }); toast.success('Team created'); onClose(true) }
-    catch (e) { toast.error(errText(e)) } finally { setBusy(false) }
+    catch (e) { toast.error(teamErrorText(e)) } finally { setBusy(false) }
   }
   return (
     <div className="mt-4 flex flex-wrap items-center gap-2 rounded-lg border p-4">
@@ -107,18 +106,18 @@ function TeamCard({ team, siteName, options, people, onChanged }: {
   const save = async () => {
     setBusy(true)
     try { await saveGroupChecklists(team.id, team.template_ids, selected); toast.success('Checks saved'); onChanged() }
-    catch (e) { toast.error(errText(e)) } finally { setBusy(false) }
+    catch (e) { toast.error(teamErrorText(e)) } finally { setBusy(false) }
   }
   const remove = async (m: TeamMemberRow) => {
     if (!window.confirm(`Remove ${m.name} from ${team.title}? They stop getting this team's checks at once.`)) return
-    try { await removeTeamMember(m.id); toast.success(`${m.name} removed`); onChanged() } catch (e) { toast.error(errText(e)) }
+    try { await removeTeamMember(m.id); toast.success(`${m.name} removed`); onChanged() } catch (e) { toast.error(teamErrorText(e)) }
   }
   const resend = async (m: TeamMemberRow) => {
-    try { await resendTeamInvite(m.id); toast.success(`Invite sent to ${m.name}`); onChanged() } catch (e) { toast.error(errText(e)) }
+    try { await resendTeamInvite(m.id); toast.success(`Invite sent to ${m.name}`); onChanged() } catch (e) { toast.error(teamErrorText(e)) }
   }
   const del = async () => {
     if (!window.confirm(`Delete “${team.title}”? Its people stop getting WhatsApp checks for it.`)) return
-    try { await deleteTeam(team.id); toast.success('Team deleted'); onChanged() } catch (e) { toast.error(errText(e)) }
+    try { await deleteTeam(team.id); toast.success('Team deleted'); onChanged() } catch (e) { toast.error(teamErrorText(e)) }
   }
   return (
     <div className="rounded-lg border p-4">
@@ -193,7 +192,7 @@ function AddPersonForm({ team, people, onClose }: { team: WhatsAppTeam; people: 
       const outcome = await addTeamPerson({ groupId: team.id, phone, ...(mode === 'new' ? { fullName: name } : { profileId }) })
       toast.success(outcome === 'invited' ? `Invite sent to ${who}` : `${who} is already in ${team.title}`)
       onClose(true)
-    } catch (e) { toast.error(errText(e)) } finally { setBusy(false) }
+    } catch (e) { toast.error(teamErrorText(e)) } finally { setBusy(false) }
   }
   return (
     <div className="mt-3 flex flex-col gap-2 rounded-lg border p-3">
