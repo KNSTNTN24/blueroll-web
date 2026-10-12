@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Set up my HACCP — confirm from Blueroll</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#f6f7f8}
+a{color:#1f7a52}a:hover{color:#16181d}
+button{font-family:inherit}
+</style>
+</helmet>
+<div style="min-height: 900px; display: flex; flex-wrap: wrap; background: #f6f7f8; font-family: Geist, system-ui, sans-serif; color: #16181d">
+
+  <nav aria-label="Main" style="flex: 0 0 220px; background: #14161b; padding: 18px 12px; display: flex; flex-direction: column; gap: 4px; box-sizing: border-box">
+    <div style="display: flex; align-items: center; gap: 8px; padding: 4px 10px 18px; color: #ffffff; font-weight: 700; font-size: 15px">
+      <svg viewBox="100 50 370 430" width="16" height="19" aria-hidden="true"><path fill="#ffffff" d="M241 97V203.426C254.606 198.617 269.247 196 284.5 196C356.573 196 415 254.427 415 326.5C415 398.573 356.573 457 284.5 457C212.594 457 154.272 398.843 154.003 327H154V97H241ZM284.5 283C260.476 283 241 302.476 241 326.5C241 350.524 260.476 370 284.5 370C308.524 370 328 350.524 328 326.5C328 302.476 308.524 283 284.5 283Z"></path></svg>
+      Blueroll
+    </div>
+    <a href="#" style="display: block; padding: 9px 10px; border-radius: 8px; font-size: 13.5px; text-decoration: none; color: #a3a8b0">Dashboard</a>
+    <a href="#" style="display: block; padding: 9px 10px; border-radius: 8px; font-size: 13.5px; text-decoration: none; color: #a3a8b0">Checklists</a>
+    <a href="#" style="display: block; padding: 9px 10px; border-radius: 8px; font-size: 13.5px; text-decoration: none; color: #a3a8b0">Recipes</a>
+    <a href="#" style="display: block; padding: 9px 10px; border-radius: 8px; font-size: 13.5px; text-decoration: none; color: #a3a8b0">Menu &amp; allergens</a>
+    <a href="#" style="display: block; padding: 9px 10px; border-radius: 8px; font-size: 13.5px; text-decoration: none; color: #a3a8b0">Suppliers</a>
+    <a href="#" style="display: block; padding: 9px 10px; border-radius: 8px; font-size: 13.5px; text-decoration: none; color: #ffffff; background: #1f9d63">HACCP Pack</a>
+  </nav>
+
+  <main style="flex: 999 1 640px; min-width: 0; padding: 22px 28px 40px; box-sizing: border-box; display: flex; flex-direction: column; gap: 18px; max-width: 980px">
+    <div style="display: flex; flex-direction: column; gap: 4px">
+      <div style="font-size: 12.5px; color: #5f6670">Set up my HACCP / 5 · Management</div>
+      <h1 style="margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.5px">We found this in Blueroll</h1>
+      <p style="margin: 0; font-size: 14px; color: #3b3f47; max-width: 640px">No need to type it again. Check it is right — anything you change here also updates the plan, not your supplier or recipe records.</p>
+    </div>
+
+    <section aria-labelledby="sup" style="background: #ffffff; border: 1px solid #e9eaed; border-radius: 14px; padding: 18px 20px; display: flex; flex-direction: column; gap: 14px">
+      <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px">
+        <div style="display: flex; align-items: center; gap: 12px">
+          <dc-import name="SectionIcon" icon="management" size="36" tone="tint" hint-size="36px,36px"></dc-import>
+          <div style="display: flex; flex-direction: column; gap: 2px">
+            <div style="font-size: 11.5px; font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase; color: #1f7a52">5.2 Suppliers</div>
+            <h2 id="sup" style="margin: 0; font-size: 17px; font-weight: 700">Who supplies your food?</h2>
+          </div>
+        </div>
+        <span style="font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 999px; background: #e9f4ee; color: #1f7a52">From Suppliers · 3</span>
+      </div>
+      <div style="border: 1px solid #e9eaed; border-radius: 10px; overflow-x: auto">
+        <table style="width: 100%; border-collapse: collapse; font-size: 13.5px; min-width: 520px">
+          <thead><tr style="background: #f6f7f8; text-align: left; font-size: 12px; color: #3b3f47">
+            <th style="padding: 9px 12px; font-weight: 700">Supplier</th><th style="padding: 9px 12px; font-weight: 700">Contact</th><th style="padding: 9px 12px; font-weight: 700">Delivers</th><th style="padding: 9px 12px"><span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Actions</span></th>
+          </tr></thead>
+          <tbody>
+            <sc-for list="{{suppliers}}" as="s" hint-placeholder-count="3">
+              <tr style="border-top: 1px solid #e9eaed">
+                <td style="padding: 10px 12px; font-weight: 600">{{s.name}}</td>
+                <td style="padding: 10px 12px; color: #3b3f47">{{s.contact}}</td>
+                <td style="padding: 10px 12px; color: #3b3f47">{{s.days}}</td>
+                <td style="padding: 10px 12px; text-align: right"><button type="button" style="min-height: 32px; padding: 0 10px; border-radius: 8px; border: 1px solid #e2e4e8; background: #ffffff; font-size: 12px; font-weight: 600">Edit</button></td>
+              </tr>
+            </sc-for>
+          </tbody>
+        </table>
+      </div>
+      <fieldset style="border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px">
+        <legend style="font-size: 14px; font-weight: 600; margin-bottom: 8px">How do you make sure suppliers are reputable?</legend>
+        <sc-for list="{{reput}}" as="r" hint-placeholder-count="3">
+          <label style="min-height: 44px; display: flex; align-items: center; gap: 10px; padding: 0 12px; border-radius: 10px; border: 1px solid {{r.border}}; background: {{r.bg}}; font-size: 13.5px">
+            <input type="checkbox" checked="{{r.on}}" style="width: 18px; height: 18px; accent-color: #1f9d63; margin: 0">{{r.label}}
+          </label>
+        </sc-for>
+      </fieldset>
+      <div style="display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end">
+        <button type="button" style="min-height: 44px; padding: 0 16px; border-radius: 10px; border: 1px solid #e2e4e8; background: #ffffff; font-size: 13.5px; font-weight: 600">Something’s missing</button>
+        <button type="button" style="min-height: 44px; padding: 0 18px; border-radius: 10px; border: 0; background: #1f9d63; color: #ffffff; font-size: 13.5px; font-weight: 700">Yes, that’s right</button>
+      </div>
+    </section>
+
+    <section aria-labelledby="raw" style="background: #ffffff; border: 1px solid #e9eaed; border-radius: 14px; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px">
+      <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px">
+        <div style="display: flex; align-items: center; gap: 12px">
+          <dc-import name="SectionIcon" icon="cross" size="36" tone="tint" hint-size="36px,36px"></dc-import>
+          <div style="display: flex; flex-direction: column; gap: 2px">
+            <div style="font-size: 11.5px; font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase; color: #1f7a52">1.3 Separating foods</div>
+            <h2 id="raw" style="margin: 0; font-size: 17px; font-weight: 700">Raw products you handle</h2>
+          </div>
+        </div>
+        <span style="font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 999px; background: #e9f4ee; color: #1f7a52">From 21 recipes</span>
+      </div>
+      <div style="display: flex; flex-wrap: wrap; gap: 6px">
+        <sc-for list="{{raw}}" as="r" hint-placeholder-count="8">
+          <span style="display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 6px 0 12px; border-radius: 999px; background: #f6f7f8; border: 1px solid #e9eaed; font-size: 13px">{{r}}
+            <button type="button" aria-label="Remove" style="width: 22px; height: 22px; border-radius: 99px; border: 0; background: transparent; color: #5f6670; font-size: 14px; line-height: 1">×</button>
+          </span>
+        </sc-for>
+        <button type="button" style="min-height: 32px; padding: 0 12px; border-radius: 999px; border: 1px dashed #9aa0a8; background: #ffffff; font-size: 13px; color: #3b3f47">+ Add</button>
+      </div>
+      <div style="font-size: 12.5px; color: #5f6670">Found by ingredient names and fish/shellfish allergens. Remove anything you only buy cooked.</div>
+    </section>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const r = (label, on) => ({ label, on, border: on ? '#1f9d63' : '#e2e4e8', bg: on ? '#f3faf6' : '#ffffff' });
+    return {
+      suppliers: [
+        { name: 'Fresh Direct Produce', contact: 'Dave · 07700 900412', days: 'Mon, Thu' },
+        { name: 'Meadow Dairy', contact: '07700 900318', days: 'Daily' },
+        { name: 'Harbour Fish Co', contact: 'Marco · 07700 900575', days: 'Tue, Fri' }
+      ],
+      reput: [
+        r('Registered with a local authority (we check FSA registration)', true),
+        r('Deliveries arrive chilled and are temperature-checked', true),
+        r('We keep their contact details and delivery notes', false)
+      ],
+      raw: ['Beef mince', 'Chicken thigh', 'Pork sausages', 'Salmon fillet', 'King prawns', 'Smoked haddock', 'Bacon', 'Lamb shoulder']
+    };
+  }
+}
+</script>
+</body>
+</html>

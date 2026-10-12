@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Set up my HACCP — documents</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#f6f7f8}
+a{color:#1f7a52}a:hover{color:#16181d}
+button{font-family:inherit}
+</style>
+</helmet>
+<div style="min-height: 900px; display: flex; flex-wrap: wrap; background: #f6f7f8; font-family: Geist, system-ui, sans-serif; color: #16181d">
+
+  <nav aria-label="Main" style="flex: 0 0 220px; background: #14161b; padding: 18px 12px; display: flex; flex-direction: column; gap: 4px; box-sizing: border-box">
+    <div style="display: flex; align-items: center; gap: 8px; padding: 4px 10px 18px; color: #ffffff; font-weight: 700; font-size: 15px">
+      <svg viewBox="100 50 370 430" width="16" height="19" aria-hidden="true"><path fill="#ffffff" d="M241 97V203.426C254.606 198.617 269.247 196 284.5 196C356.573 196 415 254.427 415 326.5C415 398.573 356.573 457 284.5 457C212.594 457 154.272 398.843 154.003 327H154V97H241ZM284.5 283C260.476 283 241 302.476 241 326.5C241 350.524 260.476 370 284.5 370C308.524 370 328 350.524 328 326.5C328 302.476 308.524 283 284.5 283Z"></path></svg>
+      Blueroll
+    </div>
+    <a href="#" style="display: block; padding: 9px 10px; border-radius: 8px; font-size: 13.5px; text-decoration: none; color: #a3a8b0">Dashboard</a>
+    <a href="#" style="display: block; padding: 9px 10px; border-radius: 8px; font-size: 13.5px; text-decoration: none; color: #a3a8b0">Documents</a>
+    <a href="#" style="display: block; padding: 9px 10px; border-radius: 8px; font-size: 13.5px; text-decoration: none; color: #ffffff; background: #1f9d63">HACCP Pack</a>
+  </nav>
+
+  <main style="flex: 999 1 640px; min-width: 0; padding: 22px 28px 40px; box-sizing: border-box; display: flex; flex-direction: column; gap: 16px; max-width: 980px">
+    <div style="display: flex; flex-direction: column; gap: 4px">
+      <div style="font-size: 12.5px; color: #5f6670">Set up my HACCP / Documents</div>
+      <h1 style="margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.5px">Attach what an inspector may ask to see</h1>
+      <p style="margin: 0; font-size: 14px; color: #3b3f47; max-width: 640px">We only ask for documents Blueroll can’t build for you. Pick one from your library or upload a photo or PDF.</p>
+    </div>
+
+    <section aria-labelledby="needed" style="background: #ffffff; border: 1px solid #e9eaed; border-radius: 14px; overflow: hidden">
+      <h2 id="needed" style="margin: 0; padding: 14px 18px; font-size: 14px; font-weight: 700; border-bottom: 1px solid #e9eaed">Needed · 2 of 3 attached</h2>
+      <sc-for list="{{needed}}" as="d" hint-placeholder-count="3">
+        <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 14px 18px; border-bottom: 1px solid #f1f2f4">
+          <dc-import name="SectionIcon" icon="{{d.icon}}" size="36" tone="tint" hint-size="36px,36px"></dc-import>
+          <div style="flex: 1 1 260px; min-width: 0; display: flex; flex-direction: column; gap: 3px">
+            <div style="font-size: 14px; font-weight: 600">{{d.title}}</div>
+            <div style="font-size: 12.5px; color: #5f6670">{{d.ref}} · {{d.hint}}</div>
+          </div>
+          <sc-if value="{{d.attached}}" hint-placeholder-val="{{true}}">
+            <span style="display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 12px; border-radius: 10px; background: #e9f4ee; color: #1f7a52; font-size: 13px; font-weight: 600">{{d.file}}</span>
+            <button type="button" style="min-height: 36px; padding: 0 12px; border-radius: 10px; border: 1px solid #e2e4e8; background: #ffffff; font-size: 12.5px; font-weight: 600">Change</button>
+          </sc-if>
+          <sc-if value="{{d.missing}}" hint-placeholder-val="{{false}}">
+            <button type="button" style="min-height: 40px; padding: 0 14px; border-radius: 10px; border: 1px solid #e2e4e8; background: #ffffff; font-size: 13px; font-weight: 600">Choose from library</button>
+            <button type="button" style="min-height: 40px; padding: 0 14px; border-radius: 10px; border: 0; background: #14161b; color: #ffffff; font-size: 13px; font-weight: 700">Upload</button>
+          </sc-if>
+        </div>
+      </sc-for>
+    </section>
+
+    <section aria-labelledby="covered" style="background: #ffffff; border: 1px solid #e9eaed; border-radius: 14px; overflow: hidden">
+      <h2 id="covered" style="margin: 0; padding: 14px 18px; font-size: 14px; font-weight: 700; border-bottom: 1px solid #e9eaed">Not needed — Blueroll has it</h2>
+      <sc-for list="{{covered}}" as="d" hint-placeholder-count="4">
+        <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 12px 18px; border-bottom: 1px solid #f1f2f4">
+          <svg width="20" height="20" viewBox="0 0 18 18" aria-hidden="true"><rect x="0.5" y="0.5" width="17" height="17" rx="4" fill="#1f9d63"></rect><path d="M5 9.2l2.6 2.6L13 6.4" stroke="#ffffff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+          <div style="flex: 1 1 260px; display: flex; flex-direction: column; gap: 2px">
+            <div style="font-size: 13.5px; font-weight: 600">{{d.title}}</div>
+            <div style="font-size: 12.5px; color: #5f6670">{{d.why}}</div>
+          </div>
+          <a href="#" style="font-size: 12.5px; font-weight: 600">Attach anyway</a>
+        </div>
+      </sc-for>
+    </section>
+
+    <div style="display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px">
+      <button type="button" style="min-height: 44px; padding: 0 16px; border-radius: 10px; border: 1px solid #e2e4e8; background: #ffffff; font-size: 13.5px; font-weight: 600">Do this later</button>
+      <a href="Review.dc.html" style="min-height: 44px; display: inline-flex; align-items: center; padding: 0 18px; border-radius: 10px; background: #1f9d63; color: #ffffff; font-size: 13.5px; font-weight: 700; text-decoration: none">Continue to review</a>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const att = (o) => ({ attached: true, missing: false, ...o });
+    const miss = (o) => ({ attached: false, missing: true, file: '', ...o });
+    return {
+      needed: [
+        att({ icon: 'cross', ref: '1.6 Pest control', title: 'Pest control contract', hint: 'Company, visit frequency and last report', file: 'Rentokil contract 2026.pdf' }),
+        att({ icon: 'management', ref: '5.4 Training', title: 'Food hygiene certificates', hint: '2 found in Documents — confirm they are current', file: '2 certificates' }),
+        miss({ icon: 'management', ref: '5.5 Temperature probes', title: 'Probe calibration record', hint: 'Only if you calibrate outside Blueroll (e.g. a contractor)' })
+      ],
+      covered: [
+        { title: 'Allergen matrix', why: '19 dishes on the menu have allergens — your matrix is built from the menu.' },
+        { title: 'Cleaning schedule', why: 'Built from your 3 cleaning checklists.' },
+        { title: 'Opening & closing checklist', why: 'Your daily checks in Blueroll are the record.' },
+        { title: 'Supplier list', why: '3 suppliers in Blueroll.' },
+        { title: 'Daily diary', why: 'Blueroll is your diary — every check is timed and signed.' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>
