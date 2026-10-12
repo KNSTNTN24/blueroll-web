@@ -5,6 +5,8 @@ import {
 } from '../../../../supabase/functions/_shared/draft-method'
 import type { KnowledgeChunk } from '../../../../supabase/functions/_shared/knowledge'
 import { findField } from '@/lib/haccp-pack/methods'
+import type { DraftMethodResult as ClientResult } from '@/lib/haccp-setup/api'
+import type { DraftMethodResult as ServerResult } from '../../../../supabase/functions/_shared/draft-method'
 
 const tool = (input: unknown) => ({ content: [{ type: 'tool_use', name: 'draft_method', input }] })
 const spec = DRAFT_METHODS.chilling_down
@@ -104,5 +106,14 @@ describe('parseDraftMethodResponse', () => {
     const empty = { draft: [], ticks: [], confirm: null, sources: [] }
     expect(parseDraftMethodResponse(tool({ draft: [], ticks: [{ id: 'cd_fridge', state: 'yes' }], source_ids: [] }), spec, OWN, [])).toEqual(empty)
     expect(parseDraftMethodResponse({ content: 'nope' }, spec, OWN, [])).toEqual(empty)
+  })
+})
+
+describe('client type', () => {
+  it('client and server result types match', () => {
+    const s: ServerResult = { draft: [], ticks: [], confirm: null, sources: [] }
+    const c: ClientResult = s
+    const back: ServerResult = c
+    expect(back).toBe(s)
   })
 })
