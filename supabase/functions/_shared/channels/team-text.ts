@@ -12,6 +12,7 @@ export const TEAM_TEXT = {
   onlyManagers: 'Only managers can add people to teams.',
   noTeams: 'Create a team in Blueroll → Settings → Messaging first.',
   whichTeam: (name: string, masked: string) => `Add ${name} (${masked}) to which team?`,
+  moreTeams: (n: number) => `+${n} more team${n === 1 ? '' : 's'} in Blueroll → Settings → Messaging.`,
   inviteSent: (name: string) => `Invite sent to ${name} ✓`,
   alreadyMember: (name: string, team: string) => `${name} is already in ${team}.`,
   inviteTooSoon: (name: string) => `An invite went to ${name} less than an hour ago — try again later.`,

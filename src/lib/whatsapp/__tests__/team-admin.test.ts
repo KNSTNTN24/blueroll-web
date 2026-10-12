@@ -1,6 +1,7 @@
 // src/lib/whatsapp/__tests__/team-admin.test.ts
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { handleInbound } from '../../../../supabase/functions/_shared/channels/bot'
+import { teamTitles } from '../../../../supabase/functions/_shared/channels/team-admin'
 import { TEAM_TEXT } from '../../../../supabase/functions/_shared/channels/team-text'
 import { fakeTeamBot, textOf } from './fakes/team-bot-deps'
 import { member, ANNA, BOSS } from './fakes/team-deps'
@@ -49,6 +50,53 @@ describe('shared contact', () => {
     expect(m.action.sections[0].rows).toHaveLength(5)
     expect(m.action.sections[0].rows[0]).toEqual({ id: `add:g1:${MARIA}:Maria Lopez`, title: 'Kitchen', description: 'Ashfield Row' })
   })
+  // Final review I1: Meta rejects repeated button / row titles, and every site's team is often called "Kitchen".
+  it('two "Kitchen" teams at different sites → buttons titled with the site, all unique', async () => {
+    const f = fakeTeamBot()
+    f.s.sites.push({ id: 's2', name: 'Bridge Street', timezone: 'Europe/London' })
+    f.s.teams.push({ id: 'g2', business_id: 'b', title: 'Kitchen', site_id: 's2' }, { id: 'g3', business_id: 'b', title: 'Bar', site_id: 's1' })
+    await handleInbound(share(BOSS.phone), f.d)
+    const m = f.sent[0].interactive
+    expect(m.type).toBe('button')
+    const titles = m.action.buttons.map((b: any) => b.reply.title)
+    expect(titles).toEqual(['Bar', 'Kitchen · Ashfield …', 'Kitchen · Bridge St…'])
+    expect(titles.every((x: string) => [...x].length <= 20)).toBe(true)
+    expect(m.action.buttons.map((b: any) => b.reply.id)).toEqual([`add:g3:${MARIA}:Maria Lopez`, `add:g1:${MARIA}:Maria Lopez`, `add:g2:${MARIA}:Maria Lopez`])
+  })
+  it('two "Kitchen" teams in a list → row titles unique, site in the title and the description', async () => {
+    const f = fakeTeamBot()
+    f.s.sites.push({ id: 's2', name: 'Bridge Street', timezone: 'Europe/London' })
+    f.s.teams.push({ id: 'g2', business_id: 'b', title: 'Kitchen', site_id: 's2' }, ...extraTeams(3).map((x) => ({ ...x, id: `${x.id}x` })))
+    await handleInbound(share(BOSS.phone), f.d)
+    const rows = f.sent[0].interactive.action.sections[0].rows
+    expect(rows.slice(0, 2).map((r: any) => [r.title, r.description])).toEqual([['Kitchen · Ashfield Row', 'Ashfield Row'], ['Kitchen · Bridge Street', 'Bridge Street']])
+    expect(new Set(rows.map((r: any) => r.title)).size).toBe(rows.length)
+  })
+  it('teamTitles: same name at the same site (or clipped alike) → numbered; never longer than max', () => {
+    const same = teamTitles([{ title: 'Kitchen', site: 'Ashfield Row' }, { title: 'Kitchen', site: 'Ashfield Row' }, { title: 'Bar', site: 'X' }], 20)
+    expect(same).toEqual(['Kitchen · Ashfi… (1)', 'Kitchen · Ashfi… (2)', 'Bar'])
+    const long = teamTitles([{ title: 'Main kitchen prep team A', site: 'S' }, { title: 'Main kitchen prep team B', site: 'S' }], 20)
+    expect(new Set(long).size).toBe(2)
+    expect([...same, ...long].every((x) => [...x].length <= 20)).toBe(true)
+  })
+  it('a picker Meta refuses is logged, not swallowed', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const f = fakeTeamBot({}, { send: async () => ({ ok: false, status: 400, id: null, errorCode: 131009 }) })
+    f.s.teams.push(...extraTeams(2))
+    await handleInbound(share(BOSS.phone), f.d)
+    expect(err.mock.calls.some((c) => c[0] === 'whatsapp team picker not delivered')).toBe(true)
+    expect(JSON.stringify(err.mock.calls)).not.toContain(MARIA)
+    err.mockRestore()
+  })
+  it('more than 10 teams → the first 10 in the list and "+N more" in the text', async () => {
+    const f = fakeTeamBot()
+    f.s.teams.push(...extraTeams(11))
+    await handleInbound(share(BOSS.phone), f.d)
+    const m = f.sent[0].interactive
+    expect(m.action.sections[0].rows).toHaveLength(10)
+    expect(m.body.text).toBe(`Add Maria Lopez (+44 7••• ••77) to which team?\n${TEAM_TEXT.moreTeams(2)}`)
+    expect(TEAM_TEXT.moreTeams(2)).toBe('+2 more teams in Blueroll → Settings → Messaging.')
+  })
   it('the pick adds and invites; a deleted team answers "no longer exists"', async () => {
     const f = fakeTeamBot()
     f.s.teams.push(...extraTeams(2))
@@ -87,6 +135,14 @@ describe('`team` command and Remove', () => {
     const f = fakeTeamBot({ members: Array.from({ length: 12 }, (_, i) => member({ id: `gm${i}`, profile_id: `q${i}`, phone: `4477009010${String(i).padStart(2, '0')}`, full_name: `Person ${i}` })) })
     await handleInbound(say(BOSS.phone, 'team'), f.d)
     expect(f.sent.map((m) => m.interactive.action.sections[0].rows.length)).toEqual([10, 2])
+  })
+  it('more than 10 teams → 10 team messages, then "+N more"', async () => {
+    const f = fakeTeamBot()
+    f.s.teams.push(...extraTeams(10))
+    await handleInbound(say(BOSS.phone, 'team'), f.d)
+    expect(f.sent).toHaveLength(11)
+    expect(textOf(f.sent[10])).toBe(TEAM_TEXT.moreTeams(1))
+    expect(TEAM_TEXT.moreTeams(1)).toBe('+1 more team in Blueroll → Settings → Messaging.')
   })
   it('rm → confirm buttons; rmyes → removed; rmno → cancelled', async () => {
     const f = fakeTeamBot()

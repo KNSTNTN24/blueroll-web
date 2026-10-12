@@ -3,7 +3,7 @@
 // "Remove <name>" → confirm. Only numbers linked to an active owner/manager of the business. Pure over TeamDeps + SendFn;
 // the contact travels inside the pick button's id, so there is no pending state.
 import type { Person } from '../checklists-core/types.ts'
-import type { OutboundMessage, SendFn } from './types.ts'
+import type { OutboundMessage, SendFn, SendResult } from './types.ts'
 import type { Team, TeamDeps, TeamMember } from './teams-db.ts'
 import { addPersonToTeam, sendTracked, type InviteOutcome } from './team-members.ts'
 import { buttonsMessage, listMessage, textMessage } from './whatsapp.ts'
@@ -49,28 +49,58 @@ async function managedTeam(w: Who, groupId: string): Promise<Team | null> {
   return team
 }
 
+/**
+ * Meta rejects a message whose reply-button or list-row titles repeat, and businesses often name every team "Kitchen":
+ * the team name if it is unique (after clipping to `max`), else "name · site", else numbered "(2)", "(3)"…
+ */
+export function teamTitles(items: { title: string; site: string }[], max: number): string[] {
+  const norm = (x: string) => x.replace(/\s+/g, ' ').trim()
+  const key = (x: string) => x.toLowerCase()
+  const clashes = (list: string[], i: number) => list.filter((y) => key(y) === key(list[i])).length > 1
+  const plain = items.map((x) => clip(norm(x.title) || 'Team', max))
+  const sited = plain.map((t, i) => (clashes(plain, i) ? clip(`${norm(items[i].title) || 'Team'} · ${norm(items[i].site)}`, max) : t))
+  const used = new Set(sited.filter((_, i) => !clashes(sited, i)).map(key))
+  return sited.map((t, i) => {
+    if (!clashes(sited, i)) return t
+    for (let n = 1; ; n++) {
+      const suffix = ` (${n})`
+      const c = clip(t, max - [...suffix].length) + suffix
+      if (!used.has(key(c))) { used.add(key(c)); return c }
+    }
+  })
+}
+
+/** At most TEAM_LIST_MAX teams per message; the rest are named as a count, never dropped silently. */
+const firstTeams = (all: Team[]) => ({ shown: all.slice(0, TEAM_LIST_MAX), more: Math.max(0, all.length - TEAM_LIST_MAX) })
+
 export async function handleContactShare(t: TeamDeps, send: SendFn, from: string, person: Person, contact: { name: string; phone: string }): Promise<void> {
   const w: Who = { t, send, from, person }
   if (!(await isManager(w))) { await say(w, TEAM_TEXT.onlyManagers); return }
-  const teams = (await t.teamsForBusiness(person.business_id)).slice(0, TEAM_LIST_MAX)
+  const { shown: teams, more } = firstTeams(await t.teamsForBusiness(person.business_id))
   if (!teams.length) { await say(w, TEAM_TEXT.noTeams); return }
   const name = cleanName(contact.name) || 'New person'
-  if (teams.length === 1) return addAndReport(w, teams[0], contact.phone, name)
-  const body = TEAM_TEXT.whichTeam(name, maskPhone(contact.phone))
+  if (teams.length === 1 && !more) return addAndReport(w, teams[0], contact.phone, name)
+  const body = TEAM_TEXT.whichTeam(name, maskPhone(contact.phone)) + (more ? `\n${TEAM_TEXT.moreTeams(more)}` : '')
   const id = (team: Team) => `add:${team.id}:${contact.phone}:${name}`
+  const sites: string[] = []
+  for (const x of teams) sites.push((await t.site(x.site_id))?.name ?? '')
+  let r: SendResult
   if (teams.length <= TEAM_BUTTONS_MAX) {
-    await post(w, buttonsMessage(from, body, teams.map((x) => ({ id: id(x), title: x.title }))))
-    return
+    const titles = teamTitles(teams.map((x, i) => ({ title: x.title, site: sites[i] })), 20)
+    r = await post(w, buttonsMessage(from, body, teams.map((x, i) => ({ id: id(x), title: titles[i] }))))
+  } else {
+    const titles = teamTitles(teams.map((x, i) => ({ title: x.title, site: sites[i] })), 24)
+    const rows = teams.map((x, i) => ({ id: id(x), title: titles[i], description: clip(sites[i], 72) }))
+    r = await post(w, listMessage(from, { header: 'Add to a team', body, footer: 'Blueroll', button: 'Choose a team', section: 'Teams', rows }))
   }
-  const rows: { id: string; title: string; description: string }[] = []
-  for (const x of teams) rows.push({ id: id(x), title: clip(x.title, 24), description: clip((await t.site(x.site_id))?.name ?? '', 72) })
-  await post(w, listMessage(from, { header: 'Add to a team', body, footer: 'Blueroll', button: 'Choose a team', section: 'Teams', rows }))
+  // sendTracked already logged the send failure; this says which flow lost its reply (the manager sees nothing).
+  if (!r.ok) console.error('whatsapp team picker not delivered', person.business_id, teams.length, r.status, r.errorCode ?? '')
 }
 
 export async function sendTeamOverview(t: TeamDeps, send: SendFn, from: string, person: Person): Promise<void> {
   const w: Who = { t, send, from, person }
   if (!(await isManager(w))) { await say(w, TEAM_TEXT.onlyManagers); return }
-  const teams = await t.teamsForBusiness(person.business_id)
+  const { shown: teams, more } = firstTeams(await t.teamsForBusiness(person.business_id))
   if (!teams.length) { await say(w, TEAM_TEXT.noTeams); return }
   for (const team of teams) {
     const head = TEAM_TEXT.teamHeader(team.title, (await t.site(team.site_id))?.name ?? '')
@@ -85,6 +115,7 @@ export async function sendTeamOverview(t: TeamDeps, send: SendFn, from: string, 
       }))
     }
   }
+  if (more) await say(w, TEAM_TEXT.moreTeams(more))
 }
 
 async function memberOfManagedTeam(w: Who, memberId: string): Promise<{ m: TeamMember; team: Team } | null> {
