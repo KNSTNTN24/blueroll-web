@@ -7,6 +7,7 @@ import { searchKnowledge } from "../_shared/knowledge-search.ts";
 import {
   buildAnswerRequest, buildEquipmentRequest, FALLBACK_ANSWER, notesForPrompt, parseAnswerResponse, parseEquipmentResponse, usageOf,
 } from "../_shared/assistant-core.ts";
+import { DRAFT_METHODS, buildDraftMethodRequest, isDraftMethodBody, parseDraftMethodResponse } from "../_shared/draft-method.ts";
 
 // Curated Blueroll notes first (reviewed wording), then the full FSA SFBB for caterers pack.
 const KNOWLEDGE = mergeKnowledge(CURATED_KNOWLEDGE, SFBB_KNOWLEDGE);
@@ -36,12 +37,14 @@ Deno.serve(async (req: Request) => {
   const { data: profile } = await admin.from("profiles").select("business_id, role").eq("id", userData.user.id).single();
   if (!profile?.business_id || !["owner", "manager"].includes(profile.role)) return json(403, { error: "forbidden" });
 
-  let body: { action?: string; text?: string; question?: string; venue_type?: string };
+  let body: { action?: string; text?: string; question?: string; venue_type?: string; method?: string };
   try { body = await req.json(); } catch { return json(400, { error: "body" }); }
   if (!body || typeof body !== "object") return json(400, { error: "body" });
   if (body.action === "parse_equipment" && !(typeof body.text === "string" && body.text.trim())) return json(400, { error: "text" });
   if (body.action === "answer" && !(typeof body.question === "string" && body.question.trim())) return json(400, { error: "question" });
-  if (body.action !== "parse_equipment" && body.action !== "answer") return json(400, { error: "action" });
+  if (body.action === "draft_method" && !isDraftMethodBody(body as unknown)) return json(400, { error: "draft" });
+  if (body.action !== "parse_equipment" && body.action !== "answer" && body.action !== "draft_method") return json(400, { error: "action" });
+  const venue = typeof body.venue_type === "string" ? body.venue_type.slice(0, 40) : undefined;
 
   // An answer with no matching knowledge never reaches the model (and costs nothing).
   let chunks = [] as ReturnType<typeof searchKnowledge>;
@@ -49,6 +52,8 @@ Deno.serve(async (req: Request) => {
     chunks = notesForPrompt(searchKnowledge(KNOWLEDGE, body.question!, 4));
     if (!chunks.length) return json(200, { answer: FALLBACK_ANSWER, sources: [] });
   }
+  const spec = body.action === "draft_method" ? DRAFT_METHODS[body.method!] : null;
+  if (spec) chunks = notesForPrompt(searchKnowledge(KNOWLEDGE, spec.query, 4));
   if (!ANTHROPIC_KEY) return json(502, { error: "model" });
 
   // Reserve a usage slot first (fail closed), so parallel requests and failed paid calls still count.
@@ -70,7 +75,9 @@ Deno.serve(async (req: Request) => {
 
   const request = body.action === "parse_equipment"
     ? buildEquipmentRequest(body.text!)
-    : buildAnswerRequest(body.question!, chunks, typeof body.venue_type === "string" ? body.venue_type.slice(0, 40) : undefined);
+    : spec
+      ? buildDraftMethodRequest(spec, body.text!, chunks, venue)
+      : buildAnswerRequest(body.question!, chunks, venue);
 
   let resp: unknown;
   try {
@@ -95,7 +102,7 @@ Deno.serve(async (req: Request) => {
     .update({ input_tokens: usage.input, output_tokens: usage.output }).eq("id", reservation.id);
   if (updErr) console.error("usage update failed", updErr.code);
 
-  return body.action === "parse_equipment"
-    ? json(200, { equipment: parseEquipmentResponse(resp) })
-    : json(200, parseAnswerResponse(resp, chunks));
+  if (body.action === "parse_equipment") return json(200, { equipment: parseEquipmentResponse(resp) });
+  if (spec) return json(200, parseDraftMethodResponse(resp, spec, body.text!, chunks));
+  return json(200, parseAnswerResponse(resp, chunks));
 });

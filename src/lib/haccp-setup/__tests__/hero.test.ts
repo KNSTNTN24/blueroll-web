@@ -16,4 +16,10 @@ describe('setupHero', () => {
   it('applied: review with questions', () => {
     expect(setupHero({ status: 'applied', answers: {} }).mode).toBe('review')
   })
+  it('does not count own-words questions Blueroll already fills (same as setup)', () => {
+    const session = { status: 'in_progress', answers: { venue_type: 'restaurant', processes: ['cool_cooked'], extra_care: [], equipment: [] } }
+    const plain = setupHero(session)
+    const filled = setupHero(session, { autoFilled: ['cd_method', 'tr_records'] })
+    expect(filled.pct).toBeGreaterThan(plain.pct)
+  })
 })

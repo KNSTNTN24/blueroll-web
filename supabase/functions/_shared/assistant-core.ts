@@ -7,10 +7,10 @@ export const EQUIPMENT_KINDS_LIST = ['fridge', 'freezer', 'display_chiller', 'bl
 export const FALLBACK_ANSWER = "I can't answer that reliably from our food safety guidance. Please check with your local environmental health officer (EHO)."
 export const OFF_TOPIC_ANSWER = 'I can only help with food safety and setting up your HACCP in Blueroll.'
 const MAX_LABEL = 60
-const VENUES = ['restaurant', 'coffee_shop', 'takeaway', 'bakery']
+export const VENUES = ['restaurant', 'coffee_shop', 'takeaway', 'bakery']
 // Strip all angle brackets (so delimiters cannot re-form) and control characters (keep \n) in user text.
 // eslint-disable-next-line no-control-regex
-const clean = (s: string) => String(s ?? '').replace(/[<>]/g, '').replace(/[\x00-\x09\x0b-\x1f\x7f]/g, '')
+export const cleanUserText = (s: string) => String(s ?? '').replace(/[<>]/g, '').replace(/[\x00-\x09\x0b-\x1f\x7f]/g, '')
 
 export function buildEquipmentRequest(text: string) {
   return {
@@ -30,11 +30,11 @@ export function buildEquipmentRequest(text: string) {
       },
     }],
     tool_choice: { type: 'tool', name: 'record_equipment' },
-    messages: [{ role: 'user', content: `Equipment description:\n<<<\n${clean(text).slice(0, 1000)}\n>>>` }],
+    messages: [{ role: 'user', content: `Equipment description:\n<<<\n${cleanUserText(text).slice(0, 1000)}\n>>>` }],
   }
 }
 
-function toolInput(resp: unknown, name: string): Record<string, unknown> | null {
+export function toolInput(resp: unknown, name: string): Record<string, unknown> | null {
   const content = (resp as { content?: unknown })?.content
   if (!Array.isArray(content)) return null
   const block = content.find((b: any) => b?.type === 'tool_use' && b?.name === name) as { input?: unknown } | undefined
@@ -87,7 +87,7 @@ export function buildAnswerRequest(question: string, chunks: KnowledgeChunk[], v
     }],
     tool_choice: { type: 'tool', name: 'give_answer' },
     messages: [{ role: 'user', content:
-      `Business type: ${venueType && VENUES.includes(venueType) ? venueType : 'unknown'}\n\nGuidance notes:\n${kb || '(none found)'}\n\nOwner question:\n<<<\n${clean(question).slice(0, 500)}\n>>>` }],
+      `Business type: ${venueType && VENUES.includes(venueType) ? venueType : 'unknown'}\n\nGuidance notes:\n${kb || '(none found)'}\n\nOwner question:\n<<<\n${cleanUserText(question).slice(0, 500)}\n>>>` }],
   }
 }
 

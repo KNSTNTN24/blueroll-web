@@ -6,14 +6,14 @@ import { loadSessionSummary } from '@/lib/haccp-setup/api'
 import { setupHero } from '@/lib/haccp-setup/hero'
 
 // The pack page's single way into "Set up my HACCP" (design: Pack-Entry.dc.html). Managers only.
-export function SetupHero({ businessId, siteId }: { businessId: string; siteId: string }) {
+export function SetupHero({ businessId, siteId, autoFilled }: { businessId: string; siteId: string; autoFilled: string[] }) {
   const { data, isLoading } = useQuery({
     queryKey: ['haccp-setup-summary', businessId, siteId],
     queryFn: () => loadSessionSummary(businessId, siteId),
     staleTime: 30_000,
   })
   if (isLoading) return null
-  const h = setupHero(data ?? null)
+  const h = setupHero(data ?? null, { autoFilled })
   const cta = h.mode === 'start' ? 'Start' : h.mode === 'continue' ? `Continue — ${h.pct}% done` : 'Review with questions'
   const sub = h.mode === 'continue' && h.next
     ? `Next: ${h.next}, ${h.left} question${h.left === 1 ? '' : 's'} left`

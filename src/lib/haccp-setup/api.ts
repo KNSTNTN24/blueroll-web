@@ -122,6 +122,18 @@ export async function assistantAnswer(question: string, venueType: string | unde
   return callAssistant<{ answer: string; sources: { title: string; source: string }[] }>({ action: 'answer', question, venue_type: venueType })
 }
 
+/** Mirrors DraftMethodResult in supabase/functions/_shared/draft-method.ts (tsconfig excludes that folder). */
+export interface DraftMethodResult {
+  draft: string[]
+  ticks: { id: string; state: 'yes' | 'no' | 'confirm' }[]
+  confirm: { id: string; question: string } | null
+  sources: { title: string; source: string }[]
+}
+
+export async function assistantDraftMethod(method: string, text: string, venueType: string | undefined): Promise<DraftMethodResult> {
+  return callAssistant<DraftMethodResult>({ action: 'draft_method', method, text, venue_type: venueType })
+}
+
 /** Everything the questionnaire can confirm instead of asking, read with the user's RLS (same sources as the pack page). */
 export async function loadSetupContext(businessId: string, siteId: string): Promise<SetupContext> {
   const [business, recipes, dishes, suppliers, templates, documents, team] = await Promise.all([

@@ -2,6 +2,8 @@
 import { findField } from '@/lib/haccp-pack/methods'
 import type { Ctx, DraftField, FieldStatus, PackData, PackValue } from './types'
 import { FIELD_RULES } from './content/haccp-mapping'
+import { QUESTIONS } from './content/questions'
+import { ownWordsValues } from './own-words'
 
 export const EMPTY_PACK: PackData = { toggles: {}, texts: {}, files: {}, selects: {}, overrides: {}, sources: {} }
 
@@ -34,6 +36,17 @@ export function buildPackDraft(ctx: Ctx, pack: PackData | null): DraftField[] {
     const type = f.type
     const { status, current } = classifyField(rule.fieldId, type, value, pack)
     out.push({ fieldId: rule.fieldId, methodId: f.methodId, label: f.label, type, value, status, ...(current !== undefined ? { current } : {}) })
+  }
+  // Own-words answers: the plan text and the points the owner ticked, unless another rule already set them.
+  const seen = new Set(out.map((f) => f.fieldId))
+  for (const q of QUESTIONS) {
+    for (const { fieldId, value } of ownWordsValues(q, ctx.answers)) {
+      const f = findField(fieldId)
+      if (!f || f.type === 'file' || seen.has(fieldId)) continue
+      seen.add(fieldId)
+      const { status, current } = classifyField(fieldId, f.type, value, pack)
+      out.push({ fieldId, methodId: f.methodId, label: f.label, type: f.type, value, status, ...(current !== undefined ? { current } : {}) })
+    }
   }
   // Documents attached in setup go into the pack's file fields.
   const docs = ctx.answers.documents

@@ -118,3 +118,47 @@ Confirm-data steps (one per source, placed in the matching section):
   - golden snapshot updated deliberately.
 - **Visual:** dev preview pages for the setup step components against the canvas, desktop and 375 px.
 - **Manual:** the run-through needs a logged-in manager. The user does it on prod after deploy, or on a preview with their account.
+
+## Phase B: own words → plan text
+
+Design: `docs/design/haccp-setup/AI-Answer.dc.html`.
+
+**Which fields.** The six pack text fields that only Blueroll data can fill today, asked only when Blueroll has nothing for them (`{ auto: fieldId }` condition):
+
+| question | method | target text | points it may tick | shown when |
+|---|---|---|---|---|
+| `pest_words` | pest_control | pc_company | pc_contract, pc_proofing | pest_control = contractor |
+| `cooling_words` | chilling_down | cd_method | cd_portions, cd_fridge, cd_90min | processes has cool_cooked |
+| `defrost_words` | defrosting | df_method | df_fridge, df_microwave, df_not_refreeze | processes has defrost |
+| `freezing_words` | freezing | fz_method | fz_labelled, fz_suitable, fz_temp | equipment has freezer |
+| `probe_words` | temperature_probes | tp_method | tp_calibrated, tp_boil_ice, tp_sanitised | equipment has probe |
+| `training_words` | training | tr_records | tr_induction | always |
+
+**Flow.** The owner writes in their own words and taps "Write it for my plan". The assistant returns:
+- plan sentences;
+- each point as yes / no / confirm;
+- at most one yes/no confirm question, worded from the FSA notes;
+- the notes used ("Checked against …").
+
+The owner can edit the text, answer the confirm question, then "Use this". They can also "Skip".
+
+If the assistant is down or the daily limit is reached, the owner can use their words as written. Setup never blocks.
+
+**Answer value:** `{ text, draft, ticks: Record<fieldId, boolean> }` or `'skip'`.
+
+**Draft rules:**
+- the draft text goes to the target field;
+- only ticks the owner confirmed (`true`) are added;
+- a point that another question's rule already sets keeps that rule's value (answers win over AI);
+- hand-edited pack fields stay untouched, as before.
+
+**Edge function:** `haccp-assistant` gets a new action `draft_method` with `{ method, text, venue_type }`. It uses the same auth, roles, daily limit (30, shared) and model (Haiku 4.5).
+
+**Guards (server, deterministic):**
+- the method must be one of the six;
+- ticks are limited to that method's points;
+- the owner's text is cut at 1500 characters;
+- the model's draft is cut at 8 sentences of up to 300 characters;
+- any sentence with a number the owner didn't write is dropped (digits, or number words such as "one" or "ninety"). So the plan never states a time or temperature the owner didn't give, and SFBB numbers only appear in the confirm question.
+
+**Eval set:** `scripts/eval-draft-method.ts` has 12 cases. It covers good descriptions, vague ones (confirm), "we don't" (no), off-topic and injection (empty draft, no ticks), and invented numbers. It calls the model directly with the same request builder and parser.

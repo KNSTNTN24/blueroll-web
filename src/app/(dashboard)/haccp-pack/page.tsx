@@ -554,7 +554,8 @@ export default function HaccpPackPage() {
         </div>
       </div>
 
-      {isManager && packSiteId && <SetupHero businessId={businessId} siteId={packSiteId} />}
+      {isManager && packSiteId && <SetupHero businessId={businessId} siteId={packSiteId}
+        autoFilled={autoFillEnabled ? Object.keys(autoData).filter((k) => !!autoData[k]) : []} />}
       {isManager && packSiteId && (
         <div className="flex flex-col gap-0.5">
           <h2 className="text-[15px] font-bold">Edit the pack by hand</h2>

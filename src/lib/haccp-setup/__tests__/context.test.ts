@@ -9,7 +9,9 @@ const q = (id: string) => QUESTIONS.find((x) => x.id === id)!
 describe('buildSetupContext', () => {
   it('an empty business has no data steps and needs the usual documents', () => {
     const c = buildSetupContext(empty, 's1', [])
-    expect(Object.values(c.flags).every((v) => !v || v === true)).toBe(true)
+    const { autoFilled, ...bools } = c.flags
+    expect(Object.values(bools).every((v) => !v || v === true)).toBe(true)
+    expect(autoFilled).toEqual([])
     expect(c.flags).toMatchObject({ raw_products: false, menu_methods: false, suppliers: false, team: false, checklists: false, documents_needed: true })
     expect(c.neededFiles.map((f) => f.fieldId).sort()).toEqual(['cs_file', 'fa_matrix_file', 'oc_file', 'pc_contract_file', 'sup_file', 'tr_file'].sort())
     expect(c.coveredFiles.map((f) => f.fieldId)).toEqual(['dd_file'])
