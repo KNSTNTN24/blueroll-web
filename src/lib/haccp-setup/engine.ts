@@ -2,6 +2,7 @@
 import type { SectionId } from '@/lib/haccp-pack/methods'
 import type { AnswerValue, Answers, DataFlags, Question, VenueType } from './types'
 import { evalCond } from './conditions'
+import { QUESTIONS } from './content/questions'
 
 function isAnswered(v: AnswerValue | undefined): boolean {
   return v !== undefined
@@ -57,6 +58,20 @@ export const PROFILE_QUESTION_IDS = new Set(['venue_type', 'processes', 'extra_c
 export function tabOf(q: Question): TabId {
   if (q.answer.kind === 'documents') return 'documents'
   return PROFILE_QUESTION_IDS.has(q.id) ? 'profile' : q.section
+}
+
+/** The question to show in a tab: its first visible unanswered question (null when the tab is done). */
+export function currentQuestionIn(tab: TabId, answers: Answers, data: DataFlags = {}): Question | null {
+  return visibleQuestions(QUESTIONS, answers, data).find((q) => tabOf(q) === tab && !isAnswered(answers[q.id])) ?? null
+}
+
+/** After an answer: move on only when the user was working at the frontier (or everything is answered). Editing an earlier tab stays put. */
+export function tabAfterAnswer(tab: TabId, before: Answers, after: Answers, data: DataFlags = {}): TabId | 'review' {
+  const frontier = (a: Answers) => { const n = nextQuestion(QUESTIONS, a, data); return n ? tabOf(n) : 'review' }
+  const next = nextQuestion(QUESTIONS, after, data)
+  const nextTab = next ? tabOf(next) : 'review'
+  const tabDone = !next || tabOf(next) !== tab
+  return tabDone && (tab === frontier(before) || nextTab === 'review') ? nextTab : tab
 }
 
 export function progressByTab(questions: Question[], answers: Answers, data: DataFlags = {}): Record<TabId, { answered: number; total: number }> {

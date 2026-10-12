@@ -332,14 +332,16 @@ export default function HaccpPackPage() {
         updated.overrides = { ...updated.overrides, [fieldId]: true }
         break
       case 'file':
+        // Choosing, replacing or removing a document is the owner's call: setup never puts its own back.
         updated.files = { ...updated.files, [fieldId]: value as string }
+        updated.overrides = { ...updated.overrides, [fieldId]: true }
         break
       case 'select':
         updated.selects = { ...updated.selects, [fieldId]: value as string }
         updated.overrides = { ...updated.overrides, [fieldId]: true }
         break
     }
-    if (type !== 'file' && updated.sources?.[fieldId]) {
+    if (updated.sources?.[fieldId]) {
       updated.sources = { ...updated.sources }
       delete updated.sources[fieldId]
     }

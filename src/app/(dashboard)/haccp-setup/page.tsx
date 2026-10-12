@@ -2,13 +2,14 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { ChevronDown } from 'lucide-react'
 import { useAuth } from '@/hooks/use-auth'
 import { Button } from '@/components/ui/button'
 import { QUESTIONS } from '@/lib/haccp-setup/content/questions'
-import { nextQuestion, progressByTab, tabOf, visibleQuestions, suggestedAnswer, TAB_ORDER, type TabId } from '@/lib/haccp-setup/engine'
+import { currentQuestionIn, nextQuestion, progressByTab, tabAfterAnswer, tabOf, visibleQuestions, suggestedAnswer, TAB_ORDER, type TabId } from '@/lib/haccp-setup/engine'
 import { abandonSession, loadOrCreateSession, loadSetupContext, saveAnswers } from '@/lib/haccp-setup/api'
 import { checklistsFor, fillsPreview, planQuote, type SetupContext } from '@/lib/haccp-setup/context'
 import { isScottishPostcode } from '@/lib/haccp-setup/geo'
@@ -81,6 +82,7 @@ function SetupInner({ session, ctx, businessId, siteId }: {
   session: { id: string; answers: Answers | null }; ctx: SetupContext; businessId: string; siteId: string
 }) {
   const qc = useQueryClient()
+  const router = useRouter()
   const { sites, business } = useAuth()
   const site = sites.find((s) => s.id === siteId)
   const postcode = site?.postcode ?? business?.post_code ?? null
@@ -110,10 +112,9 @@ function SetupInner({ session, ctx, businessId, siteId }: {
   const answeredCount = visible.filter((q) => answers[q.id] !== undefined).length
 
   const inTab = (t: Tab) => visible.filter((q) => tabOf(q) === t)
-  const next = nextQuestion(QUESTIONS, answers, flags)
   const current: Question | null = editing
     ? visible.find((q) => q.id === editing) ?? null
-    : tab !== 'review' && next && tabOf(next) === tab ? next : null
+    : tab !== 'review' ? currentQuestionIn(tab, answers, flags) : null
   const doneInTab = tab === 'review' ? [] : inTab(tab).filter((q) => answers[q.id] !== undefined && q.id !== current?.id)
 
   useEffect(() => { cardRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }) }, [current?.id])
@@ -124,15 +125,14 @@ function SetupInner({ session, ctx, businessId, siteId }: {
     const nextAnswers = { ...answers, [id]: v }
     persist(nextAnswers)
     setEditing(null)
-    const n = nextQuestion(QUESTIONS, nextAnswers, flags)
-    const tabDone = !n || tabOf(n) !== tab
-    if (tabDone && tab !== 'review') setTab(n ? tabOf(n) : 'review')
+    setPending(null)
+    if (tab !== 'review') setTab(tabAfterAnswer(tab, answers, nextAnswers, flags))
   }
   const goBack = () => {
     const order = visible.filter((q) => answers[q.id] !== undefined)
     const idx = current ? visible.findIndex((q) => q.id === current.id) : visible.length
     const prev = [...order].reverse().find((q) => visible.indexOf(q) < idx)
-    if (prev) { setEditing(prev.id); setTab(tabOf(prev)) }
+    if (prev) { setEditing(prev.id); setTab(tabOf(prev)); setPending(null) }
   }
   const restart = async () => {
     try {
@@ -155,7 +155,7 @@ function SetupInner({ session, ctx, businessId, siteId }: {
     { id: 'review', name: 'Review & apply', short: 'Review', icon: 'review', sub: finished ? 'Ready' : 'After the last section',
       state: tab === 'review' ? 'now' : finished ? 'todo' : 'disabled' },
   ]
-  const pickStep = (id: string) => { setEditing(null); setTab(id as Tab) }
+  const pickStep = (id: string) => { setEditing(null); setPending(null); setTab(id as Tab) }
 
   const tabQs = tab === 'review' ? [] : inTab(tab)
   const position = current && tab !== 'review'
@@ -187,7 +187,7 @@ function SetupInner({ session, ctx, businessId, siteId }: {
           <div className="min-w-0 flex-1">
             <DraftReview businessId={businessId} siteId={siteId} sessionId={session.id} answers={answers} postcode={postcode} ctx={ctx}
               flushSaves={() => saveChain.current}
-              onApplied={() => qc.invalidateQueries({ queryKey: ['haccp-setup-session', businessId, siteId] })} />
+              onApplied={() => router.push('/haccp-pack')} />
           </div>
         ) : (
           <>

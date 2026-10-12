@@ -63,7 +63,7 @@ function Review({ businessId, siteId, sessionId, answers, postcode, ctx, flushSa
 }) {
   const qc = useQueryClient()
   const scotland = isScottishPostcode(postcode)
-  const draft: Draft = useMemo(() => buildDraft({ answers, scotland, existing }), [answers, scotland, existing])
+  const draft: Draft = useMemo(() => buildDraft({ answers, scotland, existing, flags: ctx.flags }), [answers, scotland, existing, ctx.flags])
   const [sel, setSel] = useState<Selection>(() => defaultSelection(draft))
   const [activate, setActivate] = useState(false)
   const payload = toApplyPayload(draft, sel, existing, { activate })
@@ -81,7 +81,7 @@ function Review({ businessId, siteId, sessionId, answers, postcode, ctx, flushSa
       return applySetup(sessionId, payload)
     },
     onSuccess: (r) => {
-      for (const k of [['all-checklists'], ['my-checklists'], ['haccp-pack', businessId], ['haccp-plan', businessId], ['haccp-setup-existing', businessId, siteId]])
+      for (const k of [['all-checklists'], ['my-checklists'], ['haccp-pack', businessId], ['haccp-plan', businessId], ['haccp-setup-existing', businessId, siteId], ['haccp-setup-summary', businessId, siteId]])
         qc.invalidateQueries({ queryKey: k })
       onDone({ created: r.created, fields: payload.summary.fields.length, items: r.items_added, activated: activate })
     },

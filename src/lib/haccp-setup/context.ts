@@ -23,8 +23,12 @@ export interface SetupContext {
 
 const MENU_METHOD_FIELDS = ['ck_dishes', 'rh_items', 'hh_items', 'mc_items', 'cd_method', 'fz_method', 'df_method', 'ec_items', 'rte_items']
 
-export function buildSetupContext(sources: AutoDataSources, siteId: string, documents: SetupContext['documents']): SetupContext {
-  const auto = computeAutoData(sources)
+export function buildSetupContext(
+  sources: AutoDataSources, siteId: string, documents: SetupContext['documents'], opts: { autoFill?: boolean } = {},
+): SetupContext {
+  // With auto-fill off the pack and the plan ignore Blueroll data, so setup neither counts nor asks to confirm it.
+  const autoFill = opts.autoFill !== false
+  const auto = autoFill ? computeAutoData(sources) : {}
   const scope = scopeFrom({ dishes: sources.dishes, siteId, templates: sources.templates, suppliers: sources.suppliers })
   const neededFiles: SetupContext['neededFiles'] = []
   const coveredFiles: SetupContext['coveredFiles'] = []
@@ -42,7 +46,7 @@ export function buildSetupContext(sources: AutoDataSources, siteId: string, docu
   const flags: DataFlags = {
     raw_products: !!auto.sf_raw_products,
     menu_methods: MENU_METHOD_FIELDS.some((k) => !!auto[k]),
-    suppliers: sources.suppliers.length > 0,
+    suppliers: autoFill && sources.suppliers.length > 0,
     team: !!auto.tr_responsible,
     checklists: !!(auto.st_method || auto.tp_method),
     documents_needed: neededFiles.length > 0,

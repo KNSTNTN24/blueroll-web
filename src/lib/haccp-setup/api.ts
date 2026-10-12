@@ -124,7 +124,8 @@ export async function assistantAnswer(question: string, venueType: string | unde
 
 /** Everything the questionnaire can confirm instead of asking, read with the user's RLS (same sources as the pack page). */
 export async function loadSetupContext(businessId: string, siteId: string): Promise<SetupContext> {
-  const [recipes, dishes, suppliers, templates, documents, team] = await Promise.all([
+  const [business, recipes, dishes, suppliers, templates, documents, team] = await Promise.all([
+    supabase.from('businesses').select('haccp_auto_fill').eq('id', businessId).maybeSingle(),
     supabase.from('recipes').select(
       `id, name, cooking_method, cooking_temp, extra_care_flags, reheating_instructions, hot_holding_required,
        chilling_method, freezing_instructions, defrosting_instructions, haccp_methods,
@@ -138,7 +139,7 @@ export async function loadSetupContext(businessId: string, siteId: string): Prom
     supabase.from('documents').select('id, title, category').eq('business_id', businessId).order('title'),
     supabase.from('profiles').select('full_name, role').eq('business_id', businessId).is('removed_at', null),
   ])
-  for (const r of [recipes, dishes, suppliers, templates, documents, team]) if (r.error) throw r.error
+  for (const r of [business, recipes, dishes, suppliers, templates, documents, team]) if (r.error) throw r.error
   const liveTemplates = (templates.data ?? []).filter((t) => t.active !== false && (!t.site_id || t.site_id === siteId))
   const sources: AutoDataSources = {
     recipes: (recipes.data ?? []) as unknown as AutoDataSources['recipes'],
@@ -148,7 +149,7 @@ export async function loadSetupContext(businessId: string, siteId: string): Prom
     documents: (documents.data ?? []) as AutoDataSources['documents'],
     team: (team.data ?? []) as AutoDataSources['team'],
   }
-  return buildSetupContext(sources, siteId, sources.documents)
+  return buildSetupContext(sources, siteId, sources.documents, { autoFill: business.data?.haccp_auto_fill ?? true })
 }
 
 /** The site's current setup for the pack page panel: the open session, else the last applied one, else none. Read-only (never creates a session). */
