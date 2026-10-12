@@ -2,7 +2,8 @@
 // Channel UI: turns the bot's intents (text, choices, form, corrective, manager alert) into channel payloads.
 // WhatsApp routes through the existing builders in whatsapp.ts (payloads unchanged, sanitizeParam inherited).
 import type { OutboundMessage } from './types.ts'
-import { buttonsMessage, flowMessage, templateMessage, textMessage } from './whatsapp.ts'
+import { buttonsMessage, flowMessage, listMessage, templateMessage, textMessage } from './whatsapp.ts'
+import type { DueMenu } from './due-menu.ts'
 import { tgButtons, tgText, tgWebAppButton } from './telegram.ts'
 
 export type Channel = 'whatsapp' | 'telegram'
@@ -15,6 +16,8 @@ export interface ChannelUI {
   text(to: string, body: string): OutboundMessage
   /** At most 3 buttons are shown. */
   choices(to: string, body: string, buttons: { id: string; title: string }[]): OutboundMessage
+  /** What's due at one site. WhatsApp: list message (menu of up to 10 checks). Telegram: text + the first 3 as buttons. */
+  dueMenu(to: string, m: DueMenu): OutboundMessage
   /** WhatsApp: Flow message (null without flowId). Telegram: web_app button to the Mini App with ?t=token. */
   form(to: string, f: FormRequest): OutboundMessage | null
   /** WhatsApp only (corrective Flow); Telegram captures corrective actions inside the Mini App form → null. */
@@ -31,6 +34,7 @@ export function whatsappUI(): ChannelUI {
     channel: 'whatsapp',
     text: (to, body) => textMessage(to, body),
     choices: (to, body, buttons) => buttonsMessage(to, body, buttons),
+    dueMenu: (to, m) => listMessage(to, m),
     form: (to, f) => (f.flowId ? flowMessage(to, { flowId: f.flowId, token: f.token, cta: 'Fill in', body: f.templateName, screen: 'CHECKLIST' }) : null),
     corrective: (to, c) => flowMessage(to, {
       flowId: c.flowId, token: c.token, cta: 'Add action', body: correctiveBody(c.itemName), screen: 'CORRECTIVE',
@@ -49,6 +53,7 @@ export function telegramUI(miniAppBaseUrl: string): ChannelUI {
     channel: 'telegram',
     text: (to, body) => tgText(to, body),
     choices: (to, body, buttons) => tgButtons(to, body, buttons.slice(0, 3)),
+    dueMenu: (to, m) => tgButtons(to, `${m.header}\n${m.body}`, m.rows.slice(0, 3).map((r) => ({ id: r.id, title: r.title }))),
     form: (to, f) => tgWebAppButton(to, f.templateName, [{ title: 'Fill in', url: `${miniAppBaseUrl}?t=${encodeURIComponent(f.token)}` }]),
     corrective: () => null,
     managerAlert: (to, a) => ({

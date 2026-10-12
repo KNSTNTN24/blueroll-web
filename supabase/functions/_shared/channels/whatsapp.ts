@@ -34,6 +34,9 @@ export function parseInbound(body: unknown): InboundEvent[] {
     else if (m.type === 'interactive' && m.interactive?.type === 'button_reply') {
       const payload = m.interactive.button_reply?.id
       if (nonEmpty(payload)) out.push({ kind: 'button', from, payload, id })
+    } else if (m.type === 'interactive' && m.interactive?.type === 'list_reply') {
+      const payload = m.interactive.list_reply?.id
+      if (nonEmpty(payload)) out.push({ kind: 'button', from, payload, id })
     } else if (m.type === 'interactive' && m.interactive?.type === 'nfm_reply') {
       try {
         const parsed = JSON.parse(m.interactive.nfm_reply?.response_json ?? '')
@@ -66,6 +69,15 @@ export const buttonsMessage = (to: string, body: string, buttons: { id: string; 
   interactive: { type: 'button', body: { text: body }, action: {
     buttons: buttons.slice(0, 3).map((b) => ({ type: 'reply', reply: { id: b.id, title: sanitizeParam(b.title, 20) } })),
   } },
+})
+
+/** Interactive list: one button opens a menu of rows. Limits are applied by the caller (see due-menu.ts). */
+export const listMessage = (to: string, m: { header: string; body: string; footer: string; button: string; rows: { id: string; title: string; description: string }[] }): OutboundMessage => ({
+  messaging_product: 'whatsapp', to, type: 'interactive',
+  interactive: {
+    type: 'list', header: { type: 'text', text: m.header }, body: { text: m.body }, footer: { text: m.footer },
+    action: { button: m.button, sections: [{ title: 'Open checks', rows: m.rows }] },
+  },
 })
 
 export const templateMessage = (to: string, name: string, bodyParams: string[], quickReplies: string[]): OutboundMessage => ({
