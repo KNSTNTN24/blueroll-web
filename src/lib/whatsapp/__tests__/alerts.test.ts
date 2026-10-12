@@ -4,6 +4,7 @@ import { alertManagers, makeAlertDeps, alertGroups, alertTelegramAlertsGroups, g
 import { makeDeps } from '../../../../supabase/functions/_shared/channels/db'
 import { whatsappUI } from '../../../../supabase/functions/_shared/channels/ui'
 import { fakeGroupDeps, fakeTgApi, groupRow, GROUP } from './fakes/group-deps'
+import { fakeTeamDeps } from './fakes/team-deps'
 import type { SendFn } from '../../../../supabase/functions/_shared/channels/types'
 
 const NOW = new Date('2026-10-14T09:40:00Z')
@@ -173,7 +174,7 @@ describe('WhatsApp-origin alerts → Telegram "Alerts" groups (spec §2)', () =>
     const send = async (m: any) => { wa.push(m); return { id: 'w1', ok: true, status: 200 } }
     const { d: g } = fakeGroupDeps({ groups: [kitchen, managers] })
     const { api, calls } = fakeTgApi()
-    const deps = makeDeps(fakeAdmin(), { channel: 'whatsapp', ui: whatsappUI(), send, telegramAlertGroups: { g, api } })
+    const deps = makeDeps(fakeAdmin(), { channel: 'whatsapp', ui: whatsappUI(), send, telegramAlertGroups: { g, api }, teams: fakeTeamDeps().d })
     await deps.alertManagers('b', A)
     expect(wa.map((m) => [m.to, m.template?.name])).toEqual([['447700900999', 'manager_alert']])
     expect(calls).toEqual([{ method: 'sendMessage', body: { chat_id: '-1002', text: groupAlertText(A) } }])
@@ -182,7 +183,7 @@ describe('WhatsApp-origin alerts → Telegram "Alerts" groups (spec §2)', () =>
     const send = async () => ({ id: 'w1', ok: true, status: 200 })
     const { d: g } = fakeGroupDeps({ groups: [managers] })
     const t = fakeTgApi()
-    const deps = makeDeps(fakeAdmin(true), { channel: 'whatsapp', ui: whatsappUI(), send, telegramAlertGroups: { g, api: t.api } })
+    const deps = makeDeps(fakeAdmin(true), { channel: 'whatsapp', ui: whatsappUI(), send, telegramAlertGroups: { g, api: t.api }, teams: fakeTeamDeps().d })
     await expect(deps.alertManagers('b', A)).rejects.toMatchObject({ message: 'boom' })
     expect(t.calls.map((c) => c.body.chat_id)).toEqual(['-1002'])
   })
