@@ -141,6 +141,28 @@ describe('handleJoin', () => {
     expect(s.identities.find((i) => i.id === 'idX')!.revoked).toBe(true)
     expect(s.identities.filter((i) => i.phone === MARIA && !i.revoked)).toMatchObject([{ business_id: 'b', profile_id: 'new1', consent_source: 'team_invite' }])
   })
+  it('Join moving the number here marks its team rows in the other business removed (that business stops showing Active)', async () => {
+    const { d, s } = fakeTeamDeps({ members: [] })
+    s.teams.push({ id: 'gX', business_id: 'other', title: 'Bar', site_id: 's1' })
+    s.identities.push({ id: 'idX', business_id: 'other', profile_id: 'px', phone: MARIA, last_inbound_at: null, revoked: false, consent_source: 'qr_code' })
+    s.members.push(member({ id: 'gmX', group_id: 'gX', profile_id: 'px', phone: MARIA }), member({ id: 'gmY', group_id: 'gX', profile_id: 'p2', phone: BEN.phone }))
+    const w = fakeSend()
+    const r = await addPersonToTeam(d, w.send, { team: TEAM, phone: MARIA, name: 'Maria', invitedBy: 'm1' })
+    expect(s.members.find((m) => m.id === 'gmX')!.status).toBe('active')   // the invite alone changes nothing there
+    await handleJoin(d, w.send, { from: MARIA, memberId: r.member!.id })
+    expect(s.members.find((m) => m.id === 'gmX')).toMatchObject({ status: 'removed', removed_at: s.now.toISOString() })
+    expect(s.members.find((m) => m.id === 'gmY')!.status).toBe('active')     // other numbers untouched
+    expect(s.members.find((m) => m.id === r.member!.id)!.status).toBe('active')
+  })
+  it('Join with no identity elsewhere leaves other businesses alone', async () => {
+    const { d, s } = fakeTeamDeps({ members: [] })
+    s.teams.push({ id: 'gX', business_id: 'other', title: 'Bar', site_id: 's1' })
+    s.members.push(member({ id: 'gmX', group_id: 'gX', profile_id: 'px', phone: MARIA, status: 'invited' }))
+    const w = fakeSend()
+    const r = await addPersonToTeam(d, w.send, { team: TEAM, phone: MARIA, name: 'Maria', invitedBy: 'm1' })
+    await handleJoin(d, w.send, { from: MARIA, memberId: r.member!.id })
+    expect(s.members.find((m) => m.id === 'gmX')!.status).toBe('invited')
+  })
 })
 
 describe('delivery statuses and tracked sends', () => {

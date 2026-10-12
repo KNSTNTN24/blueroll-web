@@ -93,7 +93,10 @@ export async function handleJoin(t: TeamDeps, send: SendFn, a: { from: string; m
   if (m.status === 'active') { await reply(joined); return }
   if (now.getTime() - new Date(m.last_invite_sent_at ?? m.invited_at).getTime() > INVITE_TTL_MS) { await reply(TEAM_TEXT.inviteExpired); return }
   if (!(await t.ready(team.business_id))) { await reply(TEAM_TEXT.unavailable); return }
+  const before = await t.identityByPhone(m.phone)
   await t.linkIdentity({ business_id: team.business_id, profile_id: m.profile_id, phone: m.phone, linked_by: m.invited_by, now })
+  // The number moved here from another business: its team rows there would still read "Active" while nothing is sent.
+  if (before && before.business_id !== team.business_id) await t.removeMembershipsElsewhere(m.phone, team.business_id, now)
   await t.activateMember(m.id, now)
   await t.setUnreachable(m.phone, null)
   console.log('whatsapp team joined', team.id, maskPhone(m.phone))

@@ -130,6 +130,29 @@ describe('makeTeamDeps', () => {
     expect(kinds).toEqual([['channel_identities', 'select'], ['channel_identities', 'update'], ['channel_identities', 'update'], ['channel_identities', 'insert']])
     expect(op(queries[3], 'insert')![1]).toMatchObject({ business_id: 'b', profile_id: 'p1', channel: 'whatsapp', external_id: '447700900123', consent_source: 'team_invite', linked_by: 'm1' })
   })
+  it('summaryManagerIds: owners + group admins + managers of the team site or with no member_sites (can_see_site_row rule)', async () => {
+    const { admin, queries } = proxyAdmin((q) => (q.table === 'profiles'
+      ? { data: [{ id: 'o', role: 'owner', is_group_admin: false }, { id: 'here', role: 'manager', is_group_admin: false },
+        { id: 'there', role: 'manager', is_group_admin: false }, { id: 'any', role: 'manager', is_group_admin: false },
+        { id: 'ga', role: 'manager', is_group_admin: true }], error: null }
+      : { data: [{ profile_id: 'here', site_id: 's1' }, { profile_id: 'there', site_id: 's2' }], error: null }))
+    expect(await makeTeamDeps(admin).summaryManagerIds({ id: 'g1', business_id: 'b', title: 'Kitchen', site_id: 's1' })).toEqual(['o', 'here', 'any', 'ga'])
+    expect(ops(queries[0], 'eq')).toEqual([['eq', 'business_id', 'b']])
+    expect(op(queries[0], 'is')).toEqual(['is', 'removed_at', null])
+    expect(queries[1].table).toBe('member_sites')
+    expect(op(queries[1], 'in')).toEqual(['in', 'profile_id', ['here', 'there', 'any']])
+  })
+  it('removeMembershipsElsewhere: invited/active rows of this phone in other businesses\' teams → removed', async () => {
+    const { admin, queries } = proxyAdmin((q) => (q.ops[0][0] === 'select' ? { data: [{ id: 'x1' }, { id: 'x2' }], error: null } : { data: null, error: null }))
+    const now = new Date('2026-10-14T09:40:00Z')
+    await makeTeamDeps(admin).removeMembershipsElsewhere('447700900123', 'b', now)
+    const [look, upd] = queries
+    expect(String(op(look, 'select')![1])).toContain('channel_groups!inner(business_id)')
+    expect(op(look, 'neq')).toEqual(['neq', 'team.business_id', 'b'])
+    expect(op(look, 'eq')).toEqual(['eq', 'phone', '447700900123'])
+    expect(op(upd, 'update')![1]).toEqual({ status: 'removed', removed_at: now.toISOString() })
+    expect(op(upd, 'in')).toEqual(['in', 'id', ['x1', 'x2']])
+  })
   it('linkIdentity: already linked to this person here → only touch last_inbound_at', async () => {
     const { admin, queries } = proxyAdmin((q) => (q.ops[0][0] === 'select' ? { data: { id: 'id1', business_id: 'b', profile_id: 'p1' }, error: null } : { data: null, error: null }))
     await makeTeamDeps(admin).linkIdentity({ business_id: 'b', profile_id: 'p1', phone: '447700900123', linked_by: 'm1', now: new Date() })

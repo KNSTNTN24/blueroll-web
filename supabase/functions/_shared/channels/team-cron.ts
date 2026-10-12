@@ -13,7 +13,6 @@ import { sendTracked, UNREACHABLE_CODES } from './team-members.ts'
 import { templateMessage, textMessage } from './whatsapp.ts'
 import { hhmm } from './live-list.ts'
 import { isBillable } from './service-window.ts'
-import { notifyManagers } from './groups-db.ts'
 import { TEAM_TEXT } from './team-text.ts'
 
 export interface TeamRunResult { morning: number; overdue: number; summaries: number; failed: number }
@@ -90,15 +89,20 @@ export async function runWhatsAppTeams(t: TeamDeps, send: SendFn, now: Date): Pr
 
       if (plan.summary) {
         const p = summaryParams(team.title, site.name, plan.state)
+        // Ruling D1: owners of the business + managers of the team's site, fetched once per team.
+        let managers: Set<string> | null = null
+        const summaryManagers = async () => (managers ??= new Set(await t.summaryManagerIds(team)))
         // Spec §5: managers ALWAYS get the app notification — its own claim, once per team per day, whatever WhatsApp does.
         if (await t.claimEvent(team.id, 'day_end_app', plan.date)) {
-          await notifyManagers(t, team.business_id, { title: TEAM_TEXT.missedTitle(team.title), message: TEAM_TEXT.summary(p[0], p[1], Number(p[2]), Number(p[3]), p[4]), link: '/checklists' })
+          const n = { type: 'team', title: TEAM_TEXT.missedTitle(team.title), message: TEAM_TEXT.summary(p[0], p[1], Number(p[2]), Number(p[3]), p[4]), link: '/checklists' }
+          await t.insertNotifications([...await summaryManagers()].map((user_id) => ({ user_id, ...n })))
         }
         if (await t.claimEvent(team.id, 'day_end', plan.date)) {
-          // Members first, then managers linked on WhatsApp; one message per number (a manager may also be a member).
+          // Members first, then those managers linked on WhatsApp; one message per number (a manager may also be a member).
           const targets = new Map<string, { profile_id: string; last_inbound_at: string | null }>()
           for (const r of recipients) targets.set(r.phone, r)
-          for (const m of await t.managerContacts(team.business_id)) if (!targets.has(m.phone)) targets.set(m.phone, m)
+          const mgr = await summaryManagers()
+          for (const m of await t.managerContacts(team.business_id)) if (mgr.has(m.profile_id) && !targets.has(m.phone)) targets.set(m.phone, m)
           let ok = 0
           let retry = false
           for (const [phone, x] of targets) {

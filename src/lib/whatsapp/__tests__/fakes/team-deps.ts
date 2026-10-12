@@ -36,6 +36,9 @@ export interface FakeTeamState {
   identities: FakeIdentity[]
   people: (Person & { removed?: boolean })[]
   managers: string[]
+  /** member_sites by profile (none = every site, as can_see_site_row) */
+  memberSites: Record<string, string[]>
+  groupAdmins: string[]
   completions: CompletionWho[]
   events: Set<string>                                       // `${group}|${kind}|${key}`
   takes: Map<string, { profile_id: string; taken_at: string }>   // `${group}|${template}|${site}|${period}`
@@ -57,7 +60,7 @@ export function fakeTeamDeps(init: Partial<FakeTeamState> = {}, over: Partial<Te
       { id: 'id1', business_id: 'b', profile_id: ANNA.profile_id, phone: ANNA.phone, last_inbound_at: null, revoked: false, consent_source: 'team_invite' },
       { id: 'idm', business_id: 'b', profile_id: BOSS.profile_id, phone: BOSS.phone, last_inbound_at: null, revoked: false, consent_source: 'qr_code' },
     ],
-    people: [person(ANNA), person(BEN), person(BOSS, 'owner')], managers: [BOSS.profile_id], completions: [],
+    people: [person(ANNA), person(BEN), person(BOSS, 'owner')], managers: [BOSS.profile_id], memberSites: {}, groupAdmins: [], completions: [],
     events: new Set(), takes: new Map(), ready: { b: true }, businessNames: { b: 'Fern & Fig' },
     created: [], completionRows: [], responses: [], notifications: [], logs: [], ...init,
   }
@@ -109,6 +112,12 @@ export function fakeTeamDeps(init: Partial<FakeTeamState> = {}, over: Partial<Te
       if (!m) return false
       Object.assign(m, { status: 'removed', removed_at: now.toISOString() }); return true
     },
+    removeMembershipsElsewhere: async (phone, b, now) => {
+      for (const m of s.members) {
+        const team = s.teams.find((t) => t.id === m.group_id)
+        if (m.phone === phone && m.status !== 'removed' && team && team.business_id !== b) Object.assign(m, { status: 'removed', removed_at: now.toISOString() })
+      }
+    },
     setUnreachable: async (phone, at) => { for (const m of s.members) if (m.phone === phone && m.status !== 'removed') m.unreachable_at = at ? at.toISOString() : null },
     identityByPhone: async (phone) => { const i = activeIdentity(phone); return i ? { id: i.id, business_id: i.business_id, profile_id: i.profile_id, last_inbound_at: i.last_inbound_at } : null },
     linkIdentity: async (a) => {
@@ -133,6 +142,11 @@ export function fakeTeamDeps(init: Partial<FakeTeamState> = {}, over: Partial<Te
     }),
     managerContacts: async (b) => s.identities.filter((i) => i.business_id === b && !i.revoked && s.managers.includes(i.profile_id) && alive(i.profile_id))
       .map((i) => ({ profile_id: i.profile_id, phone: i.phone, last_inbound_at: i.last_inbound_at })),
+    summaryManagerIds: async (team) => s.managers.filter((pid) => {
+      const p = s.people.find((x) => x.profile_id === pid && x.business_id === team.business_id && !x.removed)
+      const sites = s.memberSites[pid] ?? []
+      return !!p && (p.role === 'owner' || s.groupAdmins.includes(pid) || !sites.length || sites.includes(team.site_id))
+    }),
     completionsSince: async (_b, since) => s.completions.filter((c) => new Date(c.completed_at) >= since),
     claimEvent: async (g, kind, key) => { const k = `${g}|${kind}|${key}`; if (s.events.has(k)) return false; s.events.add(k); return true },
     releaseEvent: async (g, kind, key) => { s.events.delete(`${g}|${kind}|${key}`) },

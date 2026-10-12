@@ -143,6 +143,23 @@ describe('runWhatsAppTeams — missed summary', () => {
     expect(w.sent.map((m) => m.to)).toEqual([ANNA.phone, BOSS.phone])
     expect(s.notifications).toHaveLength(1)
   })
+  // Ruling D1: owners (every team) + managers of the team's site only; scoping as can_see_site_row.
+  it('summary goes to the owner and the site\'s managers, not to a manager of another site', async () => {
+    const mgr = (pid: string, phone: string, name: string) => ({
+      person: { profile_id: pid, business_id: 'b', full_name: name, role: 'manager', role_id: null },
+      ident: { id: `id-${pid}`, business_id: 'b', profile_id: pid, phone, last_inbound_at: null, revoked: false, consent_source: 'qr_code' },
+    })
+    const here = mgr('m2', '447700900002', 'Sam Here'), there = mgr('m3', '447700900003', 'Tom There')
+    const anywhere = mgr('m4', '447700900004', 'Una Unassigned'), admin = mgr('m5', '447700900005', 'Gia Group')
+    const { d, s } = fakeTeamDeps({ templates: [FRIDGE], mappings: [MAP[0]],
+      managers: [BOSS.profile_id, 'm2', 'm3', 'm4', 'm5'], memberSites: { m1: ['s2'], m2: ['s1'], m3: ['s2'], m5: ['s2'] }, groupAdmins: ['m5'] })
+    for (const x of [here, there, anywhere, admin]) { s.people.push(x.person); s.identities.push(x.ident) }
+    s.events.add('g1|morning:gm1|2026-10-14'); s.events.add('g1|overdue|tA:2026-10-14')
+    const w = fakeSend()
+    await runWhatsAppTeams(d, w.send, at('2026-10-14T11:00:00Z'))
+    expect(w.sent.map((m) => m.to)).toEqual([ANNA.phone, BOSS.phone, '447700900002', '447700900004', '447700900005'])
+    expect(s.notifications.map((n) => n.user_id)).toEqual(['m1', 'm2', 'm4', 'm5'])
+  })
   // Review Focus 5: team_day_summary not approved yet. Spec §5: managers ALWAYS get the app notification.
   it('template not approved → app notification once anyway; WhatsApp claim released, the next run retries WhatsApp only', async () => {
     const { d, s } = fakeTeamDeps({ templates: [FRIDGE], mappings: [MAP[0]] })

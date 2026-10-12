@@ -59,6 +59,8 @@ export interface TeamDeps extends CoreDb {
   activateMember(memberId: string, now: Date): Promise<boolean>
   /** invited|active → removed. */
   removeMember(memberId: string, now: Date): Promise<boolean>
+  /** Join moved this number into `businessId`: its invited/active rows in other businesses' teams → removed. */
+  removeMembershipsElsewhere(phone: string, businessId: string, now: Date): Promise<void>
   /** Every non-removed member row with this phone. */
   setUnreachable(phone: string, at: Date | null): Promise<void>
   /** Active WhatsApp identity of this number (any business). */
@@ -75,6 +77,11 @@ export interface TeamDeps extends CoreDb {
   recipients(team: Team): Promise<TeamRecipient[]>
   /** Active owners/managers linked on WhatsApp. */
   managerContacts(businessId: string): Promise<ManagerContact[]>
+  /**
+   * Who gets a team's missed summary (ruling D1): active owners of the business, plus active managers of the team's
+   * site — same rule as can_see_site_row(): a group admin or a manager with no member_sites rows covers every site.
+   */
+  summaryManagerIds(team: Team): Promise<string[]>
   completionsSince(businessId: string, since: Date): Promise<CompletionWho[]>
   claimEvent(groupId: string, kind: string, key: string): Promise<boolean>
   releaseEvent(groupId: string, kind: string, key: string): Promise<void>
@@ -165,6 +172,13 @@ export function makeTeamDeps(admin: Any): TeamDeps {
       .update({ status: 'active', joined_at: now.toISOString(), unreachable_at: null }).eq('id', id).eq('status', 'invited').select('id')))?.length,
     removeMember: async (id, now) => !!(await one(admin.from('channel_group_members')
       .update({ status: 'removed', removed_at: now.toISOString() }).eq('id', id).in('status', ['invited', 'active']).select('id')))?.length,
+    removeMembershipsElsewhere: async (phone, b, now) => {
+      const rows: Any[] = (await one(admin.from('channel_group_members').select('id, team:channel_groups!inner(business_id)')
+        .eq('phone', phone).in('status', ['invited', 'active']).neq('team.business_id', b))) ?? []
+      if (!rows.length) return
+      await one(admin.from('channel_group_members').update({ status: 'removed', removed_at: now.toISOString() })
+        .in('id', rows.map((r) => r.id)).in('status', ['invited', 'active']))
+    },
     setUnreachable: async (phone, at) => {
       let q = admin.from('channel_group_members').update({ unreachable_at: at ? at.toISOString() : null }).eq('phone', phone).neq('status', 'removed')
       q = at ? q.is('unreachable_at', null) : q.not('unreachable_at', 'is', null)
@@ -219,6 +233,14 @@ export function makeTeamDeps(admin: Any): TeamDeps {
       const ids: Any[] = (await one(admin.from('channel_identities').select('profile_id, external_id, last_inbound_at')
         .eq('channel', 'whatsapp').eq('business_id', b).is('revoked_at', null).in('profile_id', mgr))) ?? []
       return ids.map((i) => ({ profile_id: i.profile_id, phone: i.external_id, last_inbound_at: i.last_inbound_at ?? null }))
+    },
+    summaryManagerIds: async (team) => {
+      const ps: Any[] = (await one(admin.from('profiles').select('id, role, is_group_admin')
+        .eq('business_id', team.business_id).in('role', ['owner', 'manager']).is('removed_at', null))) ?? []
+      const scoped = ps.filter((p) => p.role !== 'owner' && !p.is_group_admin).map((p) => p.id as string)
+      const ms: Any[] = scoped.length ? (await one(admin.from('member_sites').select('profile_id, site_id').in('profile_id', scoped))) ?? [] : []
+      return ps.filter((p) => p.role === 'owner' || p.is_group_admin || !ms.some((x) => x.profile_id === p.id)
+        || ms.some((x) => x.profile_id === p.id && x.site_id === team.site_id)).map((p) => p.id as string)
     },
     completionsSince: (b, since) => completionsWhoSince(admin, b, since),
 
