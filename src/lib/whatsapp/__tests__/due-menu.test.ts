@@ -40,3 +40,15 @@ describe('renderDueMenu', () => {
     expect([...m.header].length).toBeLessThanOrEqual(60)
   })
 })
+
+describe('renderDueMenu — team menu', () => {
+  it('done lines carry the first name; rows use the given id builder', () => {
+    const m = renderDueMenu({ ...base, siteName: 'Kitchen · Ashfield Row',
+      open: [{ templateId: 'h', name: 'Hot Holding Checks', deadlineUtc: '2026-10-14T10:00:00Z' }],
+      done: [{ name: 'Daily Opening Checks', completedAt: '2026-10-14T07:47:00Z', by: 'Anna' }, { name: 'Probe check', completedAt: '2026-10-14T08:00:00Z', by: null }],
+      rowId: (id) => `tfill:g1:${id}` })
+    expect(m.header).toBe('📋 Kitchen · Ashfield Row — 2 of 3 done')
+    expect(m.body).toBe(['🟠 Hot Holding Checks — due 11:00', '✅ Daily Opening Checks — 08:47 Anna', '✅ Probe check — 09:00'].join('\n'))
+    expect(m.rows).toEqual([{ id: 'tfill:g1:h', title: 'Hot Holding Checks', description: '🟠 Due 11:00 · due soon' }])
+  })
+})

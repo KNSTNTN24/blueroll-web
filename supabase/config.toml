@@ -20,3 +20,7 @@ verify_jwt = false
 
 [functions.haccp-plan]
 verify_jwt = false
+
+# Settings → WhatsApp teams (web): the caller's Supabase JWT is checked inside the function (auth.getUser + profile).
+[functions.whatsapp-team-member]
+verify_jwt = false

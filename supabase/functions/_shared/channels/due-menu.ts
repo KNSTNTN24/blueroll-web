@@ -3,8 +3,12 @@
 import { clip, hhmm, listIcon } from './live-list.ts'
 
 export interface MenuOpen { templateId: string; name: string; deadlineUtc: string | null }
-export interface MenuDone { name: string; completedAt: string }
-export interface DueMenuInput { siteId: string; siteName: string; tz: string; now: Date; open: MenuOpen[]; done: MenuDone[] }
+export interface MenuDone { name: string; completedAt: string; by?: string | null }
+export interface DueMenuInput {
+  siteId: string; siteName: string; tz: string; now: Date; open: MenuOpen[]; done: MenuDone[]
+  /** Menu row id per open checklist; default `fill:<template id>:<site id>`. WhatsApp teams use `tfill:<group id>:<template id>`. */
+  rowId?: (templateId: string) => string
+}
 export interface MenuRow { id: string; title: string; description: string }
 export interface DueMenu { header: string; body: string; footer: string; button: string; rows: MenuRow[] }
 
@@ -33,7 +37,7 @@ export function renderDueMenu(i: DueMenuInput): DueMenu {
   const total = open.length + done.length
   const lines = [
     ...open.map((o) => `${listIcon(o.deadlineUtc, i.now)} ${o.name}${o.deadlineUtc ? ` — due ${hhmm(o.deadlineUtc, i.tz)}` : ''}`),
-    ...done.map((x) => `✅ ${x.name} — ${hhmm(x.completedAt, i.tz)}`),
+    ...done.map((x) => `✅ ${x.name} — ${hhmm(x.completedAt, i.tz)}${x.by ? ` ${x.by}` : ''}`),
   ]
   const shown = open.slice(0, MENU_ROWS_MAX)
   const more = open.length > shown.length ? `\n+${open.length - shown.length} more — send CHECKS again after these` : ''
@@ -43,7 +47,7 @@ export function renderDueMenu(i: DueMenuInput): DueMenu {
     const when = o.deadlineUtc ? `Due ${hhmm(o.deadlineUtc, i.tz)}${status(icon)}` : 'No deadline'
     // A cut title is completed in the description so the full name is still readable.
     const desc = title === o.name ? `${icon} ${when}` : `${icon} ${when} · ${o.name}`
-    return { id: `fill:${o.templateId}:${i.siteId}`, title, description: clip(desc, ROW_DESC_MAX) }
+    return { id: i.rowId ? i.rowId(o.templateId) : `fill:${o.templateId}:${i.siteId}`, title, description: clip(desc, ROW_DESC_MAX) }
   })
   return {
     header: clip(`📋 ${i.siteName} — ${done.length} of ${total} done`, HEADER_MAX),

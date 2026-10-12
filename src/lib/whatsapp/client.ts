@@ -7,34 +7,9 @@ export const WA_NUMBER = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER ?? ''   // E.16
 /** Whether a channel can be offered in the UI: WhatsApp needs its number configured (NEXT_PUBLIC_WHATSAPP_NUMBER); Telegram always. */
 export const channelAvailable = (c: Channel, waNumber: string = WA_NUMBER) => c === 'telegram' || !!waNumber
 
-export const waLink = (number: string, code: string) => `https://wa.me/${number}?text=${encodeURIComponent(`LINK ${code}`)}`
-
 export function maskNumber(e164: string): string {
   const d = e164.replace(/\D/g, '')
   return d.length < 6 ? '+••' : `+${d.slice(0, 2)} ${d.slice(2, 3)}••• ••${d.slice(-2)}`
-}
-
-export type LinkChannel = 'whatsapp'
-
-// Personal connect (QR / code) exists for WhatsApp only; Telegram works through groups (Settings → Messaging).
-// buildLink returns null when the destination is not configured (dialog then shows the code only).
-export const CHANNELS: Record<LinkChannel, { label: string; buildLink: (code: string) => string | null; codeText: (code: string) => string; displayId: (externalId: string) => string; notConfiguredNote: string; scanInstruction: string; codeInstruction: string }> = {
-  whatsapp: {
-    label: 'WhatsApp',
-    buildLink: (code) => (WA_NUMBER ? waLink(WA_NUMBER, code) : null),
-    codeText: (code) => `LINK ${code}`,
-    displayId: (id) => maskNumber(id),
-    notConfiguredNote: 'WhatsApp number not configured yet',
-    scanInstruction: 'Ask them to scan this with their phone camera and press Send in WhatsApp.',
-    codeInstruction: 'Send this code to Blueroll on WhatsApp from their phone.',
-  },
-}
-
-/** Server-generated 6-digit code (RPC checks the caller manages the member). */
-export async function issueLinkCode(a: { profileId: string; siteId: string | null }): Promise<string> {
-  const { data, error } = await supabase.rpc('issue_link_code', { p_profile: a.profileId, p_site: a.siteId })
-  if (error) throw error
-  return data as string
 }
 
 export async function listIdentities(businessId: string, channel: Channel = 'whatsapp') {
@@ -44,12 +19,8 @@ export async function listIdentities(businessId: string, channel: Channel = 'wha
   return (data ?? []) as { id: string; profile_id: string; external_id: string; consent_at: string; consent_source: string }[]
 }
 
-export async function revokeIdentity(id: string) {
-  const { error } = await supabase.rpc('revoke_channel_identity', { p_id: id })
-  if (error) throw error
-}
-
-async function callFn(name: string, body: unknown) {
+/** POST to an edge function as the signed-in user; a non-2xx reply throws Error(<its error code>). */
+export async function callFn(name: string, body: unknown) {
   const { data: { session } } = await supabase.auth.getSession()
   const r = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/${name}`, {
     method: 'POST',
@@ -59,10 +30,6 @@ async function callFn(name: string, body: unknown) {
   const j = await r.json().catch(() => ({}))
   if (!r.ok) throw new Error(j?.error ?? `HTTP ${r.status}`)
   return j
-}
-
-export async function createWhatsAppMember(a: { full_name: string; role_id: string; site_id: string }): Promise<string> {
-  return (await callFn('team-create-channel-member', a)).profile_id
 }
 
 export async function syncTemplateFlows(templateId: string): Promise<void> {

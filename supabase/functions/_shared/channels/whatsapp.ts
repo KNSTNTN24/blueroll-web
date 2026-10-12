@@ -1,5 +1,5 @@
 // WhatsApp Cloud API: signature check, inbound parsing, outbound message builders. No runtime imports.
-import type { InboundEvent, OutboundMessage, SendFn } from './types.ts'
+import type { DeliveryStatus, InboundEvent, OutboundMessage, SendFn } from './types.ts'
 
 // Latest Graph API version per developers.facebook.com/docs/graph-api/changelog (released 2026-07-29).
 export const GRAPH_VERSION = 'v26.0'
@@ -23,6 +23,20 @@ type Any = any
 const arr = (v: unknown): Any[] => (Array.isArray(v) ? v : [])
 const nonEmpty = (v: unknown): v is string => typeof v === 'string' && v !== ''
 
+/**
+ * Phone number → E.164 digits without '+' (10–15 digits), or null. '+' / '00' prefixes are international; a single
+ * leading 0 is a national number in `defaultCountryCode` (Blueroll businesses are UK: '44'). "(0)" is dropped.
+ */
+export function normalisePhone(raw: string, defaultCountryCode = '44'): string | null {
+  const s = String(raw ?? '').replace(/\(0\)/g, '').trim()
+  if (!s || /[a-z]/i.test(s)) return null
+  let d = s.replace(/[^\d+]/g, '')
+  if (d.startsWith('+')) d = d.slice(1)
+  else if (d.startsWith('00')) d = d.slice(2)
+  else if (d.startsWith('0')) d = defaultCountryCode + d.slice(1)
+  return /^\d{10,15}$/.test(d) ? d : null
+}
+
 // Never throws: anything malformed is skipped.
 export function parseInbound(body: unknown): InboundEvent[] {
   const out: InboundEvent[] = []
@@ -45,6 +59,29 @@ export function parseInbound(body: unknown): InboundEvent[] {
         if (typeof flow_token === 'string') out.push({ kind: 'flow', from, token: flow_token, response, id })
       } catch { /* malformed flow reply: ignore */ }
     }
+    else if (m.type === 'contacts') {
+      // Shared contact card: the first contact with a usable number (wa_id preferred — already E.164 digits).
+      for (const c of arr(m.contacts)) {
+        const phone = arr(c?.phones).map((p: Any) => normalisePhone(String(p?.wa_id || p?.phone || ''))).find((x): x is string => !!x)
+        if (!phone) continue
+        const n = c?.name ?? {}
+        const name = String(n.formatted_name || [n.first_name, n.last_name].filter(Boolean).join(' ') || '').replace(/\s+/g, ' ').trim()
+        out.push({ kind: 'contact', from, name, phone, id })
+        break
+      }
+    }
+  }
+  return out
+}
+
+// Never throws: anything malformed is skipped.
+export function parseStatuses(body: unknown): DeliveryStatus[] {
+  const out: DeliveryStatus[] = []
+  for (const e of arr((body as Any)?.entry)) for (const c of arr(e?.changes)) for (const s of arr(c?.value?.statuses)) {
+    const recipient = s?.recipient_id
+    if (typeof recipient !== 'string' || !/^\d+$/.test(recipient)) continue
+    const code = arr(s.errors)[0]?.code
+    out.push({ id: String(s.id ?? ''), recipient, status: String(s.status ?? ''), errorCode: typeof code === 'number' ? code : null })
   }
   return out
 }
@@ -72,11 +109,11 @@ export const buttonsMessage = (to: string, body: string, buttons: { id: string; 
 })
 
 /** Interactive list: one button opens a menu of rows. Limits are applied by the caller (see due-menu.ts). */
-export const listMessage = (to: string, m: { header: string; body: string; footer: string; button: string; rows: { id: string; title: string; description: string }[] }): OutboundMessage => ({
+export const listMessage = (to: string, m: { header: string; body: string; footer: string; button: string; rows: { id: string; title: string; description: string }[]; section?: string }): OutboundMessage => ({
   messaging_product: 'whatsapp', to, type: 'interactive',
   interactive: {
     type: 'list', header: { type: 'text', text: m.header }, body: { text: m.body }, footer: { text: m.footer },
-    action: { button: m.button, sections: [{ title: 'Open checks', rows: m.rows }] },
+    action: { button: m.button, sections: [{ title: m.section ?? 'Open checks', rows: m.rows }] },
   },
 })
 
@@ -105,15 +142,20 @@ export const flowMessage = (to: string, o: { flowId: string; token: string; cta:
   } } },
 })
 
-export function makeSender(cfg: { token: string; phoneNumberId: string; fetchFn?: typeof fetch }): SendFn {
+/** A Meta call that hangs longer than this is aborted and reported as a transient failure (status 0): the cron has 60 s. */
+export const SEND_TIMEOUT_MS = 10_000
+
+export function makeSender(cfg: { token: string; phoneNumberId: string; fetchFn?: typeof fetch; timeoutMs?: number }): SendFn {
   const f = cfg.fetchFn ?? fetch
   return async (msg) => {
     try {
       const r = await f(`https://graph.facebook.com/${GRAPH_VERSION}/${cfg.phoneNumberId}/messages`, {
         method: 'POST', headers: { Authorization: `Bearer ${cfg.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(msg),
+        signal: AbortSignal.timeout(cfg.timeoutMs ?? SEND_TIMEOUT_MS),
       })
       const j = await r.json().catch(() => ({}))
-      return { id: r.ok ? (j?.messages?.[0]?.id ?? null) : null, ok: r.ok, status: r.status }
+      const code = r.ok ? undefined : j?.error?.code
+      return { id: r.ok ? (j?.messages?.[0]?.id ?? null) : null, ok: r.ok, status: r.status, ...(typeof code === 'number' ? { errorCode: code } : {}) }
     } catch {
       return { id: null, ok: false, status: 0 }
     }

@@ -1,13 +1,15 @@
 // supabase/functions/whatsapp-webhook/index.ts
 // Meta webhook for the Blueroll WhatsApp bot. Deployed with --no-verify-jwt; authenticity = X-Hub-Signature-256.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { verifySignature, parseInbound, makeSender } from "../_shared/channels/whatsapp.ts";
+import { verifySignature, parseInbound, parseStatuses, makeSender } from "../_shared/channels/whatsapp.ts";
 import { handleInbound } from "../_shared/channels/bot.ts";
 import { makeDeps } from "../_shared/channels/db.ts";
 import { maskPhone } from "../_shared/channels/mask.ts";
 import { whatsappUI } from "../_shared/channels/ui.ts";
 import { makeTelegramApi } from "../_shared/channels/telegram.ts";
 import { makeGroupDeps } from "../_shared/channels/groups-db.ts";
+import { makeTeamDeps } from "../_shared/channels/teams-db.ts";
+import { applyDeliveryStatuses } from "../_shared/channels/team-members.ts";
 
 const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
 const APP_SECRET = Deno.env.get("WA_APP_SECRET") ?? "";
@@ -19,7 +21,8 @@ if (!CORRECTIVE_FLOW_ID) console.error("whatsapp-webhook: WA_CORRECTIVE_FLOW_ID 
 // "Alerts" in the business (only when TG_BOT_TOKEN is set). There are no personal Telegram alerts any more.
 const TG_TOKEN = Deno.env.get("TG_BOT_TOKEN") ?? "";
 const telegramAlertGroups = TG_TOKEN ? { g: makeGroupDeps(admin, "telegram"), api: makeTelegramApi({ token: TG_TOKEN }) } : undefined;
-const deps = makeDeps(admin, { channel: "whatsapp", ui: whatsappUI(), send, correctiveFlowId: CORRECTIVE_FLOW_ID, telegramAlertGroups });
+const teams = makeTeamDeps(admin);
+const deps = makeDeps(admin, { channel: "whatsapp", ui: whatsappUI(), send, correctiveFlowId: CORRECTIVE_FLOW_ID, telegramAlertGroups, teams });
 
 Deno.serve(async (req) => {
   const url = new URL(req.url);
@@ -38,5 +41,8 @@ Deno.serve(async (req) => {
     try { await handleInbound(e, deps); }
     catch (err) { console.error("whatsapp inbound failed", maskPhone(e.from), (err as Error)?.message?.slice(0, 200)); }
   }
+  // Delivery statuses: Meta's "can't reach this number" errors mark team members "Not reachable"; a delivery clears it.
+  try { await applyDeliveryStatuses(teams, parseStatuses(body)); }
+  catch (err) { console.error("whatsapp statuses failed", (err as Error)?.message?.slice(0, 200)); }
   return new Response("ok"); // always 200 to Meta once the signature is valid, so it doesn't retry storms
 });

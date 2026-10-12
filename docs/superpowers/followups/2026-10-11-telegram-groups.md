@@ -1,0 +1,18 @@
+# Telegram groups — deferred follow-ups (from SDD ledger, 2026-10-11)
+
+Minor findings parked during the Telegram groups build (PR #36). None blocked launch.
+
+- Task 1: minor (deferred): revoke line should skip consent_source='group_form' (re-run safety) — migration:174
+- Task 1: minor (deferred): FK indexes channel_form_tokens(group_id), channel_live_lists(site_id), channel_group_reminders_sent(template_id, site_id), channel_group_link_codes(business_id)
+- Task 1: minor (deferred): verify block gaps (other-business manager blocked, relink rejected, non-manager presence flag); brief's pglast snippet returns-void quirk (plan text)
+- Task 2: minor (deferred): membersCanInvite → null (unknown) when getChat has no permissions field (false suppresses §8 warning)
+- Task 2: minor (deferred): makeTelegramApi 2xx non-JSON → ok with result null; tgEditHtml Number(messageId) unguarded; test gaps (plain 'group' commands, message_id_invalid, migrateTo over 403, it.each titles)
+- Task 3: minor (deferred): no GMT/DST-changeover tests for hhmm/localDate/threshold; open lines alone >4000 chars not truncated; done lines HH:MM ambiguous for weekly/monthly done earlier; localeCompare tie order
+- Task 4: minor (deferred): groupById/markGroupUnlinked/claimDaily/linkFailures lack channel filter (groupById at least); linkGroup read-then-insert race on concurrent /link (23505); expireTokens wall clock + no kind filter; makeGroupDeps untested beyond shape → staging smoke before Task 11
+- Task 5: minor (deferred): M1 saveLiveList/expireTokens throw after send → untracked or undeleted message (try/finally); M2 failed-send test starts with no list; M3 untested paths (refreshGroupSite existing, repostGroup stop after unlinked, migrated, re-mint near expiry); M4 token replaced by refreshList not expired (stale items usable ≤24h); M5 fake gaps (peekGroupToken kind, completionsSince business, expireTokens fixed NOW) — matter for Tasks 6–8 tests; M6 orphan tokens on failed repost
+- Task 6: minor (deferred): link-failure limit check-then-act (burst >5); code burned with no reply if groupByChat/unlinkGroup/linkGroup/businessName throws after claim (release on throw like ready()); tests missing for ready() throw + double-claim
+- Task 7: minor (deferred): reminder key not released when repostList throws before send; permission check claimed before getChat (transient failure skips a day); no time budget vs 60s pg_net (~100+ groups); orphanLiveLists not paged; test gaps (group throw isolation, 'unlinked' stops refresh, partial claim)
+- Task 8: minor (deferred): new-person notification lost if record fails after profile creation (resubmit has created=false); failure after insertCompletion + resubmit → duplicate completion (pre-existing, now anyone in group can trigger; atomic record RPC already a deferred item); no tests for business-mismatch guards (form-api.ts:374/:383); whatsapp-webhook dead Telegram sender for alertManagers
+- Task 9: minor (deferred): page.tsx:3 stale comment (?t= primary); consent notice below the item list (move above); no test for unknown 403 code → notMember default
+- Task 10: minor (deferred): save delete-then-insert not atomic + no refresh on error (upsert ignoreDuplicates); RLS 0-row update/delete → false success toast (.select('id')); query errors shown as empty states; alerts Switch no pending state; link dialog no Escape/focus trap; team badge ignores consent_source; no tests of groups.ts Supabase call shapes
+- FINAL fix wave: commits 8db45d4..31a44f0 (A–E + C narrowed); re-review: all ADDRESSED, no new Critical/Important. Minor (parked): carried-over token usable between peek and save (pre-existing window in refreshList); verify assumes another business has an active profile.

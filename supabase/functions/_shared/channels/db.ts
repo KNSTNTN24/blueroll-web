@@ -1,9 +1,11 @@
 // supabase/functions/_shared/channels/db.ts
 // Supabase-backed BotDeps. `admin` is a service-role supabase-js client (typed loosely to keep this file import-free).
 // Never log raw phone numbers / chat ids from here — use maskId.
-import type { BotDeps, FormToken, Identity } from './bot.ts'
+import type { BotDeps, FormToken } from './bot.ts'
+import type { TeamDeps } from './teams-db.ts'
+import type { CoreDb } from '../checklists-core/record.ts'
+import type { Person } from '../checklists-core/types.ts'
 import type { SendFn } from './types.ts'
-import { maskId } from './mask.ts'
 import type { Channel, ChannelUI } from './ui.ts'
 import { alertManagers, alertTelegramAlertsGroups, makeAlertDeps, type Senders, type TelegramAlertGroups } from './alerts.ts'
 
@@ -34,7 +36,7 @@ export async function pageAll<T>(fetchPage: (from: number, to: number) => Promis
   }
 }
 
-const TOKEN_COLS = 'token, kind, business_id, profile_id, site_id, template_id, item_ids, response_id, expires_at, used_at'
+const TOKEN_COLS = 'token, kind, business_id, profile_id, site_id, template_id, item_ids, response_id, expires_at, used_at, group_id'
 
 /**
  * Read-only form-token lookup (never consumes). Returns the row in any state — the caller checks ownership FIRST,
@@ -54,6 +56,34 @@ export async function releaseToken(admin: any, token: string, usedAtIso: string)
   if (error) throw error
 }
 
+/** The DB calls every channel's checklist recording shares (CoreDb) plus the person lookup. Channel-neutral. */
+export interface CoreDbWithPerson extends CoreDb {
+  person(profileId: string): Promise<Person | null>
+}
+
+// deno-lint-ignore no-explicit-any
+export function makeCoreDb(admin: any): CoreDbWithPerson {
+  // deno-lint-ignore no-explicit-any
+  const one = async (q: any) => { const { data, error } = await q; if (error) throw error; return data }
+  return {
+    person: async (pid) => {
+      const p = await one(admin.from('profiles').select('id, business_id, full_name, role, role_id')
+        .eq('id', pid).is('removed_at', null).maybeSingle())
+      return p && p.business_id
+        ? { profile_id: p.id, business_id: p.business_id, full_name: p.full_name ?? '', role: p.role, role_id: p.role_id ?? null }
+        : null
+    },
+    insertCompletion: async (row) => await one(admin.from('checklist_completions').insert(row).select('id').single()),
+    insertResponses: async (rows) => rows.length ? ((await one(admin.from('checklist_responses').insert(rows).select('id, item_id'))) ?? []) : [],
+    // Active (not soft-removed) owners/managers — parity with web getManagerIds + soft-remove.
+    managerIds: async (b) =>
+      ((await one(admin.from('profiles').select('id').eq('business_id', b).in('role', ['owner', 'manager']).is('removed_at', null))) ?? [])
+        // deno-lint-ignore no-explicit-any
+        .map((p: any) => p.id),
+    insertNotifications: async (rows) => { if (rows.length) await one(admin.from('notifications').insert(rows)) },
+  }
+}
+
 export interface DepsConfig {
   channel: Channel
   ui: ChannelUI
@@ -65,6 +95,8 @@ export interface DepsConfig {
   senders?: Senders
   /** Telegram "Alerts" groups that also get this channel's out-of-range alerts (spec §2); omitted = none. */
   telegramAlertGroups?: TelegramAlertGroups
+  /** WhatsApp teams (teams-db.ts makeTeamDeps). */
+  teams: TeamDeps
 }
 
 // deno-lint-ignore no-explicit-any
@@ -72,12 +104,7 @@ export function makeDeps(admin: any, cfg: DepsConfig): BotDeps {
   // deno-lint-ignore no-explicit-any
   const one = async (q: any) => { const { data, error } = await q; if (error) throw error; return data }
 
-  // Active (not soft-removed) owners/managers — parity with web getManagerIds + soft-remove.
-  const activeManagerIds = async (b: string): Promise<string[]> =>
-    ((await one(admin.from('profiles').select('id').eq('business_id', b).in('role', ['owner', 'manager']).is('removed_at', null))) ?? [])
-      // deno-lint-ignore no-explicit-any
-      .map((p: any) => p.id)
-
+  const core = makeCoreDb(admin)
   const clock = () => new Date()
   const ch = cfg.channel
   const channelReady = async (b: string) => !!(await one(admin.rpc('channel_ready', { b, ch })))
@@ -91,6 +118,7 @@ export function makeDeps(admin: any, cfg: DepsConfig): BotDeps {
     send: cfg.send,
     newToken: () => crypto.randomUUID().replace(/-/g, ''),
     correctiveFlowId: () => cfg.correctiveFlowId ?? '',
+    teams: cfg.teams,
 
     findIdentity: async (x) => (await one(admin.from('channel_identities').select(IDENTITY_COLS)
       .eq('channel', ch).eq('external_id', x).is('revoked_at', null).maybeSingle())) ?? null,
@@ -99,79 +127,12 @@ export function makeDeps(admin: any, cfg: DepsConfig): BotDeps {
       await one(admin.from('channel_identities').update({ revoked_at: new Date().toISOString() }).eq('id', id).is('revoked_at', null))
     },
 
-    consumeLinkCode: async (code, externalId, now) => {
-      const nowIso = now.toISOString()
-      // Atomic claim: only one caller can flip used_at on a live code.
-      const claimed = await one(admin.from('channel_link_codes').update({ used_at: nowIso })
-        .eq('code', code).is('used_at', null).gt('expires_at', nowIso)
-        .select('code, business_id, profile_id, site_id, issued_by'))
-      const c = claimed?.[0]
-      if (!c) return { ok: false, reason: 'invalid' }
-      // Give the code back if the team can't use this channel yet (manager can enable it and the worker retries).
-      const release = async () => {
-        await one(admin.from('channel_link_codes').update({ used_at: null }).eq('code', code).eq('used_at', nowIso))
-      }
-      let ready: boolean
-      try { ready = await channelReady(c.business_id) }
-      catch (err) { await release(); throw err }   // transient failure: don't burn the worker's code
-      if (!ready) { await release(); return { ok: false, reason: 'unavailable' } }
-      const prof = await one(admin.from('profiles').select('full_name, site_id')
-        .eq('id', c.profile_id).eq('business_id', c.business_id).is('removed_at', null).maybeSingle())
-      if (!prof) return { ok: false, reason: 'invalid' }   // member removed after the code was issued — code stays burnt
-      // One active identity per external id and per profile on this channel: revoke both before linking (two queries, no filter-string interpolation).
-      await one(admin.from('channel_identities').update({ revoked_at: nowIso })
-        .eq('channel', ch).eq('external_id', externalId).is('revoked_at', null))
-      await one(admin.from('channel_identities').update({ revoked_at: nowIso })
-        .eq('channel', ch).eq('profile_id', c.profile_id).is('revoked_at', null))
-      const identity: Identity = await one(admin.from('channel_identities').insert({
-        business_id: c.business_id, profile_id: c.profile_id, channel: ch, external_id: externalId,
-        consent_source: 'qr_code', consent_text_version: 1, linked_by: c.issued_by, last_inbound_at: nowIso,
-      }).select(IDENTITY_COLS).single())
-      const siteId = c.site_id ?? prof.site_id
-      const site = siteId
-        ? await one(admin.from('sites').select('name').eq('id', siteId).eq('business_id', c.business_id).is('removed_at', null).maybeSingle())
-        : null
-      console.log(`${ch} linked`, maskId(ch, externalId))
-      return { ok: true, identity, name: (prof.full_name ?? '').split(' ')[0] || 'there', siteName: site?.name ?? 'your team' }
-    },
-
     ready: channelReady,
 
-    person: async (pid) => {
-      const p = await one(admin.from('profiles').select('id, business_id, full_name, role, role_id')
-        .eq('id', pid).is('removed_at', null).maybeSingle())
-      return p && p.business_id
-        ? { profile_id: p.id, business_id: p.business_id, full_name: p.full_name ?? '', role: p.role, role_id: p.role_id ?? null }
-        : null
-    },
+    person: core.person,
 
-    sitesFor: async (pid) => {
-      const prof = await one(admin.from('profiles').select('business_id, site_id, is_group_admin').eq('id', pid).is('removed_at', null).maybeSingle())
-      if (!prof?.business_id) return []
-      const ms = await one(admin.from('member_sites').select('site_id').eq('profile_id', pid))
-      // deno-lint-ignore no-explicit-any
-      const ids: string[] = (ms ?? []).map((r: any) => r.site_id)
-      if (prof.site_id && !ids.includes(prof.site_id)) ids.push(prof.site_id)
-      if (!prof.is_group_admin && !ids.length) return []
-      let q = admin.from('sites').select('id, name, timezone, status').eq('business_id', prof.business_id).is('removed_at', null)
-      if (!prof.is_group_admin) q = q.in('id', ids)
-      const rows = await one(q)
-      // deno-lint-ignore no-explicit-any
-      return (rows ?? []).filter((s: any) => s.status !== 'removed')
-        // deno-lint-ignore no-explicit-any
-        .map((s: any) => ({ id: s.id, name: s.name, timezone: s.timezone ?? 'Europe/London' }))
-    },
-
-    templates: async (b) => ((await one(admin.from('checklist_templates')
-      .select('id, business_id, site_id, name, frequency, deadline_time, multi_per_day, min_per_day, assigned_roles, assigned_role_ids, active')
-      // deno-lint-ignore no-explicit-any
-      .eq('business_id', b).eq('active', true))) ?? []).map((t: any) => ({ ...t, assigned_roles: t.assigned_roles ?? [], assigned_role_ids: t.assigned_role_ids ?? [] })),
     items: async (tid) => (await one(admin.from('checklist_template_items')
       .select('id, name, item_type, required, min_value, max_value, unit, sort_order').eq('template_id', tid))) ?? [],
-    // Paged: a busy business easily has >1000 completions in a month (PostgREST row cap).
-    completionsSince: (b, since) => pageAll((from, to) => admin.from('checklist_completions')
-      .select('template_id, site_id, completed_at').eq('business_id', b).gte('completed_at', since.toISOString())
-      .order('completed_at', { ascending: false }).order('id', { ascending: false }).range(from, to)),
     // WhatsApp Flows only; Telegram renders the Mini App form from the current items.
     flowFor: async (tid, sid) => {
       if (ch !== 'whatsapp') return null
@@ -219,19 +180,6 @@ export function makeDeps(admin: any, cfg: DepsConfig): BotDeps {
       return true
     },
 
-    linkFailures: async (externalId, since) => {
-      const { count, error } = await admin.from('channel_messages_log').select('id', { count: 'exact', head: true })
-        .eq('kind', 'link_fail').eq('ref_id', await hashExternalId(externalId)).gte('created_at', since.toISOString())
-      if (error) throw error
-      return count ?? 0
-    },
-    recordLinkFailure: async (externalId, at) => {
-      await one(admin.from('channel_messages_log').insert({
-        business_id: null, site_id: null, profile_id: null, channel: ch, direction: 'in', kind: 'link_fail',
-        billable: false, ref_id: await hashExternalId(externalId), created_at: at.toISOString(),
-      }))
-    },
-
     pendingCorrective: async (pid) => {
       const since = new Date(clock().getTime() - 2 * 86400_000).toISOString()
       const rows = await one(admin.from('checklist_responses')
@@ -245,9 +193,9 @@ export function makeDeps(admin: any, cfg: DepsConfig): BotDeps {
         .map((r) => ({ response_id: r.id, item: r.item, value: r.value ?? '', site_id: r.completion.site_id, template_id: r.completion.template_id }))
     },
 
-    insertCompletion: async (row) => await one(admin.from('checklist_completions').insert(row).select('id').single()),
-    insertResponses: async (rows) => rows.length ? ((await one(admin.from('checklist_responses').insert(rows).select('id, item_id'))) ?? []) : [],
-    managerIds: activeManagerIds,
-    insertNotifications: async (rows) => { if (rows.length) await one(admin.from('notifications').insert(rows)) },
+    insertCompletion: core.insertCompletion,
+    insertResponses: core.insertResponses,
+    managerIds: core.managerIds,
+    insertNotifications: core.insertNotifications,
   }
 }
