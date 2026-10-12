@@ -2,6 +2,7 @@
 
 import { useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import { useAuthStore } from '@/stores/auth-store'
 import {
   CommandDialog,
   CommandInput,
@@ -44,7 +45,7 @@ const pages = [
   { label: 'Suppliers', href: '/suppliers', icon: Factory },
   { label: 'Documents', href: '/documents', icon: FileText },
   { label: 'HACCP Pack', href: '/haccp-pack', icon: ShieldCheck },
-  { label: 'Set up my HACCP', href: '/haccp-setup', icon: Wand2 },
+  { label: 'Set up my HACCP', href: '/haccp-setup', icon: Wand2, managerOnly: true },
   { label: 'Settings', href: '/settings', icon: Settings },
 ]
 
@@ -63,6 +64,8 @@ interface CommandPaletteProps {
 
 export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const router = useRouter()
+  const role = useAuthStore((s) => s.profile?.role)
+  const isManager = role === 'owner' || role === 'manager'
 
   const handleSelect = useCallback(
     (href: string) => {
@@ -91,7 +94,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         <CommandEmpty>No results found.</CommandEmpty>
 
         <CommandGroup heading="Pages">
-          {pages.map((page) => {
+          {pages.filter((page) => !('managerOnly' in page) || isManager).map((page) => {
             const Icon = page.icon
             return (
               <CommandItem

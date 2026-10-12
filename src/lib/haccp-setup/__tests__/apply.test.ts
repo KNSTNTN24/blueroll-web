@@ -43,3 +43,14 @@ describe('toApplyPayload', () => {
   })
   it('itemAddId is stable', () => expect(itemAddId(draft.itemAdds[0])).toBe('t1:Prep temperature'))
 })
+
+describe('switch on checklists at apply', () => {
+  const draft = { checklists: [], existing: [], itemAdds: [], fields: [], notes: [] }
+  const existing = { libraryTemplates: [], otherTemplates: [], pack: null, packUpdatedAt: null }
+  it('keeps new checklists off by default', () => {
+    expect(toApplyPayload(draft as never, { checklistKeys: [], itemAddIds: [], fieldIds: [] }, existing as never).activate).toBe(false)
+  })
+  it('switches them on when asked', () => {
+    expect(toApplyPayload(draft as never, { checklistKeys: [], itemAddIds: [], fieldIds: [] }, existing as never, { activate: true }).activate).toBe(true)
+  })
+})

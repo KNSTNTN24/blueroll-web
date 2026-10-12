@@ -29,6 +29,10 @@ const CHEMICALS: Record<string, string> = {
   separate_room: 'Cleaning chemicals are kept in a separate store, away from food, in their original labelled containers.',
   separate_cupboard: 'Cleaning chemicals are kept in a dedicated cupboard away from food, in their original labelled containers.',
 }
+// Option values of fridge_check_method → the pack's st_check_method select options.
+const FRIDGE_CHECK: Record<string, string> = {
+  probe: 'Digital thermometer', display: 'Fridge display', dial: 'Dial thermometer', logger: 'Data logger',
+}
 const EXTRA_CARE: Record<string, string> = {
   eggs: 'Eggs: cooked until white and yolk are solid, or pasteurised egg is used for dishes served raw or lightly cooked.',
   rice: 'Rice: served straight after cooking, or cooled within 1 hour and kept in the fridge for no more than 1 day.',
@@ -47,6 +51,8 @@ export const FIELD_RULES: FieldRule[] = [
   { fieldId: 'cl_single_use', value: (c) => when(a(c, 'cloths') === 'single_use' || a(c, 'cloths') === 'both', true) },
   { fieldId: 'cl_laundry', value: (c) => when(a(c, 'cloths') === 'reusable_90' || a(c, 'cloths') === 'both', true) },
   { fieldId: 'cl_method', value: (c) => CLOTHS[a(c, 'cloths') as string] },
+  { fieldId: 'cl_colour_coded', value: (c) => when(has(c, 'cloth_habits', 'colour_coded'), true) },
+  { fieldId: 'cl_stored', value: (c) => when(has(c, 'cloth_habits', 'sanitiser_between'), true) },
   // Separating foods / ready-to-eat
   { fieldId: 'sf_raw_separate', value: (c) => when(a(c, 'separation') === 'separate_fridges' || a(c, 'separation') === 'raw_below', true) },
   { fieldId: 'rte_separate', value: (c) => when(a(c, 'separation') === 'separate_fridges' || a(c, 'separation') === 'raw_below', true) },
@@ -84,6 +90,8 @@ export const FIELD_RULES: FieldRule[] = [
   // Handwashing & cleaning
   ...['hw_basin', 'hw_soap', 'hw_towels'].map((fieldId) => ({ fieldId, value: (c: Ctx) => when(yes(c, 'handwash_basin'), true) })),
   { fieldId: 'hw_when', value: (c) => when(yes(c, 'hygiene_rules'), true) },
+  { fieldId: 'hw_signs', value: (c) => when(yes(c, 'handwash_signs'), true) },
+  { fieldId: 'ce_2stage', value: (c) => when(yes(c, 'two_stage_clean'), true) },
   { fieldId: 'ce_sanitiser', value: (c) => when(yes(c, 'sanitiser'), true) },
   { fieldId: 'ce_contact', value: (c) => when(yes(c, 'sanitiser'), true) },
   ...['ce_surfaces', 'cc_clear', 'cc_spills', 'cc_waste'].map((fieldId) => ({ fieldId, value: (c: Ctx) => when(yes(c, 'clean_as_go'), true) })),
@@ -91,6 +99,11 @@ export const FIELD_RULES: FieldRule[] = [
       'Staff clear and clean surfaces and equipment straight after each task, clean spills at once and remove waste regularly through the shift.') },
   { fieldId: 'cs_schedule', value: (c) => when(yes(c, 'cleaning_schedule'), true) },
   // Chilling
+  { fieldId: 'st_check_method', value: (c) => FRIDGE_CHECK[a(c, 'fridge_check_method') as string] },
+  ...['st_temp', 'st_records'].map((fieldId) => ({ fieldId, value: (c: Ctx) => when(yes(c, 'fridge_checks_recorded'), true) })),
+  { fieldId: 'cd_90min', value: (c) => when(yes(c, 'cool_90'), true) },
+  { fieldId: 'df_not_refreeze', value: (c) => when(yes(c, 'no_refreeze'), true) },
+  ...['fz_temp', 'fz_suitable'].map((fieldId) => ({ fieldId, value: (c: Ctx) => when(yes(c, 'freezer_minus18'), true) })),
   { fieldId: 'st_labelled', value: (c) => when(yes(c, 'labels'), true) },
   { fieldId: 'st_rotation', value: (c) => when(yes(c, 'fifo'), true) },
   { fieldId: 'sc_fifo', value: (c) => when(yes(c, 'fifo'), true) },
@@ -103,6 +116,12 @@ export const FIELD_RULES: FieldRule[] = [
   { fieldId: 'df_microwave', value: (c) => when(has(c, 'defrost_method', 'microwave'), true) },
   { fieldId: 'fz_labelled', value: (c) => when(yes(c, 'freeze_own') && yes(c, 'labels'), true) },
   // Cooking
+  { fieldId: 'ck_75c', value: (c) => when(has(c, 'cook_checks', 'core_75'), true) },
+  { fieldId: 'ck_visual', value: (c) => when(has(c, 'cook_checks', 'visual'), true) },
+  { fieldId: 'hh_63c', value: (c) => when(has(c, 'hot_hold_rules', 'above_63'), true) },
+  { fieldId: 'hh_2hr', value: (c) => when(has(c, 'hot_hold_rules', 'max_2h'), true) },
+  { fieldId: 'rh_75c', value: (c) => when(yes(c, 'reheat_75'), true) },
+  { fieldId: 'tp_sanitised', value: (c) => when(yes(c, 'probe_clean'), true) },
   { fieldId: 'ck_probe', value: (c) => when(has(c, 'processes', 'cook_hot') && hasEq(c, 'probe'), true) },
   { fieldId: 'hh_check', value: (c) => when(has(c, 'processes', 'hot_hold') && hasEq(c, 'probe'), true) },
   { fieldId: 'rh_once', value: (c) => when(yes(c, 'reheat_once'), true) },

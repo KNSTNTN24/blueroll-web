@@ -1,4 +1,4 @@
-import type { SectionId } from '@/lib/haccp-pack/methods'
+import { HACCP_METHODS, type SectionId } from '@/lib/haccp-pack/methods'
 import type { InfographicKey } from './types'
 
 export const SECTION_ORDER: SectionId[] = ['cross', 'cleaning', 'chilling', 'cooking', 'management']
@@ -36,4 +36,13 @@ export const METHOD_COPY: Record<string, Copy> = {
   training: { safetyPoint: 'Staff are trained and supervised for the work they do.', why: 'People can only follow safe methods they have been shown and understand.', infographic: [] },
   temperature_probes: { safetyPoint: 'Probe thermometers are clean, working and accurate.', why: 'Every temperature record depends on the probe. A faulty probe makes every record wrong.', infographic: [] },
   daily_diary: { safetyPoint: 'Checks are recorded every day the business is open.', why: 'Daily records show the system is working — this is what the inspector asks to see first.', infographic: [] },
+}
+
+/** "3.1" — section number in SECTION_ORDER, then the method's position within that section (HACCP_METHODS order). */
+export function methodRef(methodId: string): string {
+  const m = HACCP_METHODS.find((x) => x.id === methodId)
+  if (!m) return ''
+  const si = SECTION_ORDER.indexOf(m.section)
+  const mi = HACCP_METHODS.filter((x) => x.section === m.section).findIndex((x) => x.id === methodId)
+  return `${si + 1}.${mi + 1}`
 }

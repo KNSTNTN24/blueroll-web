@@ -130,7 +130,7 @@ export const HACCP_METHODS: HaccpMethod[] = [
       { id: 'st_rotation', label: 'Stock rotation (FIFO) followed', type: 'toggle' },
       { id: 'st_labelled', label: 'All items labelled with date of preparation/opening', type: 'toggle' },
       { id: 'st_method', label: 'Describe temperature monitoring method', type: 'text', autoSource: 'Checklists: temperature checking template' },
-      { id: 'st_check_method', label: 'How fridges are checked', type: 'select', options: ['Digital thermometer', 'Fridge display', 'Dial thermometer', 'Data logger'], autoSource: 'Checklists: temperature probe type' },
+      { id: 'st_check_method', label: 'How fridges are checked', type: 'select', options: ['Digital thermometer', 'Fridge display', 'Dial thermometer', 'Data logger'] },
     ],
   },
   {

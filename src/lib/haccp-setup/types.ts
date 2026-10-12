@@ -4,7 +4,7 @@ export type VenueType = 'restaurant' | 'coffee_shop' | 'takeaway' | 'bakery'
 export const EQUIPMENT_KINDS = ['fridge', 'freezer', 'display_chiller', 'blast_chiller', 'dishwasher', 'probe', 'hot_hold', 'other'] as const
 export type EquipmentKind = (typeof EQUIPMENT_KINDS)[number]
 export interface Equipment { kind: EquipmentKind; label: string }
-export type AnswerValue = boolean | string | string[] | Equipment[]
+export type AnswerValue = boolean | string | string[] | Equipment[] | Record<string, string>
 export type Answers = Record<string, AnswerValue>
 
 export type Cond =
@@ -15,19 +15,32 @@ export type Cond =
   | { all: Cond[] }
   | { any: Cond[] }
   | { not: Cond }
+  /** True when Blueroll has data of this kind for the site (see context.ts). */
+  | { data: DataSource | 'documents_needed' }
 
-export interface Option { value: string; label: string }
+export interface Option { value: string; label: string; hint?: string }
 export type AnswerSpec =
   | { kind: 'yes_no' }
   | { kind: 'single'; options: Option[] }
   | { kind: 'multi'; options: Option[] }
   | { kind: 'equipment_list' }
+  /** Confirm what Blueroll already knows (menu, recipes, suppliers, team, checklists). Answer: true | 'missing'. */
+  | { kind: 'confirm_data'; source: DataSource }
+  /** Attach documents Blueroll can't build. Answer: Record<fileFieldId, fileRefJSON>. */
+  | { kind: 'documents' }
+
+export type DataSource = 'raw_products' | 'menu_methods' | 'suppliers' | 'team' | 'checklists'
+export type DataFlags = Partial<Record<DataSource | 'documents_needed', boolean>>
 
 export interface Question {
   id: string
   text: string
   why: string
   section: SectionId
+  /** The SFBB safe method (pack method id) the question belongs to — drives context and examples. */
+  method: string
+  /** Pack field ids this question can set. */
+  fills: string[]
   answer: AnswerSpec
   showIf?: Cond
   defaultsByType?: Partial<Record<VenueType, AnswerValue>>
@@ -82,7 +95,7 @@ export interface DraftChecklist {
 export interface DraftItemAdd { templateId: string; key: string; templateName: string; item: LibItem }
 export type FieldStatus = 'new' | 'kept' | 'manual'
 export interface DraftField {
-  fieldId: string; methodId: string; label: string; type: 'toggle' | 'text' | 'select'
+  fieldId: string; methodId: string; label: string; type: 'toggle' | 'text' | 'select' | 'file'
   value: PackValue; status: FieldStatus; current?: PackValue
 }
 export interface ExistingTemplate { id: string; library_key: string; name: string; itemNames: string[] }

@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 import {
   LayoutDashboard, ClipboardCheck, ChefHat, UtensilsCrossed,
   ShieldAlert, BarChart3, Users, AlertTriangle, Truck, Factory,
-  FileText, ShieldCheck, Settings, ChevronsLeft, ChevronsRight, Wand2,
+  FileText, ShieldCheck, Settings, ChevronsLeft, ChevronsRight,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useAuth } from '@/hooks/use-auth'
@@ -21,7 +21,6 @@ const nav: NavGroup[] = [
   { section: 'Compliance', items: [
     { label: 'Checklists', href: '/checklists', icon: ClipboardCheck },
     { label: 'HACCP Pack', href: '/haccp-pack', icon: ShieldCheck },
-    { label: 'Set up my HACCP', href: '/haccp-setup', icon: Wand2, managerOnly: true },
     { label: 'Reports', href: '/reports', icon: BarChart3 },
   ]},
   { section: 'Kitchen', items: [

@@ -26,7 +26,7 @@ export function TempScale() {
         {segs.map((s, i) => <div key={i} style={{ width: `${s.w}%`, background: s.c }} />)}
       </div>
       <div style={{ position: 'relative', height: 14, fontSize: 11.5, color: '#3b3f47', fontVariantNumeric: 'tabular-nums' }}>
-        {ticks.map(([t, l]) => <span key={t} style={{ position: 'absolute', left: `${l}%` }}>{t}</span>)}
+        {ticks.map(([t, l]) => <span key={t} style={{ position: 'absolute', whiteSpace: 'nowrap', ...(l > 90 ? { right: 0 } : { left: `${l}%` }) }}>{t}</span>)}
       </div>
     </div>
   )

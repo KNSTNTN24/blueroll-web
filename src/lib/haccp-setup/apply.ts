@@ -8,6 +8,8 @@ export interface ApplyPayload {
   item_adds: { template_id: string; item: DraftItemAdd['item'] }[]
   pack: PackData | null
   summary: { checklists: string[]; item_adds: number; fields: string[] }
+  /** Create the selected checklists switched on (default: off, the owner switches them on in Checklists). */
+  activate: boolean
 }
 
 export const itemAddId = (a: DraftItemAdd) => `${a.templateId}:${a.item.name}`
@@ -21,7 +23,7 @@ export function defaultSelection(d: Draft): Selection {
   }
 }
 
-export function toApplyPayload(draft: Draft, sel: Selection, existing: ExistingState): ApplyPayload {
+export function toApplyPayload(draft: Draft, sel: Selection, existing: ExistingState, opts: { activate?: boolean } = {}): ApplyPayload {
   const checklists = draft.checklists.filter((c) => sel.checklistKeys.includes(c.key))
     .map((c) => { const out = { ...c }; delete out.similarTo; return out })
   const adds = draft.itemAdds.filter((a) => sel.itemAddIds.includes(itemAddId(a)))
@@ -32,5 +34,6 @@ export function toApplyPayload(draft: Draft, sel: Selection, existing: ExistingS
     item_adds: adds.map((a) => ({ template_id: a.templateId, item: a.item })),
     pack: fields.length ? mergePack(existing.pack, fields) : null,
     summary: { checklists: checklists.map((c) => c.key), item_adds: adds.length, fields: fields.map((f) => f.fieldId) },
+    activate: opts.activate === true,
   }
 }

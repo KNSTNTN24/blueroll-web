@@ -33,7 +33,7 @@ export interface AutoDataSources {
   recipes: RecipeSrc[]
   dishes: Dish[]
   suppliers: SupplierSrc[]
-  templates: { id: string; name: string; frequency: string; sfbb_section: string | null }[]
+  templates: { id: string; name: string; frequency: string; sfbb_section: string | null; library_key?: string | null; active?: boolean | null; site_id?: string | null }[]
   documents: { id: string; title: string; category: string | null }[]
   team: { full_name: string | null; role: string | null }[]
 }

@@ -3,13 +3,13 @@ import { QUESTIONS } from '../content/questions'
 import { visibleQuestions, effectiveAnswers, nextQuestion, suggestedAnswer, progressBySection } from '../engine'
 import type { Question } from '../types'
 
-const mini: Question[] = [
+const mini: Question[] = ([
   { id: 'a', text: 'A?', why: 'w', section: 'cooking', answer: { kind: 'yes_no' } },
   { id: 'b', text: 'B?', why: 'w', section: 'cooking', answer: { kind: 'yes_no' }, showIf: { q: 'a', eq: true } },
   { id: 'c', text: 'C?', why: 'w', section: 'chilling', answer: { kind: 'yes_no' }, showIf: { q: 'b', eq: true } },
   { id: 'd', text: 'D?', why: 'w', section: 'management', answer: { kind: 'single', options: [{ value: 'x', label: 'X' }] },
     defaultsByType: { bakery: 'x' } },
-]
+] as Omit<Question, 'method' | 'fills'>[]).map((q) => ({ ...q, method: 'cooking_safely', fills: [] }))
 
 describe('engine', () => {
   it('first question is the first unanswered visible one', () => {

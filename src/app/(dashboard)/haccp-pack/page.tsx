@@ -7,7 +7,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { HACCP_SECTIONS } from '@/lib/constants'
 import { type Dish } from '@/lib/dishes'
 import { computeAutoData, type AutoDataSources } from '@/lib/haccp-pack/auto-data'
-import { menuHasAllergens, packFields, type PackScope } from '@/lib/haccp-pack/scope'
+import { packFields, scopeFrom, type PackScope } from '@/lib/haccp-pack/scope'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import Link from 'next/link'
@@ -15,6 +15,7 @@ import { useAuth } from '@/hooks/use-auth'
 import { ChevronDown, FileText, X, Eye, Link2 } from 'lucide-react'
 import { DocumentPickerModal, type PickedDocument } from '@/components/shared/document-picker-modal'
 import { SiteSignoffBadge } from './site-signoff'
+import { SetupHero } from './setup-hero'
 import { AllSitesDashboard } from './all-sites-dashboard'
 import { HACCP_METHODS, type FieldType, type SectionId, type HaccpField, type HaccpMethod } from '@/lib/haccp-pack/methods'
 
@@ -229,7 +230,7 @@ export default function HaccpPackPage() {
         .eq('business_id', businessId)
       return data ?? []
     },
-    enabled: !!businessId && autoFillEnabled,
+    enabled: !!businessId,
   })
 
   const { data: checklistTemplates } = useQuery({
@@ -237,11 +238,11 @@ export default function HaccpPackPage() {
     queryFn: async () => {
       const { data } = await supabase
         .from('checklist_templates')
-        .select('id, name, frequency, sfbb_section')
+        .select('id, name, frequency, sfbb_section, library_key, active, site_id')
         .eq('business_id', businessId)
       return data ?? []
     },
-    enabled: !!businessId && autoFillEnabled,
+    enabled: !!businessId,
   })
 
   const { data: documents } = useQuery({
@@ -331,14 +332,16 @@ export default function HaccpPackPage() {
         updated.overrides = { ...updated.overrides, [fieldId]: true }
         break
       case 'file':
+        // Choosing, replacing or removing a document is the owner's call: setup never puts its own back.
         updated.files = { ...updated.files, [fieldId]: value as string }
+        updated.overrides = { ...updated.overrides, [fieldId]: true }
         break
       case 'select':
         updated.selects = { ...updated.selects, [fieldId]: value as string }
         updated.overrides = { ...updated.overrides, [fieldId]: true }
         break
     }
-    if (type !== 'file' && updated.sources?.[fieldId]) {
+    if (updated.sources?.[fieldId]) {
       updated.sources = { ...updated.sources }
       delete updated.sources[fieldId]
     }
@@ -364,7 +367,10 @@ export default function HaccpPackPage() {
   })
 
   // Allergens come from the menu: when it has them, the pack doesn't ask for a matrix file.
-  const scope = useMemo<PackScope>(() => ({ menuHasAllergens: menuHasAllergens(dishes ?? [], packSiteId) }), [dishes, packSiteId])
+  const scope = useMemo<PackScope>(
+    () => scopeFrom({ dishes: dishes ?? [], siteId: packSiteId, templates: checklistTemplates ?? [], suppliers: suppliersData ?? [] }),
+    [dishes, packSiteId, checklistTemplates, suppliersData],
+  )
 
   // ── Section progress ──
   const sectionProgress = useMemo(() => {
@@ -404,12 +410,12 @@ export default function HaccpPackPage() {
         files: inner.files ?? {}, selects: inner.selects ?? {},
         overrides: inner.overrides ?? {}, sources: inner.sources ?? {},
       }
-      const p = computeTotalProgress(rowData, autoData, autoFillEnabled, { menuHasAllergens: menuHasAllergens(dishes ?? [], r.site_id) })
+      const p = computeTotalProgress(rowData, autoData, autoFillEnabled, scopeFrom({ dishes: dishes ?? [], siteId: r.site_id, templates: checklistTemplates ?? [], suppliers: suppliersData ?? [] }))
       m[r.site_id] = { filled: p.filled, total: p.total, pct: p.pct }
     }
     return m
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allPackRows, autoData, autoFillEnabled, dishes])
+  }, [allPackRows, autoData, autoFillEnabled, dishes, checklistTemplates, suppliersData])
 
   // ── 4-week review ──
   const reviewInfo = useMemo(() => {
@@ -538,10 +544,6 @@ export default function HaccpPackPage() {
             </span>
           </button>
 
-          {isManager && (
-            <Link href="/haccp-setup" className="rounded-md border px-3 py-1.5 text-[13px] font-medium">Set up with questions</Link>
-          )}
-
           <Link
             href="/haccp-pack/document"
             className="inline-flex h-8 items-center gap-2 rounded-lg bg-foreground px-3.5 text-[12px] font-medium text-background transition-colors hover:bg-foreground/90"
@@ -551,6 +553,14 @@ export default function HaccpPackPage() {
           </Link>
         </div>
       </div>
+
+      {isManager && packSiteId && <SetupHero businessId={businessId} siteId={packSiteId} />}
+      {isManager && packSiteId && (
+        <div className="flex flex-col gap-0.5">
+          <h2 className="text-[15px] font-bold">Edit the pack by hand</h2>
+          <p className="text-[12.5px] text-muted-foreground">For quick fixes after setup. Answers from Set up my HACCP are marked “From setup”.</p>
+        </div>
+      )}
 
       {/* \u2500\u2500 Progress strip \u2500\u2500 */}
       <div className="flex items-center gap-4">
@@ -850,6 +860,7 @@ function FieldRenderer({
             )}
           >
             {field.label}
+            {data.sources?.[field.id] === 'questionnaire' && <span className="ml-2 rounded-full bg-[#e9f4ee] px-2 py-0.5 text-[11px] font-semibold text-[#1f7a52]">From setup</span>}
           </span>
         </label>
       )
@@ -857,7 +868,7 @@ function FieldRenderer({
     case 'text':
       return (
         <div className="space-y-2 py-3">
-          <label className="block text-[13px] font-medium text-foreground">{field.label}</label>
+          <label className="block text-[13px] font-medium text-foreground">{field.label}{data.sources?.[field.id] === 'questionnaire' && <span className="ml-2 rounded-full bg-[#e9f4ee] px-2 py-0.5 text-[11px] font-semibold text-[#1f7a52]">From setup</span>}</label>
 
           {showAuto ? (
             <div

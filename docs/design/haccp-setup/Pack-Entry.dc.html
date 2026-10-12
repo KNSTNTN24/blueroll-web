@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>HACCP Pack — set up entry</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#f6f7f8}
+a{color:#1f7a52}a:hover{color:#16181d}
+button{font-family:inherit}
+</style>
+</helmet>
+<div style="min-height: 760px; display: flex; flex-wrap: wrap; background: #f6f7f8; font-family: Geist, system-ui, sans-serif; color: #16181d">
+
+  <nav aria-label="Main" style="flex: 0 0 220px; background: #14161b; color: #a3a8b0; padding: 18px 12px; display: flex; flex-direction: column; gap: 4px; box-sizing: border-box">
+    <div style="display: flex; align-items: center; gap: 8px; padding: 4px 10px 18px; color: #ffffff; font-weight: 700; font-size: 15px">
+      <svg viewBox="100 50 370 430" width="16" height="19" aria-hidden="true"><path fill="#ffffff" d="M241 97V203.426C254.606 198.617 269.247 196 284.5 196C356.573 196 415 254.427 415 326.5C415 398.573 356.573 457 284.5 457C212.594 457 154.272 398.843 154.003 327H154V97H241ZM284.5 283C260.476 283 241 302.476 241 326.5C241 350.524 260.476 370 284.5 370C308.524 370 328 350.524 328 326.5C328 302.476 308.524 283 284.5 283Z"></path></svg>
+      Blueroll
+    </div>
+    <sc-for list="{{nav}}" as="n" hint-placeholder-count="9">
+      <a href="#" style="display: block; padding: 9px 10px; border-radius: 8px; font-size: 13.5px; font-weight: 500; text-decoration: none; color: {{n.fg}}; background: {{n.bg}}">{{n.label}}</a>
+    </sc-for>
+  </nav>
+
+  <main style="flex: 999 1 640px; min-width: 0; padding: 22px 28px 40px; box-sizing: border-box; display: flex; flex-direction: column; gap: 18px; max-width: 1100px">
+
+    <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 12px">
+      <div style="display: flex; flex-direction: column; gap: 4px">
+        <h1 style="margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.5px">HACCP Pack</h1>
+        <div style="font-size: 13px; color: #5f6670">The Mall · Safer Food, Better Business · Last reviewed 3 Oct 2026</div>
+      </div>
+      <div style="display: flex; flex-wrap: wrap; gap: 8px">
+        <a href="#" style="min-height: 40px; display: inline-flex; align-items: center; gap: 8px; padding: 0 14px; border-radius: 10px; border: 1px solid #e2e4e8; background: #ffffff; font-size: 13px; font-weight: 600; color: #16181d; text-decoration: none">View document</a>
+      </div>
+    </div>
+
+    <section aria-labelledby="setup-cta" style="background: #1f7a52; color: #ffffff; border-radius: 16px; padding: 26px 28px; display: flex; flex-wrap: wrap; gap: 24px; align-items: center; justify-content: space-between">
+      <div style="flex: 1 1 420px; display: flex; flex-direction: column; gap: 10px">
+        <div style="font-size: 12px; font-weight: 700; letter-spacing: 1.6px; text-transform: uppercase; color: rgba(255,255,255,0.88)">Recommended</div>
+        <h2 id="setup-cta" style="margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -0.6px; line-height: 1.15">Set up my HACCP</h2>
+        <p style="margin: 0; font-size: 15px; line-height: 1.55; color: rgba(255,255,255,0.92); max-width: 560px">Answer plain questions about how your kitchen works. We fill your pack from the answers, your menu, recipes and suppliers, and switch on the checks the FSA expects.</p>
+        <div style="display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; color: rgba(255,255,255,0.9)">
+          <span>About 15 minutes</span><span>·</span><span>Save and come back any time</span><span>·</span><span>An assistant answers questions as you go</span>
+        </div>
+      </div>
+      <div style="flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-start; gap: 10px">
+        <a href="Main.dc.html" style="min-height: 48px; display: inline-flex; align-items: center; gap: 10px; padding: 0 22px; border-radius: 12px; background: #ffffff; color: #1f7a52; font-size: 15px; font-weight: 800; text-decoration: none">Continue — 53% done</a>
+        <span style="font-size: 12.5px; color: rgba(255,255,255,0.88)">Next: Chilling, 6 questions left</span>
+      </div>
+    </section>
+
+    <div style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px">
+      <sc-for list="{{sections}}" as="s" hint-placeholder-count="5">
+        <div style="background: #ffffff; border: 1px solid #e9eaed; border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 8px">
+          <div style="display: flex; justify-content: space-between; align-items: center">
+            <dc-import name="SectionIcon" icon="{{s.icon}}" size="32" tone="tint" hint-size="32px,32px"></dc-import>
+            <span style="font-size: 12px; font-weight: 600; color: #5f6670">{{s.num}}</span>
+          </div>
+          <div style="font-size: 13.5px; font-weight: 700; line-height: 1.25; min-height: 34px">{{s.name}}</div>
+          <div style="height: 4px; border-radius: 9px; background: #e9eaed; overflow: hidden"><div style="height: 4px; background: #1f9d63; width: {{s.pct}}"></div></div>
+          <div style="font-size: 12px; color: #3b3f47">{{s.pct}} · {{s.state}}</div>
+        </div>
+      </sc-for>
+    </div>
+
+    <section aria-labelledby="by-hand" style="background: #ffffff; border: 1px solid #e9eaed; border-radius: 14px; overflow: hidden">
+      <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid #e9eaed">
+        <div style="display: flex; flex-direction: column; gap: 2px">
+          <h2 id="by-hand" style="margin: 0; font-size: 15px; font-weight: 700">Edit the pack by hand</h2>
+          <span style="font-size: 12.5px; color: #5f6670">For quick fixes after setup. Answers from Set up my HACCP show a “From setup” mark.</span>
+        </div>
+        <div style="display: flex; gap: 4px; flex-wrap: wrap">
+          <sc-for list="{{tabs}}" as="t" hint-placeholder-count="5">
+            <button type="button" style="min-height: 34px; padding: 0 12px; border-radius: 8px; border: 0; background: {{t.bg}}; color: {{t.fg}}; font-size: 12.5px; font-weight: 600">{{t.label}}</button>
+          </sc-for>
+        </div>
+      </div>
+      <sc-for list="{{methods}}" as="m" hint-placeholder-count="4">
+        <div style="display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 14px; align-items: center; padding: 13px 18px; border-bottom: 1px solid #f1f2f4">
+          <span style="font-size: 14px; font-weight: 600">{{m.name}}</span>
+          <span style="font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 999px; background: {{m.pillBg}}; color: {{m.pillFg}}">{{m.status}}</span>
+          <span style="font-size: 12.5px; color: #5f6670; font-variant-numeric: tabular-nums">{{m.count}}</span>
+        </div>
+      </sc-for>
+    </section>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":760}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const navItems = ['Dashboard', 'Checklists', 'Recipes', 'Menu & allergens', 'Suppliers', 'Documents', 'HACCP Pack', 'Reports', 'Team'];
+    const ok = { pillBg: '#e9f4ee', pillFg: '#1f7a52' };
+    const part = { pillBg: '#fbf1e1', pillFg: '#8a5a0c' };
+    const open = { pillBg: '#f1f2f4', pillFg: '#3b3f47' };
+    return {
+      nav: navItems.map((l) => ({ label: l, fg: l === 'HACCP Pack' ? '#ffffff' : '#a3a8b0', bg: l === 'HACCP Pack' ? '#1f9d63' : 'transparent' })),
+      sections: [
+        { num: '1', icon: 'cross', name: 'Cross-contamination', pct: '100%', state: 'done' },
+        { num: '2', icon: 'cleaning', name: 'Cleaning', pct: '100%', state: 'done' },
+        { num: '3', icon: 'chilling', name: 'Chilling', pct: '33%', state: 'in progress' },
+        { num: '4', icon: 'cooking', name: 'Cooking', pct: '0%', state: 'not started' },
+        { num: '5', icon: 'management', name: 'Management', pct: '0%', state: 'not started' }
+      ],
+      tabs: [
+        { label: 'Cross-contamination', bg: '#16181d', fg: '#ffffff' },
+        { label: 'Cleaning', bg: 'transparent', fg: '#3b3f47' },
+        { label: 'Chilling', bg: 'transparent', fg: '#3b3f47' },
+        { label: 'Cooking', bg: 'transparent', fg: '#3b3f47' },
+        { label: 'Management', bg: 'transparent', fg: '#3b3f47' }
+      ],
+      methods: [
+        { name: 'Personal Hygiene', status: 'In place', count: '8 / 8', ...ok },
+        { name: 'Cloths', status: 'In place', count: '5 / 5', ...ok },
+        { name: 'Separating Foods', status: 'From setup', count: '6 / 6', ...ok },
+        { name: 'Food Allergies', status: 'Matrix from menu', count: '4 / 4', ...ok },
+        { name: 'Contamination Prevention', status: '2 of 3', count: '4 / 5', ...part },
+        { name: 'Pest Control', status: 'Attach contract', count: '3 / 5', ...open }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

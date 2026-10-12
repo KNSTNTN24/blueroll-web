@@ -1,5 +1,5 @@
 // src/lib/haccp-setup/draft.ts
-import type { Answers, Draft, Equipment, ExistingState } from './types'
+import type { Answers, Draft, Equipment, ExistingState, DataFlags } from './types'
 import { QUESTIONS } from './content/questions'
 import { effectiveAnswers } from './engine'
 import { buildChecklistDraft } from './draft-checklists'
@@ -19,8 +19,8 @@ function notesFor(a: Answers): string[] {
   return notes
 }
 
-export function buildDraft(input: { answers: Answers; scotland: boolean; existing: ExistingState }): Draft {
-  const answers = effectiveAnswers(QUESTIONS, input.answers)
+export function buildDraft(input: { answers: Answers; scotland: boolean; existing: ExistingState; flags?: DataFlags }): Draft {
+  const answers = effectiveAnswers(QUESTIONS, input.answers, input.flags)
   const ctx = { answers, scotland: input.scotland }
   const cl = buildChecklistDraft(ctx, input.existing.templates, input.existing.others ?? [])
   return {

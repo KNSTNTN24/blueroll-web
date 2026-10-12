@@ -3,10 +3,10 @@ import { buildPlan } from './build'
 import { makeBundle } from './fixtures'
 import { HACCP_METHODS } from '@/lib/haccp-pack/methods'
 
-// fa_allergens_list is retired from the plan (the matrix replaces it).
+// fa_allergens_list is retired (the matrix replaces it) and dd_file is never asked (Blueroll is the diary).
 const allergenDish = (name: string, site_ids: string[]) => ({ id: name, name, category: null, active: true, allergen_source: 'manual' as const,
   recipe_id: null, declared_allergens: ['milk'], may_contain: [], dietary: [], attested_by_name: null, attested_at: null, site_ids, site_categories: {} })
-const TOTAL = HACCP_METHODS.reduce((n, m) => n + m.fields.length, 0) - 1
+const TOTAL = HACCP_METHODS.reduce((n, m) => n + m.fields.length, 0) - 2
 
 describe('buildPlan', () => {
   it('renders an empty pack as all-open without NaN', () => {
@@ -126,6 +126,18 @@ describe('buildPlan', () => {
     const d = buildPlan(b)
     expect(d.sections[0].methods.find((m) => m.id === 'food_allergies')!.attachments).toEqual([{ title: 'Matrix.pdf' }])
     expect(d.filled).toBe(0)
+  })
+
+  it('does not ask for a supplier list file when suppliers are in Blueroll', () => {
+    const b = makeBundle({ sources: { suppliers: [{ id: 's', name: 'Meadow Dairy', contact_name: null, phone: null, email: null, delivery_days: null }] } })
+    const d = buildPlan(b)
+    expect(d.sections[4].methods.find((m) => m.id === 'suppliers')!.open.map((o) => o.label)).not.toContain('Upload supplier list or approved supplier document')
+    expect(d.total).toBe(TOTAL - 1)
+  })
+
+  it('does not ask for a cleaning schedule file when a cleaning checklist is active', () => {
+    const b = makeBundle({ sources: { templates: [{ id: 't', name: 'Weekly Deep Clean', frequency: 'weekly', sfbb_section: 'cleaning' }] } })
+    expect(buildPlan(b).sections[1].methods.find((m) => m.id === 'cleaning_schedule')!.open.map((o) => o.label)).not.toContain('Upload cleaning schedule document')
   })
 
   it('names the file and footer', () => {

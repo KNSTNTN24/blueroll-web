@@ -150,7 +150,7 @@ export async function loadBundle(client: SupabaseClient, businessId: string, sit
     signoff: signoff ? { signedByName: signoff.signed_by_name ?? null, signedAt: signoff.signed_at } : null,
     sources: {
       recipes, dishes, suppliers,
-      templates: templates.map((t) => ({ id: t.id, name: t.name, frequency: t.frequency, sfbb_section: t.sfbb_section ?? null })),
+      templates: templates.map((t) => ({ id: t.id, name: t.name, frequency: t.frequency, sfbb_section: t.sfbb_section ?? null, library_key: t.library_key ?? null })),
       documents: planDocuments(documents as never[]),
       team: planTeam(team as never[]).map((p) => ({ full_name: p.full_name ?? null, role: p.role ?? null })),
     },

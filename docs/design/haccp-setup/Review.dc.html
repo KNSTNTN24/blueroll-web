@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Set up my HACCP — review and apply</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#f6f7f8}
+a{color:#1f7a52}a:hover{color:#16181d}
+button{font-family:inherit}
+</style>
+</helmet>
+<div style="min-height: 940px; display: flex; flex-wrap: wrap; background: #f6f7f8; font-family: Geist, system-ui, sans-serif; color: #16181d">
+
+  <nav aria-label="Main" style="flex: 0 0 220px; background: #14161b; padding: 18px 12px; display: flex; flex-direction: column; gap: 4px; box-sizing: border-box">
+    <div style="display: flex; align-items: center; gap: 8px; padding: 4px 10px 18px; color: #ffffff; font-weight: 700; font-size: 15px">
+      <svg viewBox="100 50 370 430" width="16" height="19" aria-hidden="true"><path fill="#ffffff" d="M241 97V203.426C254.606 198.617 269.247 196 284.5 196C356.573 196 415 254.427 415 326.5C415 398.573 356.573 457 284.5 457C212.594 457 154.272 398.843 154.003 327H154V97H241ZM284.5 283C260.476 283 241 302.476 241 326.5C241 350.524 260.476 370 284.5 370C308.524 370 328 350.524 328 326.5C328 302.476 308.524 283 284.5 283Z"></path></svg>
+      Blueroll
+    </div>
+    <a href="#" style="display: block; padding: 9px 10px; border-radius: 8px; font-size: 13.5px; text-decoration: none; color: #a3a8b0">Dashboard</a>
+    <a href="#" style="display: block; padding: 9px 10px; border-radius: 8px; font-size: 13.5px; text-decoration: none; color: #a3a8b0">Checklists</a>
+    <a href="#" style="display: block; padding: 9px 10px; border-radius: 8px; font-size: 13.5px; text-decoration: none; color: #ffffff; background: #1f9d63">HACCP Pack</a>
+  </nav>
+
+  <main style="flex: 999 1 640px; min-width: 0; padding: 22px 28px 40px; box-sizing: border-box; display: flex; flex-direction: column; gap: 16px; max-width: 1040px">
+    <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 12px">
+      <div style="display: flex; flex-direction: column; gap: 4px">
+        <div style="font-size: 12.5px; color: #5f6670">Set up my HACCP / Review &amp; apply</div>
+        <h1 style="margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.5px">Your HACCP plan is ready to fill in</h1>
+        <p style="margin: 0; font-size: 14px; color: #3b3f47">Nothing is saved to your pack or checklists until you press Apply. Your own edits in the pack are never overwritten.</p>
+      </div>
+      <div style="display: flex; align-items: baseline; gap: 6px">
+        <span style="font-size: 40px; font-weight: 800; letter-spacing: -1px; color: #1f7a52">96%</span>
+        <span style="font-size: 13px; color: #3b3f47">113 of 118 points</span>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px">
+      <sc-for list="{{sections}}" as="s" hint-placeholder-count="5">
+        <div style="background: #ffffff; border: 1px solid #e9eaed; border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 8px">
+          <dc-import name="SectionIcon" icon="{{s.icon}}" size="32" tone="tint" hint-size="32px,32px"></dc-import>
+          <div style="font-size: 13.5px; font-weight: 700; line-height: 1.25; min-height: 34px">{{s.name}}</div>
+          <div style="display: flex; height: 6px; border-radius: 9px; overflow: hidden; background: #e9eaed">
+            <div style="width: {{s.answers}}; background: #1f9d63"></div><div style="width: {{s.blueroll}}; background: #a8d8bf"></div>
+          </div>
+          <div style="font-size: 12px; line-height: 1.4; color: #3b3f47">{{s.note}}</div>
+        </div>
+      </sc-for>
+    </div>
+    <div style="display: flex; gap: 16px; font-size: 12px; color: #5f6670">
+      <span style="display: inline-flex; align-items: center; gap: 6px"><span style="width: 10px; height: 10px; border-radius: 2px; background: #1f9d63"></span>From your answers</span>
+      <span style="display: inline-flex; align-items: center; gap: 6px"><span style="width: 10px; height: 10px; border-radius: 2px; background: #a8d8bf"></span>From Blueroll (menu, recipes, suppliers, team)</span>
+      <span style="display: inline-flex; align-items: center; gap: 6px"><span style="width: 10px; height: 10px; border-radius: 2px; background: #e9eaed"></span>Still open</span>
+    </div>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start">
+      <section aria-labelledby="checks" style="flex: 1 1 420px; background: #ffffff; border: 1px solid #e9eaed; border-radius: 14px; overflow: hidden">
+        <h2 id="checks" style="margin: 0; padding: 14px 18px; font-size: 14px; font-weight: 700; border-bottom: 1px solid #e9eaed">Checks we’ll add (switched off until you turn them on)</h2>
+        <sc-for list="{{checks}}" as="c" hint-placeholder-count="6">
+          <label style="display: flex; gap: 12px; align-items: center; padding: 11px 18px; border-bottom: 1px solid #f1f2f4; min-height: 44px">
+            <input type="checkbox" checked="{{c.on}}" style="width: 18px; height: 18px; accent-color: #1f9d63; margin: 0">
+            <span style="flex: 1; display: flex; flex-direction: column; gap: 2px">
+              <span style="font-size: 13.5px; font-weight: 600">{{c.name}}</span>
+              <span style="font-size: 12px; color: #5f6670">{{c.why}}</span>
+            </span>
+            <span style="font-size: 12px; color: #3b3f47">{{c.freq}}</span>
+          </label>
+        </sc-for>
+      </section>
+
+      <section aria-labelledby="left" style="flex: 1 1 300px; display: flex; flex-direction: column; gap: 16px">
+        <div style="background: #ffffff; border: 1px solid #e9eaed; border-radius: 14px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px">
+          <h2 id="left" style="margin: 0; font-size: 14px; font-weight: 700">Still open · 5</h2>
+          <sc-for list="{{open}}" as="o" hint-placeholder-count="5">
+            <div style="display: flex; gap: 10px; padding: 9px 12px; border-radius: 8px; background: #fbf1e1; font-size: 13px; line-height: 1.45">
+              <span style="font-weight: 700; color: #8a5a0c; white-space: nowrap">{{o.ref}}</span><span>{{o.text}}</span>
+            </div>
+          </sc-for>
+          <div style="font-size: 12px; color: #5f6670">You can apply now and finish these later from the pack.</div>
+        </div>
+        <div style="background: #1f7a52; color: #ffffff; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 12px">
+          <div style="font-size: 15px; font-weight: 700">Fill my pack and add the checks</div>
+          <div style="font-size: 13px; line-height: 1.5; color: rgba(255,255,255,0.9)">Then open your HACCP Plan, read it through and sign it off.</div>
+          <button type="button" style="min-height: 48px; border-radius: 12px; border: 0; background: #ffffff; color: #1f7a52; font-size: 15px; font-weight: 800">Apply</button>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":940}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      sections: [
+        { icon: 'cross', name: 'Cross-contamination', answers: '72%', blueroll: '28%', note: 'All 34 points' },
+        { icon: 'cleaning', name: 'Cleaning', answers: '100%', blueroll: '0%', note: 'All 15 points' },
+        { icon: 'chilling', name: 'Chilling', answers: '68%', blueroll: '21%', note: '17 of 19 · 2 open' },
+        { icon: 'cooking', name: 'Cooking', answers: '58%', blueroll: '38%', note: '25 of 26 · 1 open' },
+        { icon: 'management', name: 'Management', answers: '62%', blueroll: '29%', note: '22 of 24 · 2 open' }
+      ],
+      checks: [
+        { name: 'Fridge & freezer temperatures', why: 'You check fridges with a digital probe', freq: 'Daily · AM, PM', on: true },
+        { name: 'Cooling record', why: 'You cool cooked food to use later', freq: 'Daily', on: true },
+        { name: 'Cooking temperatures', why: 'You cook food from raw', freq: 'Daily', on: true },
+        { name: 'Hot holding', why: 'You keep food hot for service', freq: 'Every 2 hours', on: true },
+        { name: 'Probe calibration', why: 'You have a probe thermometer', freq: 'Monthly', on: true },
+        { name: '4-weekly HACCP review', why: 'SFBB asks for a review every 4 weeks', freq: 'Every 4 weeks', on: true }
+      ],
+      open: [
+        { ref: '3.2', text: 'Confirm food is cooled within 90 minutes' },
+        { ref: '3.3', text: 'List products that need defrosting' },
+        { ref: '4.2', text: 'Rice: cooled within 1 hour?' },
+        { ref: '5.5', text: 'Attach probe calibration record (or calibrate in Blueroll)' },
+        { ref: '5.4', text: 'Confirm certificates are current' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>
