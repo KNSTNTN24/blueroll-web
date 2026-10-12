@@ -103,7 +103,7 @@ describe('parseDraftMethodResponse', () => {
     expect(r.confirm!.question).toHaveLength(200)
   })
   it('returns an empty result for an empty draft or a malformed response', () => {
-    const empty = { draft: [], ticks: [], confirm: null, sources: [] }
+    const empty = { draft: [], ticks: [], confirm: null, sources: [], dropped: 0 }
     expect(parseDraftMethodResponse(tool({ draft: [], ticks: [{ id: 'cd_fridge', state: 'yes' }], source_ids: [] }), spec, OWN, [])).toEqual(empty)
     expect(parseDraftMethodResponse({ content: 'nope' }, spec, OWN, [])).toEqual(empty)
   })
@@ -111,9 +111,34 @@ describe('parseDraftMethodResponse', () => {
 
 describe('client type', () => {
   it('client and server result types match', () => {
-    const s: ServerResult = { draft: [], ticks: [], confirm: null, sources: [] }
+    const s: ServerResult = { draft: [], ticks: [], confirm: null, sources: [], dropped: 0 }
     const c: ClientResult = s
     const back: ServerResult = c
     expect(back).toBe(s)
+  })
+})
+
+describe('number guard — units and counts', () => {
+  const draftOf = (own: string, sentences: string[]) =>
+    parseDraftMethodResponse(tool({ draft: sentences, ticks: [], source_ids: [] }), spec, own, [])
+  it('a number the owner used for something else does not ground a time ("level 2" ≠ "2 hours")', () => {
+    const r = draftOf('all chefs have level 2 food hygiene, rice cooled in trays', ['All chefs have Level 2 food hygiene.', 'Food is cooled within 2 hours.'])
+    expect(r.draft).toEqual(['All chefs have Level 2 food hygiene.'])
+  })
+  it('a time the owner wrote, in words or digits, grounds the same time', () => {
+    expect(draftOf('we cool it for 2 hours', ['Food is cooled within 2 hours.']).draft).toHaveLength(1)
+    expect(draftOf('rice we bin after one day', ['Cooked rice is thrown away after 1 day.']).draft).toHaveLength(1)
+    expect(draftOf('freezer is at minus eighteen degrees', ['The freezer runs at -18°C.']).draft).toHaveLength(1)
+  })
+  it('reads more number words', () => {
+    expect([...numbersIn('eighty fifty seventeen')].sort()).toEqual(['17', '50', '80'])
+  })
+  it('counts the sentences it dropped', () => {
+    const r = draftOf('cool for an hour and a half then fridge', ['Food is cooled for 90 minutes.', 'Then it goes in the fridge.'])
+    expect(r.draft).toEqual(['Then it goes in the fridge.'])
+    expect(r.dropped).toBe(1)
+    const all = draftOf('cool for an hour and a half', ['Food is cooled for 90 minutes.'])
+    expect(all.draft).toEqual([])
+    expect(all.dropped).toBe(1)
   })
 })
