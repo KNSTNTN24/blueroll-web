@@ -64,6 +64,9 @@ const RAW: RawQuestion[] = [
   { id: 'colour_boards', section: 'cross', text: 'Do you use separate (colour-coded) boards and utensils for raw and ready-to-eat food?',
     why: 'Shared boards and knives move bacteria from raw to ready-to-eat food.',
     showIf: { not: { q: 'separation', eq: 'no_raw' } }, answer: { kind: 'yes_no' } },
+  { id: 'confirm_raw_products', section: 'cross', text: 'These are the raw foods we found in your recipes. Is the list right?',
+    why: 'Your plan names the raw foods you handle, so it is clear what must be kept apart from ready-to-eat food.',
+    showIf: { data: 'raw_products' }, answer: { kind: 'confirm_data', source: 'raw_products' } },
   { id: 'hygiene_rules', section: 'cross',
     text: 'Do staff follow these rules: hair tied back, no jewellery except a plain band, short clean nails, cuts covered with a blue plaster, hands washed before handling food?',
     why: 'These are the SFBB personal hygiene basics an inspector will ask about.', answer: { kind: 'yes_no' } },
@@ -147,6 +150,9 @@ const RAW: RawQuestion[] = [
     ] } },
   { id: 'fridge_checks_recorded', section: 'chilling', text: 'Do you check and record fridge temperatures at least once a day?',
     why: 'A daily record is how you prove chilled food stayed cold.', answer: { kind: 'yes_no' } },
+  { id: 'confirm_checklists', section: 'chilling', text: 'These are your temperature checks in Blueroll. Are they the ones you use?',
+    why: 'Your plan points to the checklists that prove fridges and probes are checked.',
+    showIf: { data: 'checklists' }, answer: { kind: 'confirm_data', source: 'checklists' } },
   { id: 'labels', section: 'chilling', text: 'Do you label food with the date it was prepared or opened?',
     why: 'Labels make sure food is used within its safe life.', answer: { kind: 'yes_no' } },
   { id: 'fifo', section: 'chilling', text: 'Do you rotate stock (first in, first out) and throw away food past its use-by date?',
@@ -211,16 +217,28 @@ const RAW: RawQuestion[] = [
     showIf: HAS_PROBE, answer: { kind: 'yes_no' } },
   { id: 'new_dishes', section: 'cooking', text: 'Before a new dish goes on the menu, do you check how it is cooked and update the allergen information?',
     why: 'SFBB Menu checks.', showIf: HOT, answer: { kind: 'yes_no' } },
+  { id: 'confirm_menu_methods', section: 'cooking', text: 'We grouped your dishes by how they are cooked, cooled, reheated and kept hot. Does this look right?',
+    why: 'The plan lists which dishes go through each step, so an inspector can see each one has a safe method.',
+    showIf: { data: 'menu_methods' }, answer: { kind: 'confirm_data', source: 'menu_methods' } },
 
   // ── Management ──
   { id: 'opening_closing', section: 'management', text: 'Will you complete opening and closing checks every day?',
     why: 'Opening and closing checks are the core of the SFBB diary. Blueroll will create them for you.', answer: { kind: 'yes_no' } },
   { id: 'approved_suppliers', section: 'management', text: 'Do you only buy food from reputable, registered suppliers?',
     why: 'You must be able to trace where your food comes from.', answer: { kind: 'yes_no' } },
+  { id: 'confirm_suppliers', section: 'management', text: 'These are your suppliers in Blueroll. Is the list complete?',
+    why: 'Your plan lists who supplies your food and when they deliver.',
+    showIf: { data: 'suppliers' }, answer: { kind: 'confirm_data', source: 'suppliers' } },
   { id: 'induction', section: 'management', text: 'Does every new member of staff get food safety training before handling food?',
     why: 'SFBB Training: inspectors ask how new staff are trained.', answer: { kind: 'yes_no' } },
+  { id: 'confirm_team', section: 'management', text: 'These people are responsible for food safety and training. Is that right?',
+    why: 'SFBB asks who makes sure staff are trained and supervised.',
+    showIf: { data: 'team' }, answer: { kind: 'confirm_data', source: 'team' } },
   { id: 'diary', section: 'management', text: 'Will you use Blueroll as your daily food safety diary?',
     why: 'Completed checklists in Blueroll are your SFBB daily diary records.', answer: { kind: 'yes_no' } },
+  { id: 'documents', section: 'management', text: 'Attach the documents an inspector may ask to see.',
+    why: 'We only ask for documents Blueroll cannot build from your records.',
+    showIf: { data: 'documents_needed' }, answer: { kind: 'documents' } },
 ]
 
 /** Each question's SFBB method and the pack fields it can set (see content/haccp-mapping.ts). */
@@ -272,6 +290,12 @@ const META: Record<string, { method: string; fills: string[] }> = {
   approved_suppliers: { method: 'suppliers', fills: ['sup_approved'] },
   induction: { method: 'training', fills: ['tr_induction'] },
   diary: { method: 'daily_diary', fills: ['dd_kept'] },
+  confirm_raw_products: { method: 'separating_foods', fills: [] },
+  confirm_checklists: { method: 'chilled_storage', fills: [] },
+  confirm_menu_methods: { method: 'menu_checks', fills: [] },
+  confirm_suppliers: { method: 'suppliers', fills: [] },
+  confirm_team: { method: 'training', fills: [] },
+  documents: { method: 'pest_control', fills: ['pc_contract_file', 'tr_file', 'cs_file', 'oc_file', 'sup_file', 'fa_matrix_file'] },
 }
 
 export const QUESTIONS: Question[] = RAW.map((q) => {

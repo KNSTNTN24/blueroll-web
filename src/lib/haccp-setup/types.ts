@@ -15,6 +15,8 @@ export type Cond =
   | { all: Cond[] }
   | { any: Cond[] }
   | { not: Cond }
+  /** True when Blueroll has data of this kind for the site (see context.ts). */
+  | { data: DataSource | 'documents_needed' }
 
 export interface Option { value: string; label: string; hint?: string }
 export type AnswerSpec =
@@ -28,6 +30,7 @@ export type AnswerSpec =
   | { kind: 'documents' }
 
 export type DataSource = 'raw_products' | 'menu_methods' | 'suppliers' | 'team' | 'checklists'
+export type DataFlags = Partial<Record<DataSource | 'documents_needed', boolean>>
 
 export interface Question {
   id: string
