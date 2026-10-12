@@ -1,5 +1,5 @@
 // src/lib/whatsapp/__tests__/team-bot.test.ts
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { handleInbound, TEXT } from '../../../../supabase/functions/_shared/channels/bot'
 import { TEAM_TEXT } from '../../../../supabase/functions/_shared/channels/team-text'
 import type { TemplateItem } from '../../../../supabase/functions/_shared/checklists-core/types'
@@ -190,6 +190,64 @@ describe('submit — first submit wins', () => {
     await handleInbound(submit(ANNA.phone, 'tok1', { f0: '3' }, 'wamid.F'), f.d)
     await handleInbound(submit(ANNA.phone, 'tok1', { f0: '3' }, 'wamid.F'), f.d)
     expect(f.s.completionRows).toHaveLength(1)
+  })
+})
+
+describe('corrective forms (shared behaviour, ported from the role-based suite)', () => {
+  const fc = (f: ReturnType<typeof kitchen>) => f.sent.filter((m) => m.interactive?.action?.parameters?.flow_id === 'FC')
+  it('two out-of-range items → two corrective forms with their own tokens and response ids', async () => {
+    const f = kitchen()
+    f.items.tA = [TEMP_ITEM, FREEZER]
+    await handleInbound(tap(ANNA.phone, 'tfill:g1:tA'), f.d)
+    await handleInbound(submit(ANNA.phone, 'tok1', { f0: '9', f1: '-5' }), f.d)
+    expect(f.s.completionRows).toHaveLength(1)
+    expect(f.s.responses.map((r: any) => [r.item_id, r.corrective_status])).toEqual([['i1', 'needed'], ['i2', 'needed']])
+    const corr = fc(f)
+    expect(corr).toHaveLength(2)
+    expect(corr[0].interactive.action.parameters.flow_action_payload.data).toEqual({ item_name: 'Walk-in fridge', value_text: '9 °C (limit 0–5 °C)' })
+    expect(corr.map((m) => { const t = f.tokens.get(m.interactive.action.parameters.flow_token)!; return [t.kind, t.response_id] }))
+      .toEqual([['corrective', 'resp0'], ['corrective', 'resp1']])
+  })
+  it('no corrective Flow configured → completion still recorded (needed), no corrective form sent', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const f = fakeTeamBot({ templates: [FRIDGE, CLEAN], mappings: MAP.map((m) => ({ ...m })) }, { correctiveFlowId: () => '' })
+      await handleInbound(tap(ANNA.phone, 'tfill:g1:tA'), f.d)
+      await handleInbound(submit(ANNA.phone, 'tok1', { f0: '9' }), f.d)
+      expect(f.s.completionRows).toHaveLength(1)
+      expect(f.s.responses.map((r: any) => r.corrective_status)).toEqual(['needed'])
+      expect(f.sent.filter((m) => m.interactive?.type === 'flow' && m.interactive.action.parameters.flow_id !== 'F1')).toHaveLength(0)
+      expect(err).toHaveBeenCalled()
+    } finally { err.mockRestore() }
+  })
+  it('pending corrective forms re-offered on checks are capped at 3 (sites outside the person\'s teams skipped)', async () => {
+    const f = kitchen()
+    const mk = (i: number, site = 's1') => ({ response_id: `r${i}`, item: TEMP_ITEM, value: '9', site_id: site, template_id: 'tA' })
+    f.pending.push(mk(0, 'gone'), mk(1), mk(2), mk(3), mk(4))
+    await handleInbound(say(ANNA.phone, 'checks'), f.d)
+    expect(fc(f).map((m) => f.tokens.get(m.interactive.action.parameters.flow_token)!.response_id)).toEqual(['r1', 'r2', 'r3'])
+    expect(f.sent.at(-1).interactive.type).toBe('list')
+  })
+})
+
+describe('already closed is answered before the answers are checked', () => {
+  it('closed from the app → a blank submit gets "Already done", not "missing answers"', async () => {
+    const f = kitchen()
+    await handleInbound(tap(ANNA.phone, 'tfill:g1:tA'), f.d)
+    f.s.completions.push({ template_id: 'tA', site_id: 's1', completed_at: '2026-10-14T09:35:00Z', completed_by: BEN.profile_id })
+    await handleInbound(submit(ANNA.phone, 'tok1', {}), f.d)
+    expect(textOf(f.sent[1])).toBe('Already done ✓ by Ben 10:35')
+    expect(f.sent.map(textOf)).not.toContain(TEXT.missing(['Walk-in fridge']))
+    expect(f.tokens.size).toBe(1)   // no fresh form
+  })
+  it('someone else holds the take → "Already done ✓ by" them, no fresh form, nothing recorded', async () => {
+    const f = kitchen()
+    await handleInbound(tap(ANNA.phone, 'tfill:g1:tA'), f.d)
+    f.s.takes.set('g1|tA|s1|2026-10-14', { profile_id: BEN.profile_id, taken_at: '2026-10-14T09:38:00Z' })
+    await handleInbound(submit(ANNA.phone, 'tok1', {}), f.d)
+    expect(textOf(f.sent[1])).toBe('Already done ✓ by Ben 10:38')
+    expect(f.s.completionRows).toEqual([])
+    expect(f.tokens.size).toBe(1)
   })
 })
 

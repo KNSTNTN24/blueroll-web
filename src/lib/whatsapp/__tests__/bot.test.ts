@@ -81,6 +81,8 @@ describe('bot', () => {
     await handleInbound({ kind: 'flow', from, token: 'ct', response: { action: 'moved' }, id: 'z' }, f.d)
     expect(f.sent[0]).toEqual({ chat_id: '555', text: '⚠ Ashfield Row · Walk-in fridge 9 °C at 10:40 (Anna Smith). Action: Moved food to another fridge. — via Blueroll' })
     expect(f.sent[1]).toMatchObject({ to: '447700900999', template: { name: 'manager_alert' } })
+    expect(textOf(f.sent[2])).toBe(TEXT.correctiveThanks)
+    expect(f.logs.filter((l) => l.kind === 'alert').map((l) => [l.channel, l.billable])).toEqual([['telegram', false], ['whatsapp', true]])
   })
   it('the same inbound message delivered twice is handled once', async () => {
     const f = fake()

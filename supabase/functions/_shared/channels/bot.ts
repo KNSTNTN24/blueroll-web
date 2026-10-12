@@ -252,14 +252,12 @@ async function submitTeamForm(d: BotDeps, from: string, person: Person, tok: For
   const v = await teamView(d, team, site, now)
   const template = v.templates.find((t) => t.id === tok.template_id)
   if (!template) return reply(X.formExpired)
-  const items = await d.items(template.id)
-  const ids = tok.item_ids ?? []
-  // Items re-created since the form was sent (editor save) — answers can't be mapped safely: record nothing, resend.
-  const known = new Set(items.map((i) => i.id))
-  if (ids.some((x) => !known.has(x))) { await reply(X.checklistChanged); return sendTeamForm(d, from, person, template, team) }
-  const parsed = parseFormAnswers(ids, items, response)
-  if (parsed.missingRequired.length) { await reply(X.missing(parsed.missingRequired)); return sendTeamForm(d, from, person, template, team) }
-  // 2. A completion from any source already closed it, or someone else's submit takes it first.
+  // 2. Already closed — a completion from any source, or someone else's submit holds this period's take — is answered
+  //    before the answers are validated, so nobody is asked to refill a checklist that is already done.
+  const takenBy = async (owner: { profile_id: string | null; taken_at: string } | null) => {
+    const name = owner?.profile_id ? (await d.teams.firstNames([owner.profile_id])).get(owner.profile_id) ?? null : null
+    return alreadyDone(d, from, person, team, site, name, owner?.taken_at ?? now.toISOString())
+  }
   const open = v.state.open.find((x) => x.template.id === template.id)
   if (!open) {
     const last = v.state.done.find((x) => x.template.id === template.id)
@@ -267,17 +265,25 @@ async function submitTeamForm(d: BotDeps, from: string, person: Person, tok: For
   }
   const done = doneInPeriod(template, site.id, site.timezone, now, v.completions)
   const key = { group_id: team.id, template_id: template.id, site_id: site.id, period_key: takePeriodKey(template, open.period_key, done) }
-  if (!(await d.teams.claimTake(key, person.profile_id, now))) {
-    const owner = await d.teams.takeOwner(key)
-    const name = owner?.profile_id ? (await d.teams.firstNames([owner.profile_id])).get(owner.profile_id) ?? null : null
-    return alreadyDone(d, from, person, team, site, name, owner?.taken_at ?? now.toISOString())
-  }
+  const held = await d.teams.takeOwner(key)
+  if (held && held.profile_id !== person.profile_id) return takenBy(held)
+  const items = await d.items(template.id)
+  const ids = tok.item_ids ?? []
+  // Items re-created since the form was sent (editor save) — answers can't be mapped safely: record nothing, resend.
+  const known = new Set(items.map((i) => i.id))
+  if (ids.some((x) => !known.has(x))) { await reply(X.checklistChanged); return sendTeamForm(d, from, person, template, team) }
+  const parsed = parseFormAnswers(ids, items, response)
+  if (parsed.missingRequired.length) { await reply(X.missing(parsed.missingRequired)); return sendTeamForm(d, from, person, template, team) }
+  // The claim itself (atomic, across every team mapping it at this site): a concurrent submit may still win here.
+  if (!(await d.teams.claimTake(key, person.profile_id, now))) return takenBy(await d.teams.takeOwner(key))
   // 3. Record (out-of-range → corrective form → manager alert, unchanged).
   let rec: Awaited<ReturnType<typeof recordCompletion>>
   try {
     rec = await recordCompletion(d, { person, siteId: site.id, template, items, answers: parsed.answers, source: 'whatsapp', now })
   } catch (err) {
-    await d.teams.releaseTake(key, person.profile_id)   // the same form can be submitted again
+    // Free the checklist so it can be filled in again — from a NEW form (checks / Fill in): this token is already used,
+    // and Meta's retry of this submit is dropped as a duplicate inbound message, so this person gets no reply here.
+    await d.teams.releaseTake(key, person.profile_id)
     throw err
   }
   for (const fl of rec.flagged) {
