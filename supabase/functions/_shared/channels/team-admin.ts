@@ -50,24 +50,40 @@ async function managedTeam(w: Who, groupId: string): Promise<Team | null> {
 }
 
 /**
- * Meta rejects a message whose reply-button or list-row titles repeat, and businesses often name every team "Kitchen":
- * the team name if it is unique (after clipping to `max`), else "name · site", else numbered "(2)", "(3)"…
+ * Meta rejects a message whose reply-button or list-row titles repeat (businesses often name every team "Kitchen", and
+ * two people can share a first name): the plain title if it is unique (after clipping to `max`), else the caller's
+ * `alt` (already fitted to `max`), else numbered "(2)", "(3)"…
  */
-export function teamTitles(items: { title: string; site: string }[], max: number): string[] {
-  const norm = (x: string) => x.replace(/\s+/g, ' ').trim()
+export function uniqueTitles(items: { title: string; alt: string }[], max: number): string[] {
   const key = (x: string) => x.toLowerCase()
   const clashes = (list: string[], i: number) => list.filter((y) => key(y) === key(list[i])).length > 1
-  const plain = items.map((x) => clip(norm(x.title) || 'Team', max))
-  const sited = plain.map((t, i) => (clashes(plain, i) ? clip(`${norm(items[i].title) || 'Team'} · ${norm(items[i].site)}`, max) : t))
-  const used = new Set(sited.filter((_, i) => !clashes(sited, i)).map(key))
-  return sited.map((t, i) => {
-    if (!clashes(sited, i)) return t
+  const plain = items.map((x) => clip(x.title, max))
+  const alt = plain.map((t, i) => (clashes(plain, i) ? clip(items[i].alt, max) : t))
+  const used = new Set(alt.filter((_, i) => !clashes(alt, i)).map(key))
+  return alt.map((t, i) => {
+    if (!clashes(alt, i)) return t
     for (let n = 1; ; n++) {
       const suffix = ` (${n})`
       const c = clip(t, max - [...suffix].length) + suffix
       if (!used.has(key(c))) { used.add(key(c)); return c }
     }
   })
+}
+
+/** Team names for buttons/rows: "Kitchen", else "Kitchen · site", else numbered. */
+export function teamTitles(items: { title: string; site: string }[], max: number): string[] {
+  const norm = (x: string) => x.replace(/\s+/g, ' ').trim()
+  return uniqueTitles(items.map((x) => ({ title: norm(x.title) || 'Team', alt: `${norm(x.title) || 'Team'} · ${norm(x.site)}` })), max)
+}
+
+/** "Remove Anna", else "Remove Anna ••23" (last two digits of the number), else numbered. */
+const REMOVE_ROW_MAX = 24
+function removeTitles(people: TeamMember[]): string[] {
+  const label = (m: TeamMember) => (m.full_name ? firstName(m.full_name) : maskPhone(m.phone))
+  return uniqueTitles(people.map((m) => {
+    const tag = ` ${maskPhone(m.phone).slice(-4)}`
+    return { title: `Remove ${label(m)}`, alt: clip(`Remove ${label(m)}`, REMOVE_ROW_MAX - [...tag].length) + tag }
+  }), REMOVE_ROW_MAX)
 }
 
 /** At most TEAM_LIST_MAX teams per message; the rest are named as a count, never dropped silently. */
@@ -108,10 +124,11 @@ export async function sendTeamOverview(t: TeamDeps, send: SendFn, from: string, 
     if (!people.length) { await say(w, `${head}\n${TEAM_TEXT.noPeople}`); continue }
     for (let i = 0; i < people.length; i += MEMBER_ROWS_MAX) {
       const chunk = people.slice(i, i + MEMBER_ROWS_MAX)
+      const titles = removeTitles(chunk)
       await post(w, listMessage(from, {
         header: clip(head, 60), body: chunk.map((m) => `${memberName(m)} — ${memberStatusText(m)}`).join('\n'),
         footer: 'Blueroll', button: 'Remove someone', section: 'People',
-        rows: chunk.map((m) => ({ id: `rm:${m.id}`, title: clip(`Remove ${m.full_name ? firstName(m.full_name) : maskPhone(m.phone)}`, 24), description: clip(memberName(m), 72) })),
+        rows: chunk.map((m, j) => ({ id: `rm:${m.id}`, title: titles[j], description: clip(memberName(m), 72) })),
       }))
     }
   }

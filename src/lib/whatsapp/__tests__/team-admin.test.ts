@@ -131,6 +131,20 @@ describe('`team` command and Remove', () => {
     expect(kitchen.body.text).toBe('Anna Smith — Active\nMaria Lopez — Invited\nDan Cole — Not reachable')
     expect(kitchen.action.sections[0].rows.map((r: any) => [r.id, r.title])).toEqual([['rm:gm1', 'Remove Anna'], ['rm:gm2', 'Remove Maria'], ['rm:gm3', 'Remove Dan']])
   })
+  it('two members named Anna in one team → Remove row titles unique, ids unchanged', async () => {
+    const f = fakeTeamBot({ members: [
+      member({ id: 'gm1', profile_id: ANNA.profile_id, phone: '447700900123', full_name: 'Anna Smith' }),
+      member({ id: 'gm2', profile_id: 'p9', phone: '447700900145', full_name: 'Anna Jones' }),
+      member({ id: 'gm3', profile_id: 'p8', phone: '447700900145', full_name: 'Anna Jones' }),
+      member({ id: 'gm4', profile_id: 'p7', phone: '447700900888', full_name: 'Alexandrina-Bartholomew' }),
+    ] })
+    await handleInbound(say(BOSS.phone, 'team'), f.d)
+    const rows = f.sent[0].interactive.action.sections[0].rows
+    expect(rows.map((r: any) => r.id)).toEqual(['rm:gm1', 'rm:gm2', 'rm:gm3', 'rm:gm4'])
+    expect(rows.map((r: any) => r.title)).toEqual(['Remove Anna ••23', 'Remove Anna ••45 (1)', 'Remove Anna ••45 (2)', 'Remove Alexandrina-Bartholomew'.slice(0, 23) + '…'])
+    expect(new Set(rows.map((r: any) => r.title.toLowerCase())).size).toBe(rows.length)
+    expect(rows.every((r: any) => [...r.title].length <= 24)).toBe(true)
+  })
   it('more than 10 people → several messages of at most 10 rows', async () => {
     const f = fakeTeamBot({ members: Array.from({ length: 12 }, (_, i) => member({ id: `gm${i}`, profile_id: `q${i}`, phone: `4477009010${String(i).padStart(2, '0')}`, full_name: `Person ${i}` })) })
     await handleInbound(say(BOSS.phone, 'team'), f.d)
