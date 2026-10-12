@@ -11,7 +11,7 @@ exports[`buildChecklistFlow > builds one screen with a component per supported i
             "children": [
               {
                 "helper-text": "0–5 °C",
-                "input-type": "number",
+                "input-type": "text",
                 "label": "Item a",
                 "name": "f0",
                 "required": true,

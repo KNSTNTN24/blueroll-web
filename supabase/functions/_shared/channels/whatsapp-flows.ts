@@ -7,7 +7,8 @@ import { fieldName, formItems } from '../checklists-core/answers.ts'
 export const FLOW_JSON_VERSION = '7.3'   // Meta's recommended Flow JSON version (changelog, 2026-10)
 export const MAX_FORM_ITEMS = 40
 // Bump when the generated Flow JSON changes shape, so stored flows are rebuilt.
-export const FLOW_BUILDER_VERSION = 1
+// 2: temperature inputs are 'text' (the iPhone number keypad has no minus key).
+export const FLOW_BUILDER_VERSION = 2
 
 const INPUT_LABEL_MAX = 20
 const CHOICE_LABEL_MAX = 30
@@ -42,7 +43,7 @@ function textLabels(i: TemplateItem, extra?: string): { label: string; 'helper-t
 
 function component(i: TemplateItem, name: string): Record<string, unknown> {
   switch (i.item_type) {
-    case 'temperature': return { type: 'TextInput', name, ...textLabels(i, rangeHint(i)), 'input-type': 'number', required: i.required }
+    case 'temperature': return { type: 'TextInput', name, ...textLabels(i, rangeHint(i)), 'input-type': 'text', required: i.required }
     case 'yes_no': return { type: 'RadioButtonsGroup', name, label: fit(i.name, CHOICE_LABEL_MAX), required: i.required, 'data-source': [{ id: 'yes', title: 'Yes' }, { id: 'no', title: 'No' }] }
     // OptIn is capped at 5 per screen and submits a boolean; a single-option radio has no cap and
     // submits the string 'true', which checklists-core/answers.ts accepts for tick items.

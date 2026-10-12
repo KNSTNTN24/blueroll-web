@@ -18,7 +18,9 @@ function normalise(item: TemplateItem, raw: unknown): string | null {
     case 'yes_no': return raw === 'yes' || raw === 'no' ? raw : null
     case 'temperature': {
       if (typeof raw !== 'string' && typeof raw !== 'number') return null
-      const s = String(raw).trim().replace(/,/g, '.')
+      // Typed as free text (number keypads have no minus on iPhone): unicode minus / dashes → '-', comma → dot,
+      // spaces and a trailing °C / ° / C dropped. "−18", "-18,5", "- 18 °C" all become plain ASCII.
+      const s = String(raw).replace(/\s+/g, '').replace(/[\u2212\u2013\u2014]/g, '-').replace(/,/g, '.').replace(/(°c?|c)$/i, '')
       return /^-?\d{1,3}(\.\d{1,2})?$/.test(s) ? s : null
     }
     case 'text': {

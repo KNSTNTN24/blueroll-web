@@ -47,6 +47,14 @@ describe('parseFormAnswers', () => {
       expect(r.missingRequired).toEqual(['A'])
     }
   })
+  it('reads negative temperatures typed as text (unicode minus, dashes, comma, spaces, °C)', () => {
+    const cold = [it_('z', 'temperature', { max_value: -18 })]
+    const val = (raw: string) => parseFormAnswers(['z'], cold, { f0: raw }).answers[0]?.value
+    expect(['-18', '−18', '–18', '- 18', '-18°C', '-18 °c', '-18C', '−18,0'].map(val)).toEqual(['-18', '-18', '-18', '-18', '-18', '-18', '-18', '-18.0'])
+    expect(parseFormAnswers(['z'], cold, { f0: '-15,5' }).answers).toEqual([{ item_id: 'z', value: '-15.5', flagged: true }])
+    expect(parseFormAnswers(['z'], cold, { f0: '−20' }).answers).toEqual([{ item_id: 'z', value: '-20', flagged: false }])
+    for (const bad of ['--18', '18-', '-', '°C', '-18°F']) expect(val(bad)).toBeUndefined()
+  })
   it('accepts numeric temperature and caps text', () => {
     expect(parseFormAnswers(['a'], items, { f0: 7.5 }).answers).toEqual([{ item_id: 'a', value: '7.5', flagged: true }])
     const r = parseFormAnswers(['d'], items, { f0: 'x'.repeat(10000) })
