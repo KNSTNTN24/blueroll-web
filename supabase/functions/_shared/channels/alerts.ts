@@ -4,7 +4,7 @@
 // Pure over AlertDeps / GroupDeps (unit-tested with fakes);
 // makeAlertDeps is the Supabase-backed implementation (`admin` = service-role client, typed loosely).
 import type { SendFn } from './types.ts'
-import { isBillable } from './bot.ts'
+import { isBillable } from './service-window.ts'
 import { telegramUI, whatsappUI, type Channel, type ChannelUI, type ManagerAlert } from './ui.ts'
 
 export { TG_MINI_APP_URL } from './telegram.ts'

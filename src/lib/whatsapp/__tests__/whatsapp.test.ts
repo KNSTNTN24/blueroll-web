@@ -4,7 +4,7 @@ import text from './fixtures/text.json'
 import button from './fixtures/button.json'
 import flow from './fixtures/flow.json'
 import status from './fixtures/status.json'
-import { verifySignature, parseInbound, textMessage, buttonsMessage, listMessage, templateMessage, flowMessage, makeSender } from '../../../../supabase/functions/_shared/channels/whatsapp'
+import { verifySignature, parseInbound, textMessage, buttonsMessage, listMessage, templateMessage, flowMessage, makeSender, normalisePhone, parseStatuses } from '../../../../supabase/functions/_shared/channels/whatsapp'
 import { maskPhone, maskId } from '../../../../supabase/functions/_shared/channels/mask'
 
 describe('verifySignature', () => {
@@ -130,4 +130,66 @@ describe('maskId', () => {
     expect(maskId('telegram', '12')).toBe('tg:••')
   })
   it('WhatsApp ids use maskPhone', () => expect(maskId('whatsapp', '447700900123')).toBe(maskPhone('447700900123')))
+})
+
+describe('normalisePhone', () => {
+  it.each([
+    ['+44 7700 900123', '447700900123'],
+    ['447700900123', '447700900123'],
+    ['0044 7700 900123', '447700900123'],
+    ['07700 900123', '447700900123'],
+    ['+44 (0)7700 900123', '447700900123'],
+    ['+1 (415) 555-0100', '14155550100'],
+  ])('%s → %s', (raw, want) => expect(normalisePhone(raw)).toBe(want))
+  it.each(['', '12345', 'abc', '+44 7700 900123 ext 4', '+4477009001234567'])('rejects %j', (raw) => expect(normalisePhone(raw)).toBeNull())
+})
+
+describe('parseInbound — shared contact', () => {
+  const wrap = (m: unknown) => ({ entry: [{ changes: [{ value: { messages: [m] } }] }] })
+  it('first contact with a number; wa_id preferred; name from formatted_name', () => {
+    expect(parseInbound(wrap({ from: '447700900001', id: 'wamid.C1', type: 'contacts', contacts: [
+      { name: { formatted_name: 'No Phone' }, phones: [] },
+      { name: { formatted_name: 'Maria  Lopez', first_name: 'Maria' }, phones: [{ phone: '+44 7700 900777', wa_id: '447700900777', type: 'CELL' }] },
+      { name: { formatted_name: 'Second' }, phones: [{ wa_id: '447700900888' }] },
+    ] }))).toEqual([{ kind: 'contact', from: '447700900001', name: 'Maria Lopez', phone: '447700900777', id: 'wamid.C1' }])
+  })
+  it('falls back to the phone field and first/last name; no usable number → nothing', () => {
+    expect(parseInbound(wrap({ from: '447700900001', id: 'wamid.C2', type: 'contacts', contacts: [
+      { name: { first_name: 'Ben', last_name: 'Jones' }, phones: [{ phone: '07700 900456' }] },
+    ] }))).toEqual([{ kind: 'contact', from: '447700900001', name: 'Ben Jones', phone: '447700900456', id: 'wamid.C2' }])
+    expect(parseInbound(wrap({ from: '447700900001', id: 'wamid.C3', type: 'contacts', contacts: [{ name: { formatted_name: 'X' }, phones: [{ phone: 'n/a' }] }] }))).toEqual([])
+  })
+})
+
+describe('parseStatuses', () => {
+  it('reads delivery statuses with the first error code; junk is skipped', () => {
+    const body = { entry: [{ changes: [{ value: { statuses: [
+      { id: 'wamid.A', status: 'delivered', recipient_id: '447700900123' },
+      { id: 'wamid.B', status: 'failed', recipient_id: '447700900456', errors: [{ code: 131026, title: 'Message undeliverable' }] },
+      { id: 'wamid.C', status: 'failed', recipient_id: 'not-a-number' },
+    ] } }] }] }
+    expect(parseStatuses(body)).toEqual([
+      { id: 'wamid.A', recipient: '447700900123', status: 'delivered', errorCode: null },
+      { id: 'wamid.B', recipient: '447700900456', status: 'failed', errorCode: 131026 },
+    ])
+    expect(parseStatuses(status)).toEqual([{ id: 'wamid.X', recipient: '447700900123', status: 'delivered', errorCode: null }])
+    expect(parseStatuses(null)).toEqual([])
+    expect(parseStatuses({ entry: [{ changes: [{ value: { statuses: 5 } }] }] })).toEqual([])
+  })
+})
+
+describe('makeSender — Meta error code', () => {
+  it('returns error.code on failure (and no errorCode when Meta gives none)', async () => {
+    const send = makeSender({ token: 'T', phoneNumberId: 'PN', fetchFn: (async () =>
+      new Response(JSON.stringify({ error: { code: 132001, message: 'Template name does not exist in the translation' } }), { status: 404 })) as any })
+    expect(await send(textMessage('44', 'x'))).toEqual({ id: null, ok: false, status: 404, errorCode: 132001 })
+  })
+})
+
+describe('listMessage section', () => {
+  it('defaults to "Open checks" and accepts another section title', () => {
+    const base = { header: 'H', body: 'B', footer: 'F', button: 'Go', rows: [{ id: 'r', title: 'T', description: 'D' }] }
+    expect((listMessage('44', base) as any).interactive.action.sections[0].title).toBe('Open checks')
+    expect((listMessage('44', { ...base, section: 'Teams' }) as any).interactive.action.sections[0].title).toBe('Teams')
+  })
 })

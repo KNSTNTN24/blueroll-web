@@ -10,6 +10,7 @@ import { CORRECTIVE_ACTIONS, itemsHash } from './whatsapp-flows.ts'
 import { whatsappUI, type Channel, type ChannelUI, type ManagerAlert } from './ui.ts'
 import { renderDueMenu } from './due-menu.ts'
 import { periodStartUtc } from '../checklists-core/time.ts'
+export { isBillable, SERVICE_WINDOW_MS } from './service-window.ts'
 
 export interface Identity { id: string; business_id: string; profile_id: string; external_id: string }
 export interface SiteInfo { id: string; name: string; timezone: string }
@@ -97,10 +98,6 @@ export function telegramFormItemIds(items: TemplateItem[]): string[] | null {
   const fi = formItems(items)
   return fi.unsupportedRequired.length || !fi.supported.length ? null : fi.supported.map((i) => i.id)
 }
-/** WhatsApp customer-service window: a business-initiated template is free within 24h of the person's last inbound message. */
-export const SERVICE_WINDOW_MS = 24 * 3600 * 1000
-export const isBillable = (lastInboundAt: string | null | undefined, now: Date) =>
-  !lastInboundAt || now.getTime() - new Date(lastInboundAt).getTime() >= SERVICE_WINDOW_MS
 const MAX_PENDING_CORRECTIVE = 3
 // Brute-force guard on 6-digit LINK codes: at most 5 failed attempts per number per hour.
 const MAX_LINK_FAILURES = 5
@@ -238,6 +235,8 @@ export async function handleInbound(e: InboundEvent, d: BotDeps): Promise<void> 
     return out(d, ctx, reply(X.fallback), 'reply')
   }
 
+  // Shared contacts become manager commands in Task 8; until then they get the fallback.
+  if (e.kind === 'contact') return out(d, ctx, reply(X.fallback), 'reply')
   // flow reply
   const tok = await d.takeToken(e.token, now, id.profile_id)
   if (!tok) return out(d, ctx, reply(X.formExpired), 'reply')
