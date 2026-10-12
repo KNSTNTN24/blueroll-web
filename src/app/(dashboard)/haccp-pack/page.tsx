@@ -7,7 +7,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { HACCP_SECTIONS } from '@/lib/constants'
 import { type Dish } from '@/lib/dishes'
 import { computeAutoData, type AutoDataSources } from '@/lib/haccp-pack/auto-data'
-import { menuHasAllergens, packFields, type PackScope } from '@/lib/haccp-pack/scope'
+import { packFields, scopeFrom, type PackScope } from '@/lib/haccp-pack/scope'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import Link from 'next/link'
@@ -229,7 +229,7 @@ export default function HaccpPackPage() {
         .eq('business_id', businessId)
       return data ?? []
     },
-    enabled: !!businessId && autoFillEnabled,
+    enabled: !!businessId,
   })
 
   const { data: checklistTemplates } = useQuery({
@@ -237,11 +237,11 @@ export default function HaccpPackPage() {
     queryFn: async () => {
       const { data } = await supabase
         .from('checklist_templates')
-        .select('id, name, frequency, sfbb_section')
+        .select('id, name, frequency, sfbb_section, library_key, active, site_id')
         .eq('business_id', businessId)
       return data ?? []
     },
-    enabled: !!businessId && autoFillEnabled,
+    enabled: !!businessId,
   })
 
   const { data: documents } = useQuery({
@@ -364,7 +364,10 @@ export default function HaccpPackPage() {
   })
 
   // Allergens come from the menu: when it has them, the pack doesn't ask for a matrix file.
-  const scope = useMemo<PackScope>(() => ({ menuHasAllergens: menuHasAllergens(dishes ?? [], packSiteId) }), [dishes, packSiteId])
+  const scope = useMemo<PackScope>(
+    () => scopeFrom({ dishes: dishes ?? [], siteId: packSiteId, templates: checklistTemplates ?? [], suppliers: suppliersData ?? [] }),
+    [dishes, packSiteId, checklistTemplates, suppliersData],
+  )
 
   // ── Section progress ──
   const sectionProgress = useMemo(() => {
@@ -404,12 +407,12 @@ export default function HaccpPackPage() {
         files: inner.files ?? {}, selects: inner.selects ?? {},
         overrides: inner.overrides ?? {}, sources: inner.sources ?? {},
       }
-      const p = computeTotalProgress(rowData, autoData, autoFillEnabled, { menuHasAllergens: menuHasAllergens(dishes ?? [], r.site_id) })
+      const p = computeTotalProgress(rowData, autoData, autoFillEnabled, scopeFrom({ dishes: dishes ?? [], siteId: r.site_id, templates: checklistTemplates ?? [], suppliers: suppliersData ?? [] }))
       m[r.site_id] = { filled: p.filled, total: p.total, pct: p.pct }
     }
     return m
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allPackRows, autoData, autoFillEnabled, dishes])
+  }, [allPackRows, autoData, autoFillEnabled, dishes, checklistTemplates, suppliersData])
 
   // ── 4-week review ──
   const reviewInfo = useMemo(() => {

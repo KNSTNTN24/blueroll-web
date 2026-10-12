@@ -1,6 +1,6 @@
 import { HACCP_METHODS, type HaccpField, type SectionId } from '@/lib/haccp-pack/methods'
 import { computeAutoData, AUTO_SOURCE_LABEL } from '@/lib/haccp-pack/auto-data'
-import { menuHasAllergens, packFields } from '@/lib/haccp-pack/scope'
+import { packFields, scopeFrom } from '@/lib/haccp-pack/scope'
 import { resolveAllergens } from '@/lib/dishes'
 import { ALLERGEN_LABELS, type EUAllergen } from '@/lib/constants'
 import { METHOD_COPY, SECTION_NAME, SECTION_ORDER } from './copy'
@@ -47,7 +47,7 @@ function answerFor(field: HaccpField, data: PackData, auto: Record<string, strin
 export function buildPlan(bundle: PlanBundle, now: Date = new Date()): PlanDoc {
   const data = bundle.pack.data
   const auto = bundle.business.autoFill ? computeAutoData(bundle.sources) : {}
-  const scope = { menuHasAllergens: menuHasAllergens(bundle.sources.dishes, bundle.site?.id ?? null) }
+  const scope = scopeFrom({ dishes: bundle.sources.dishes, siteId: bundle.site?.id ?? null, templates: bundle.sources.templates, suppliers: bundle.sources.suppliers })
 
   let filled = 0
   let total = 0
