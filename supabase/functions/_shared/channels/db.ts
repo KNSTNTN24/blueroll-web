@@ -2,6 +2,8 @@
 // Supabase-backed BotDeps. `admin` is a service-role supabase-js client (typed loosely to keep this file import-free).
 // Never log raw phone numbers / chat ids from here — use maskId.
 import type { BotDeps, FormToken, Identity } from './bot.ts'
+import type { CoreDb } from '../checklists-core/record.ts'
+import type { Person } from '../checklists-core/types.ts'
 import type { SendFn } from './types.ts'
 import { maskId } from './mask.ts'
 import type { Channel, ChannelUI } from './ui.ts'
@@ -54,6 +56,34 @@ export async function releaseToken(admin: any, token: string, usedAtIso: string)
   if (error) throw error
 }
 
+/** The DB calls every channel's checklist recording shares (CoreDb) plus the person lookup. Channel-neutral. */
+export interface CoreDbWithPerson extends CoreDb {
+  person(profileId: string): Promise<Person | null>
+}
+
+// deno-lint-ignore no-explicit-any
+export function makeCoreDb(admin: any): CoreDbWithPerson {
+  // deno-lint-ignore no-explicit-any
+  const one = async (q: any) => { const { data, error } = await q; if (error) throw error; return data }
+  return {
+    person: async (pid) => {
+      const p = await one(admin.from('profiles').select('id, business_id, full_name, role, role_id')
+        .eq('id', pid).is('removed_at', null).maybeSingle())
+      return p && p.business_id
+        ? { profile_id: p.id, business_id: p.business_id, full_name: p.full_name ?? '', role: p.role, role_id: p.role_id ?? null }
+        : null
+    },
+    insertCompletion: async (row) => await one(admin.from('checklist_completions').insert(row).select('id').single()),
+    insertResponses: async (rows) => rows.length ? ((await one(admin.from('checklist_responses').insert(rows).select('id, item_id'))) ?? []) : [],
+    // Active (not soft-removed) owners/managers — parity with web getManagerIds + soft-remove.
+    managerIds: async (b) =>
+      ((await one(admin.from('profiles').select('id').eq('business_id', b).in('role', ['owner', 'manager']).is('removed_at', null))) ?? [])
+        // deno-lint-ignore no-explicit-any
+        .map((p: any) => p.id),
+    insertNotifications: async (rows) => { if (rows.length) await one(admin.from('notifications').insert(rows)) },
+  }
+}
+
 export interface DepsConfig {
   channel: Channel
   ui: ChannelUI
@@ -72,12 +102,7 @@ export function makeDeps(admin: any, cfg: DepsConfig): BotDeps {
   // deno-lint-ignore no-explicit-any
   const one = async (q: any) => { const { data, error } = await q; if (error) throw error; return data }
 
-  // Active (not soft-removed) owners/managers — parity with web getManagerIds + soft-remove.
-  const activeManagerIds = async (b: string): Promise<string[]> =>
-    ((await one(admin.from('profiles').select('id').eq('business_id', b).in('role', ['owner', 'manager']).is('removed_at', null))) ?? [])
-      // deno-lint-ignore no-explicit-any
-      .map((p: any) => p.id)
-
+  const core = makeCoreDb(admin)
   const clock = () => new Date()
   const ch = cfg.channel
   const channelReady = async (b: string) => !!(await one(admin.rpc('channel_ready', { b, ch })))
@@ -137,13 +162,7 @@ export function makeDeps(admin: any, cfg: DepsConfig): BotDeps {
 
     ready: channelReady,
 
-    person: async (pid) => {
-      const p = await one(admin.from('profiles').select('id, business_id, full_name, role, role_id')
-        .eq('id', pid).is('removed_at', null).maybeSingle())
-      return p && p.business_id
-        ? { profile_id: p.id, business_id: p.business_id, full_name: p.full_name ?? '', role: p.role, role_id: p.role_id ?? null }
-        : null
-    },
+    person: core.person,
 
     sitesFor: async (pid) => {
       const prof = await one(admin.from('profiles').select('business_id, site_id, is_group_admin').eq('id', pid).is('removed_at', null).maybeSingle())
@@ -245,9 +264,9 @@ export function makeDeps(admin: any, cfg: DepsConfig): BotDeps {
         .map((r) => ({ response_id: r.id, item: r.item, value: r.value ?? '', site_id: r.completion.site_id, template_id: r.completion.template_id }))
     },
 
-    insertCompletion: async (row) => await one(admin.from('checklist_completions').insert(row).select('id').single()),
-    insertResponses: async (rows) => rows.length ? ((await one(admin.from('checklist_responses').insert(rows).select('id, item_id'))) ?? []) : [],
-    managerIds: activeManagerIds,
-    insertNotifications: async (rows) => { if (rows.length) await one(admin.from('notifications').insert(rows)) },
+    insertCompletion: core.insertCompletion,
+    insertResponses: core.insertResponses,
+    managerIds: core.managerIds,
+    insertNotifications: core.insertNotifications,
   }
 }

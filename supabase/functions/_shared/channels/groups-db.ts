@@ -5,8 +5,9 @@
 import type { CompletionLite, Person, Template, TemplateItem } from '../checklists-core/types.ts'
 import type { CoreDb } from '../checklists-core/record.ts'
 import type { SiteInfo } from './bot.ts'
-import { hashExternalId, pageAll } from './db.ts'
+import { hashExternalId, makeCoreDb, pageAll } from './db.ts'
 import { createChannelOnlyMember, defaultStaffRole, rollbackMember } from './members.ts'
+import { firstName } from './team-text.ts'
 
 // deno-lint-ignore no-explicit-any
 type Any = any
@@ -81,12 +82,36 @@ const DAY_MS = 86400_000
 const GROUP_COLS = 'id, business_id, channel, chat_id, title, alerts'
 const LIST_COLS = 'id, group_id, site_id, list_date, message_id, tokens, rendered_hash'
 const TOKEN_COLS = 'token, kind, business_id, group_id, site_id, template_id, item_ids, expires_at, used_at, used_by_name'
-const TEMPLATE_COLS = 'id, business_id, site_id, name, frequency, deadline_time, multi_per_day, min_per_day, assigned_roles, assigned_role_ids, active'
+export const TEMPLATE_COLS = 'id, business_id, site_id, name, frequency, deadline_time, multi_per_day, min_per_day, assigned_roles, assigned_role_ids, active'
+
+/** Active templates mapped to a group (channel_group_checklists), role arrays defaulted. */
+export async function mappedTemplates(admin: Any, groupId: string): Promise<Template[]> {
+  const { data, error } = await admin.from('channel_group_checklists').select(`template:checklist_templates(${TEMPLATE_COLS})`).eq('group_id', groupId)
+  if (error) throw error
+  return ((data ?? []) as Any[]).map((r) => r.template).filter((t) => t && t.active)
+    .map((t) => ({ ...t, assigned_roles: t.assigned_roles ?? [], assigned_role_ids: t.assigned_role_ids ?? [] }))
+}
+
+/** Completions (with who) of a business since a time. Paged: a busy business easily has >1000 in a month (PostgREST row cap). */
+export function completionsWhoSince(admin: Any, businessId: string, since: Date): Promise<CompletionWho[]> {
+  return pageAll<CompletionWho>((from, to) => admin.from('checklist_completions')
+    .select('template_id, site_id, completed_at, completed_by').eq('business_id', businessId).gte('completed_at', since.toISOString())
+    .order('completed_at', { ascending: false }).order('id', { ascending: false }).range(from, to))
+}
+
+/** profile id → first name, for the given ids (missing profiles are absent). */
+export async function firstNamesOf(admin: Any, ids: string[]): Promise<Map<string, string>> {
+  if (!ids.length) return new Map()
+  const { data, error } = await admin.from('profiles').select('id, full_name').in('id', ids)
+  if (error) throw error
+  return new Map(((data ?? []) as Any[]).map((p) => [p.id as string, firstName(String(p.full_name ?? ''))]))
+}
 
 export function makeGroupDeps(admin: Any, channel: GroupChannel = 'telegram'): GroupDeps {
   const one = async (q: Any) => { const { data, error } = await q; if (error) throw error; return data }
   const errMsg = (e: Any) => String(e?.message ?? e).slice(0, 200)
   const asList = (r: Any): LiveListRow => ({ ...r, tokens: r.tokens ?? {} })
+  const core = makeCoreDb(admin)
 
   /** Atomic "at most once per 24 h" claim on a timestamp column (two UPDATEs = the OR, no filter strings). */
   const claimDaily = async (id: string, col: 'last_permission_check_at' | 'last_permission_warning_at', now: Date) => {
@@ -177,23 +202,12 @@ export function makeGroupDeps(admin: Any, channel: GroupChannel = 'telegram'): G
     claimPermissionCheck: (id, now) => claimDaily(id, 'last_permission_check_at', now),
     claimPermissionWarning: (id, now) => claimDaily(id, 'last_permission_warning_at', now),
 
-    mappedTemplates: async (gid) => {
-      const rows = await one(admin.from('channel_group_checklists').select(`template:checklist_templates(${TEMPLATE_COLS})`).eq('group_id', gid))
-      return ((rows ?? []) as Any[]).map((r) => r.template).filter((t) => t && t.active)
-        .map((t) => ({ ...t, assigned_roles: t.assigned_roles ?? [], assigned_role_ids: t.assigned_role_ids ?? [] }))
-    },
+    mappedTemplates: (gid) => mappedTemplates(admin, gid),
     sites: async (b) => ((await one(admin.from('sites').select('id, name, timezone, status').eq('business_id', b).is('removed_at', null))) ?? [])
       .filter((s: Any) => s.status !== 'removed')
       .map((s: Any) => ({ id: s.id, name: s.name ?? '', timezone: s.timezone ?? 'Europe/London' })),
-    // Paged: a busy business easily has >1000 completions in a month (PostgREST row cap).
-    completionsSince: (b, since) => pageAll<CompletionWho>((from, to) => admin.from('checklist_completions')
-      .select('template_id, site_id, completed_at, completed_by').eq('business_id', b).gte('completed_at', since.toISOString())
-      .order('completed_at', { ascending: false }).order('id', { ascending: false }).range(from, to)),
-    firstNames: async (ids) => {
-      if (!ids.length) return new Map()
-      const rows = await one(admin.from('profiles').select('id, full_name').in('id', ids))
-      return new Map(((rows ?? []) as Any[]).map((p) => [p.id as string, String(p.full_name ?? '').trim().split(/\s+/)[0] ?? '']))
-    },
+    completionsSince: (b, since) => completionsWhoSince(admin, b, since),
+    firstNames: (ids) => firstNamesOf(admin, ids),
     items: async (tid) => (await one(admin.from('checklist_template_items')
       .select('id, name, item_type, required, min_value, max_value, unit, sort_order').eq('template_id', tid))) ?? [],
 
@@ -250,12 +264,7 @@ export function makeGroupDeps(admin: Any, channel: GroupChannel = 'telegram'): G
       }
     },
 
-    person: async (pid) => {
-      const p = await one(admin.from('profiles').select('id, business_id, full_name, role, role_id').eq('id', pid).is('removed_at', null).maybeSingle())
-      return p && p.business_id
-        ? { profile_id: p.id, business_id: p.business_id, full_name: p.full_name ?? '', role: p.role, role_id: p.role_id ?? null }
-        : null
-    },
+    person: core.person,
     telegramIdentity,
     createTelegramPerson: async (a) => {
       const role = await defaultStaffRole(admin, a.businessId)
@@ -278,10 +287,9 @@ export function makeGroupDeps(admin: Any, channel: GroupChannel = 'telegram'): G
       throw error
     },
 
-    insertCompletion: async (row) => await one(admin.from('checklist_completions').insert(row).select('id').single()),
-    insertResponses: async (rows) => rows.length ? ((await one(admin.from('checklist_responses').insert(rows).select('id, item_id'))) ?? []) : [],
-    managerIds: async (b) => ((await one(admin.from('profiles').select('id').eq('business_id', b).in('role', ['owner', 'manager']).is('removed_at', null))) ?? [])
-      .map((p: Any) => p.id),
-    insertNotifications: async (rows) => { if (rows.length) await one(admin.from('notifications').insert(rows)) },
+    insertCompletion: core.insertCompletion,
+    insertResponses: core.insertResponses,
+    managerIds: core.managerIds,
+    insertNotifications: core.insertNotifications,
   }
 }
