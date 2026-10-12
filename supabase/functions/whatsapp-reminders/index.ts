@@ -1,21 +1,23 @@
 // supabase/functions/whatsapp-reminders/index.ts
 // Every 10 minutes (pg_cron → net.http_post with x-cron-secret). The name is historical; it serves:
-//  - WhatsApp personal chats: due reminders + corrective follow-ups (needs WA_TOKEN + WA_PHONE_NUMBER_ID);
+//  - WhatsApp: TEAMS (team-cron.ts: morning list, overdue, missed summary) + corrective follow-ups
+//    (needs WA_TOKEN + WA_PHONE_NUMBER_ID). Role assignments no longer drive WhatsApp (spec 2026-10-12 §9);
+//    channel_reminders_sent is kept for history only.
 //  - Telegram GROUPS: reminders (repost the live list), list refresh, daily permission check, cleanup of unlinked
 //    groups' lists (tg-cron.ts; needs TG_BOT_TOKEN). There are no personal Telegram chats any more.
 // Then housekeeping. Deployed with --no-verify-jwt; authenticity = x-cron-secret. Never log raw phone numbers (maskPhone).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { makeSender, templateMessage } from "../_shared/channels/whatsapp.ts";
 import { makeTelegramApi } from "../_shared/channels/telegram.ts";
-import { makeDeps, pageAll } from "../_shared/channels/db.ts";
-import { isBillable, withUnit, type BotDeps } from "../_shared/channels/bot.ts";
+import { pageAll } from "../_shared/channels/db.ts";
+import { isBillable, withUnit } from "../_shared/channels/bot.ts";
 import { alertManagers, alertTelegramAlertsGroups, makeAlertDeps, type Senders } from "../_shared/channels/alerts.ts";
-import { whatsappUI } from "../_shared/channels/ui.ts";
 import { makeGroupDeps } from "../_shared/channels/groups-db.ts";
 import { runTelegramGroups, type GroupRunResult } from "../_shared/channels/tg-cron.ts";
+import { makeTeamDeps } from "../_shared/channels/teams-db.ts";
+import { runWhatsAppTeams, type TeamRunResult } from "../_shared/channels/team-cron.ts";
 import { maskPhone } from "../_shared/channels/mask.ts";
-import { planCorrective, planReminders, reminderKey, type Recipient, type ReminderJob } from "../_shared/checklists-core/reminders.ts";
-import { completionsWindowStart } from "../_shared/checklists-core/due.ts";
+import { planCorrective } from "../_shared/checklists-core/reminders.ts";
 import type { SendFn } from "../_shared/channels/types.ts";
 
 const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
@@ -25,17 +27,12 @@ const WA_PHONE = Deno.env.get("WA_PHONE_NUMBER_ID") ?? "";
 const TG_TOKEN = Deno.env.get("TG_BOT_TOKEN") ?? "";
 const waSend: SendFn | undefined = WA_TOKEN && WA_PHONE ? makeSender({ token: WA_TOKEN, phoneNumberId: WA_PHONE }) : undefined;
 const tgApi = TG_TOKEN ? makeTelegramApi({ token: TG_TOKEN }) : undefined;
-const CORRECTIVE_FLOW_ID = Deno.env.get("WA_CORRECTIVE_FLOW_ID") ?? "";
-if (waSend && !CORRECTIVE_FLOW_ID) console.error("whatsapp-reminders: WA_CORRECTIVE_FLOW_ID is not set — corrective forms will be skipped");
 const senders: Senders = waSend ? { whatsapp: waSend } : {};
-const waDeps: BotDeps | undefined = waSend
-  ? makeDeps(admin, { channel: "whatsapp", ui: whatsappUI(), send: waSend, correctiveFlowId: CORRECTIVE_FLOW_ID, senders })
-  : undefined;
 const groupDeps = makeGroupDeps(admin, "telegram");
+const teamDeps = makeTeamDeps(admin);
 const alertDeps = makeAlertDeps(admin);
 
 const DAY_MS = 86400_000;
-const REMINDER_KEY_COLS = "profile_id,template_id,site_id,period_key";
 
 // deno-lint-ignore no-explicit-any
 type Any = any;
@@ -59,79 +56,6 @@ async function claimStep(row: { business_id: string; site_id: string; profile_id
     return null;
   }
   return data.id as number;
-}
-
-async function releaseKeys(job: ReminderJob, items: ReminderJob["items"]): Promise<void> {
-  for (const it of items) {
-    const { error } = await admin.from("channel_reminders_sent").delete()
-      .eq("profile_id", job.profile_id).eq("template_id", it.template.id).eq("site_id", job.site_id).eq("period_key", it.period_key);
-    if (error) console.error("reminder key release failed", maskPhone(job.external_id), it.template.id, it.period_key, errMsg(error));
-  }
-}
-
-/** WhatsApp reminders for one business. */
-async function remindBusiness(deps: BotDeps, send: SendFn, biz: string, list: Ident[], sites: Map<string, SiteRow>, now: Date): Promise<number> {
-  const templates = await deps.templates(biz);
-  if (!templates.length) return 0;
-  const completions = await deps.completionsSince(biz, completionsWindowStart(templates, [...new Set([...sites.values()].map((s) => s.timezone))], now));
-  const profiles = [...new Set(list.map((i) => i.profile_id))];
-  const sentRows = await pageAll<Any>((from, to) => admin.from("channel_reminders_sent").select("profile_id, template_id, site_id, period_key")
-    .in("profile_id", profiles).in("site_id", [...sites.keys()])
-    .gte("sent_at", new Date(now.getTime() - 40 * DAY_MS).toISOString())
-    .order("profile_id").order("template_id").order("site_id").order("period_key").range(from, to));
-  const already = new Set(sentRows.map((r: Any) => reminderKey(r.profile_id, r.template_id, r.site_id, r.period_key)));
-
-  // Only (template, site) pairs with a published Flow: a reminder for a checklist that can't be filled here is billable noise.
-  const { data: flowRows, error: flowErr } = await admin.from("channel_flows").select("template_id, site_id")
-    .eq("channel", "whatsapp").eq("status", "published").not("flow_id", "is", null).in("template_id", templates.map((t) => t.id));
-  if (flowErr) throw flowErr;
-  const withFlow = new Set((flowRows ?? []).map((f: Any) => `${f.template_id}:${f.site_id}`));
-  if (!withFlow.size) return 0;
-
-  const recipients: Recipient[] = [];
-  for (const i of list) {
-    const person = await deps.person(i.profile_id);
-    if (!person || person.business_id !== biz) continue;
-    for (const s of await deps.sitesFor(i.profile_id)) recipients.push({ person, external_id: i.external_id, site_id: s.id, tz: s.timezone });
-  }
-  if (!recipients.length) return 0;
-
-  let sent = 0;
-  // planReminders returns several jobs per recipient (chunks of MAX_PER_MESSAGE) — every job is sent.
-  for (const job of planReminders({ now, recipients, templates, completions, alreadySent: already, hasFlow: (t, s) => withFlow.has(`${t}:${s}`) })) {
-    // Claim the keys before sending: the PK makes overlapping runs safe; conflicting keys are skipped.
-    const { data: claimed, error: claimErr } = await admin.from("channel_reminders_sent")
-      .upsert(job.items.map((it) => ({ profile_id: job.profile_id, template_id: it.template.id, site_id: job.site_id, period_key: it.period_key })),
-        { onConflict: REMINDER_KEY_COLS, ignoreDuplicates: true })
-      .select("template_id, period_key");
-    if (claimErr) { console.error("whatsapp reminder claim failed", errMsg(claimErr)); continue; }
-    const claimedKeys = new Set((claimed ?? []).map((c: Any) => `${c.template_id}:${c.period_key}`));
-    const items = job.items.filter((it) => claimedKeys.has(`${it.template.id}:${it.period_key}`));
-    if (!items.length) continue;
-
-    const ident = list.find((i) => i.profile_id === job.profile_id);
-    const site = sites.get(job.site_id);
-    const siteName = site?.name ?? "";
-    const tz = site?.timezone ?? "Europe/London";
-    const single = items.length === 1;
-    const msg = single
-      ? templateMessage(job.external_id, "checklist_reminder", [items[0].template.name, hhmm(items[0].deadline_utc!, tz), siteName], [`fill:${items[0].template.id}:${job.site_id}`])
-      : templateMessage(job.external_id, "checklist_reminder_list",
-        [String(items.length), siteName, items.map((x) => `${x.template.name} (${hhmm(x.deadline_utc!, tz)})`).join(", ")],
-        // One QUICK_REPLY "Show checks": the bot answers with named Fill-in buttons (a template can't label its buttons per send).
-        ["checks"]);
-    const r = await send(msg);
-    if (!r.ok) {
-      console.error("whatsapp reminder send failed", maskPhone(job.external_id), r.status);
-      await releaseKeys(job, items);   // the next run (still inside the lead window) retries
-    } else sent++;
-    await deps.log({
-      business_id: biz, site_id: job.site_id, profile_id: job.profile_id, direction: "out", kind: single ? "reminder" : "reminder_list",
-      template_name: single ? "checklist_reminder" : "checklist_reminder_list",
-      billable: r.ok && isBillable(ident?.last_inbound_at, now), wa_message_id: r.id,
-    });
-  }
-  return sent;
 }
 
 async function correctiveBusiness(biz: string, list: Ident[], sites: Map<string, SiteRow>, now: Date): Promise<void> {
@@ -203,40 +127,43 @@ async function housekeeping(now: Date): Promise<void> {
   const yearAgo = new Date(now);
   yearAgo.setUTCMonth(yearAgo.getUTCMonth() - 12);
   const e = await admin.from("channel_messages_log").delete().lt("created_at", yearAgo.toISOString());
-  for (const r of [a, b, ga, gb, c, d, gd, e]) if (r.error) console.error("channel housekeeping failed", errMsg(r.error));
+  const te = await admin.from("channel_group_events").delete().lt("sent_at", sixtyDaysAgo);
+  const tt = await admin.from("channel_group_takes").delete().lt("taken_at", sixtyDaysAgo);
+  for (const r of [a, b, ga, gb, c, d, gd, te, tt, e]) if (r.error) console.error("channel housekeeping failed", errMsg(r.error));
 }
 
 /** `fatal`: the identities query failed — the handler answers 500 (as before) so the cron failure is visible. */
-async function runWhatsApp(now: Date): Promise<{ sent: number; failed: number; fatal?: boolean }> {
-  if (!waSend || !waDeps) return { sent: 0, failed: 0 };
+async function runWhatsApp(now: Date): Promise<{ teams: TeamRunResult | null; failed: number; fatal?: boolean }> {
+  if (!waSend) return { teams: null, failed: 0 };
+  let teams: TeamRunResult | null = null;
+  try { teams = await runWhatsAppTeams(teamDeps, waSend, now); }
+  catch (err) { console.error("whatsapp teams run failed", errMsg(err)); }
   let idents: Ident[];
   try {
-    // WhatsApp identities ONLY: Telegram identities belong to group members and never get personal messages.
+    // Corrective follow-ups go to the person who recorded the out-of-range answer: WhatsApp identities ONLY.
     idents = await pageAll<Ident>((from, to) => admin.from("channel_identities")
       .select("id, business_id, profile_id, external_id, last_inbound_at").eq("channel", "whatsapp").is("revoked_at", null)
       .order("id").range(from, to));
   } catch (error) {
     console.error("whatsapp reminders: identities query failed", errMsg(error));
-    return { sent: 0, failed: 1, fatal: true };
+    return { teams, failed: 1, fatal: true };
   }
   const byBiz = new Map<string, Ident[]>();
   for (const i of idents) byBiz.set(i.business_id, [...(byBiz.get(i.business_id) ?? []), i]);
-  let sent = 0;
   let failed = 0;
   for (const [biz, list] of byBiz) {
     try {
-      if (!(await waDeps.ready(biz))) continue;
+      if (!(await teamDeps.ready(biz))) continue;
       const { data: siteRows, error: siteErr } = await admin.from("sites").select("id, name, timezone").eq("business_id", biz).is("removed_at", null);
       if (siteErr) throw siteErr;
       const sites = new Map<string, SiteRow>((siteRows ?? []).map((s: Any) => [s.id, { name: s.name ?? "", timezone: s.timezone ?? "Europe/London" }]));
-      sent += await remindBusiness(waDeps, waSend, biz, list, sites, now);
       await correctiveBusiness(biz, list, sites, now);
     } catch (err) {
       failed++;
-      console.error("whatsapp reminders: business run failed", biz, errMsg(err));
+      console.error("whatsapp corrective run failed", biz, errMsg(err));
     }
   }
-  return { sent, failed };
+  return { teams, failed };
 }
 
 Deno.serve(async (req) => {
@@ -252,5 +179,5 @@ Deno.serve(async (req) => {
   await housekeeping(now);
   // WhatsApp identities query failed: groups and housekeeping above are independent and still ran, but the cron must see the failure.
   if (wa.fatal) return new Response("error", { status: 500 });
-  return new Response(JSON.stringify({ ok: true, sent: wa.sent, failed: wa.failed, groups }), { headers: { "Content-Type": "application/json" } });
+  return new Response(JSON.stringify({ ok: true, teams: wa.teams, failed: wa.failed, groups }), { headers: { "Content-Type": "application/json" } });
 });
