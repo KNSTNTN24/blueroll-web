@@ -16,6 +16,7 @@ import { doneInPeriod, takePeriodKey, teamDayState, todayOnly, type TeamDayState
 import { handleJoin } from './team-members.ts'
 import { celebrateTeam } from './team-cron.ts'
 import { TEAM_TEXT } from './team-text.ts'
+import { handleAdminButton, handleContactShare, sendTeamOverview } from './team-admin.ts'
 import type { Team, TeamDeps } from './teams-db.ts'
 import type { CompletionWho } from './groups-db.ts'
 export { isBillable, SERVICE_WINDOW_MS } from './service-window.ts'
@@ -322,12 +323,15 @@ export async function handleInbound(e: InboundEvent, d: BotDeps): Promise<void> 
   const person = await d.person(id.profile_id)
   if (!person) return out(d, ctx, reply(X.unknown), 'reply')
 
-  if (e.kind === 'contact') return out(d, ctx, reply(X.fallback), 'reply')   // manager commands: Task 8
+  if (e.kind === 'contact') return handleContactShare(d.teams, d.send, e.from, person, { name: e.name, phone: e.phone })
   if (e.kind === 'text') {
-    if (e.text.trim().toLowerCase() === 'checks') return sendTeamMenus(d, e.from, person, null)
+    const cmd = e.text.trim().toLowerCase()
+    if (cmd === 'checks') return sendTeamMenus(d, e.from, person, null)
+    if (cmd === 'team') return sendTeamOverview(d.teams, d.send, e.from, person)
     return out(d, ctx, reply(X.fallback), 'reply')
   }
   if (e.kind === 'button') {
+    if (await handleAdminButton(d.teams, d.send, e.from, person, e.payload)) return
     // `fill:` = the button of a reminder from the retired role-based flow: show the team menus instead.
     if (e.payload === 'checks' || e.payload.startsWith('fill:')) return sendTeamMenus(d, e.from, person, null)
     const c = e.payload.match(/^checks:([0-9a-zA-Z-]+)$/)
