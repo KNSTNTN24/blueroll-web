@@ -8,6 +8,8 @@ import { availableChecklists, completionsWindowStart, dueChecklists } from '../c
 import { formItems, parseFormAnswers } from '../checklists-core/answers.ts'
 import { CORRECTIVE_ACTIONS, itemsHash } from './whatsapp-flows.ts'
 import { whatsappUI, type Channel, type ChannelUI, type ManagerAlert } from './ui.ts'
+import { renderDueMenu } from './due-menu.ts'
+import { periodStartUtc } from '../checklists-core/time.ts'
 
 export interface Identity { id: string; business_id: string; profile_id: string; external_id: string }
 export interface SiteInfo { id: string; name: string; timezone: string }
@@ -68,7 +70,6 @@ export function textsFor(ui: Pick<ChannelUI, 'channel' | 'commandWord'>) {
     help: `Blueroll checks: tap Fill in on a reminder, or type ${w('checks')} to see what is due. Type ${w('stop')} to disconnect.`,
     fallback: `I can help with your checks — tap Fill in or type ${w('checks')}.`,
     nothingDue: 'Nothing is due right now 👍',
-    dueList: (site: string) => `Checks due at ${site}:`,
     appOnly: (name: string) => `${name} can only be completed in the Blueroll app.`,
     missing: (names: string[]) => `Some required answers were missing: ${names.join(', ')}. Please fill in the form again.`,
     formExpired: `This form has expired — type ${w('checks')} to get a new one.`,
@@ -174,7 +175,16 @@ async function sendDueList(d: BotDeps, from: string, person: Person) {
     const due = dueChecklists({ templates, person, siteId: s.id, tz: s.timezone, now, completions })
     if (!due.length) continue
     any = true
-    await out(d, { ...ctx, site_id: s.id }, d.ui.choices(from, TEXT.dueList(s.name), due.slice(0, 3).map((x) => ({ id: `fill:${x.template.id}:${s.id}`, title: x.template.name }))), 'reply')
+    const dueIds = new Set(due.map((x) => x.template.id))
+    const done = availableChecklists(templates, person, s.id).filter((t) => !dueIds.has(t.id)).flatMap((t) => {
+      const start = periodStartUtc(t.multi_per_day ? 'daily' : t.frequency, now, s.timezone).getTime()
+      const last = completions.filter((c) => c.template_id === t.id && c.site_id === s.id && new Date(c.completed_at).getTime() >= start)
+        .sort((a, b) => new Date(b.completed_at).getTime() - new Date(a.completed_at).getTime())[0]
+      return last ? [{ name: t.name, completedAt: last.completed_at }] : []
+    })
+    const menu = renderDueMenu({ siteId: s.id, siteName: s.name, tz: s.timezone, now, done,
+      open: due.map((x) => ({ templateId: x.template.id, name: x.template.name, deadlineUtc: x.deadline_utc })) })
+    await out(d, { ...ctx, site_id: s.id }, d.ui.dueMenu(from, menu), 'reply')
   }
   if (!any) await out(d, ctx, d.ui.text(from, TEXT.nothingDue), 'reply')
 }
