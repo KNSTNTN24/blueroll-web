@@ -2,6 +2,8 @@ import { supabase } from '@/lib/supabase'
 import type { Answers, Equipment, ExistingState, PackData } from './types'
 import type { ApplyPayload } from './apply'
 import { QUESTIONNAIRE_VERSION } from './content/questions'
+import type { AutoDataSources } from '@/lib/haccp-pack/auto-data'
+import { buildSetupContext, type SetupContext } from './context'
 
 export interface SetupSession {
   id: string; business_id: string; site_id: string; questionnaire_version: number; answers: Answers; status: string
@@ -118,4 +120,33 @@ export async function assistantParseEquipment(text: string): Promise<Equipment[]
 
 export async function assistantAnswer(question: string, venueType: string | undefined) {
   return callAssistant<{ answer: string; sources: { title: string; source: string }[] }>({ action: 'answer', question, venue_type: venueType })
+}
+
+/** Everything the questionnaire can confirm instead of asking, read with the user's RLS (same sources as the pack page). */
+export async function loadSetupContext(businessId: string, siteId: string): Promise<SetupContext> {
+  const [recipes, dishes, suppliers, templates, documents, team] = await Promise.all([
+    supabase.from('recipes').select(
+      `id, name, cooking_method, cooking_temp, extra_care_flags, reheating_instructions, hot_holding_required,
+       chilling_method, freezing_instructions, defrosting_instructions, haccp_methods,
+       recipe_ingredients(ingredient:ingredients(name, allergens))`,
+    ).eq('business_id', businessId),
+    supabase.from('menu_items').select(
+      'id, name, category, active, allergen_source, recipe_id, declared_allergens, may_contain, dietary, attested_by_name, attested_at, site_ids, recipe:recipes(id, name, recipe_ingredients(ingredient:ingredients(name, allergens)))',
+    ).eq('business_id', businessId).order('name'),
+    supabase.from('suppliers').select('id, name, contact_name, phone, email, delivery_days').eq('business_id', businessId),
+    supabase.from('checklist_templates').select('id, name, frequency, sfbb_section, library_key, active, site_id').eq('business_id', businessId),
+    supabase.from('documents').select('id, title, category').eq('business_id', businessId).order('title'),
+    supabase.from('profiles').select('full_name, role').eq('business_id', businessId).is('removed_at', null),
+  ])
+  for (const r of [recipes, dishes, suppliers, templates, documents, team]) if (r.error) throw r.error
+  const liveTemplates = (templates.data ?? []).filter((t) => t.active !== false && (!t.site_id || t.site_id === siteId))
+  const sources: AutoDataSources = {
+    recipes: (recipes.data ?? []) as unknown as AutoDataSources['recipes'],
+    dishes: (dishes.data ?? []) as unknown as AutoDataSources['dishes'],
+    suppliers: (suppliers.data ?? []) as AutoDataSources['suppliers'],
+    templates: liveTemplates as AutoDataSources['templates'],
+    documents: (documents.data ?? []) as AutoDataSources['documents'],
+    team: (team.data ?? []) as AutoDataSources['team'],
+  }
+  return buildSetupContext(sources, siteId, sources.documents)
 }
