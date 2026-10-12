@@ -3,20 +3,21 @@ import { QUESTIONS } from './content/questions'
 import { nextQuestion, tabOf, visibleQuestions } from './engine'
 import { SECTION_NAME } from '@/lib/haccp-plan/copy'
 import type { SectionId } from '@/lib/haccp-pack/methods'
-import type { Answers } from './types'
+import type { Answers, DataFlags } from './types'
 
 export interface SetupHero { mode: 'start' | 'continue' | 'review'; pct: number; next: string | null; left: number }
 
 const TAB_LABEL = (t: string) => (t === 'profile' ? 'Your kitchen' : t === 'documents' ? 'Documents' : SECTION_NAME[t as SectionId])
 
-/** Progress ignores Blueroll-data steps (they depend on the site's data and are quick confirms). */
-export function setupHero(session: { status: string; answers: Answers | null } | null): SetupHero {
+/** Progress ignores Blueroll-data steps (they depend on the site's data and are quick confirms).
+ *  Pass `flags.autoFilled` so own-words questions that setup hides are not counted either. */
+export function setupHero(session: { status: string; answers: Answers | null } | null, flags: DataFlags = {}): SetupHero {
   if (!session) return { mode: 'start', pct: 0, next: null, left: 0 }
   if (session.status === 'applied') return { mode: 'review', pct: 100, next: null, left: 0 }
   const answers = session.answers ?? {}
-  const visible = visibleQuestions(QUESTIONS, answers)
+  const visible = visibleQuestions(QUESTIONS, answers, { autoFilled: flags.autoFilled })
   const answered = visible.filter((q) => answers[q.id] !== undefined).length
-  const n = nextQuestion(QUESTIONS, answers)
+  const n = nextQuestion(QUESTIONS, answers, { autoFilled: flags.autoFilled })
   if (!answered) return { mode: 'start', pct: 0, next: null, left: 0 }
   const tab = n ? tabOf(n) : null
   return {

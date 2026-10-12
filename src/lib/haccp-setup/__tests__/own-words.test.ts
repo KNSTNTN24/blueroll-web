@@ -31,6 +31,12 @@ describe('own-words questions', () => {
       expect(x.fills).toEqual([s.target, ...s.ticks.map((t) => t.id)])
     }
   })
+  it('read as an optional description for the plan, not a repeat of the yes/no questions before them', () => {
+    for (const [id] of WORDS) {
+      expect(q(id).text, id).toMatch(/^Describe /)
+      expect(q(id).why, id).toMatch(/skip/i)
+    }
+  })
   it('hide when Blueroll already fills the field', () => {
     const answers: Answers = { processes: ['cool_cooked'] }
     expect(visibleQuestions(QUESTIONS, answers, {}).some((x) => x.id === 'cooling_words')).toBe(true)
