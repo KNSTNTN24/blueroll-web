@@ -13,6 +13,8 @@ import { ContextAssistant, FillsPanel } from '@/app/(dashboard)/haccp-setup/side
 import { ConfirmData, DocumentsStep } from '@/app/(dashboard)/haccp-setup/data-steps'
 import { StepRail, type Step } from '@/app/(dashboard)/haccp-setup/step-rail'
 import { DraftReview } from '@/app/(dashboard)/haccp-setup/draft-review'
+import { OwnWordsCard } from '@/app/(dashboard)/haccp-setup/own-words-card'
+import { AssistantError, type DraftMethodResult } from '@/lib/haccp-setup/api'
 
 // Dev-only visual check of the setup UI against docs/design/haccp-setup (no auth, fixture data).
 const STEPS: Step[] = [
@@ -29,7 +31,7 @@ const STEPS: Step[] = [
 function Preview() {
   const sp = useSearchParams()
   const view = sp.get('view') ?? 'question'
-  const qid = sp.get('q') ?? 'fridge_check_method'
+  const qid = sp.get('q') ?? (view === 'own_words' ? 'cooling_words' : 'fridge_check_method')
   const qc = useQueryClient()
   const bundle = useMemo(() => makeRichBundle(), [])
   const ctx = useMemo(() => buildSetupContext(bundle.sources, 'site-1', bundle.sources.documents), [bundle])
@@ -38,6 +40,19 @@ function Preview() {
   const [pending, setPending] = useState<AnswerValue | undefined>(undefined)
   const q = QUESTIONS.find((x) => x.id === qid)!
   const live: Answers = pending !== undefined ? { ...answers, [qid]: pending } : answers
+
+  const mockDraft = async (): Promise<DraftMethodResult> => {
+    await new Promise((r) => setTimeout(r, 500))
+    if (sp.get('fail')) throw new AssistantError('unavailable', 'The assistant is not available right now.')
+    return {
+      draft: ['Cooked food to be stored is split into shallow gastronorm trays.', 'Large batches are cooled faster in an ice bath in the sink.',
+        'Food goes into the walk-in fridge as soon as it has stopped steaming, then is labelled with the date.', 'Cooked rice is kept for no more than 1 day, then thrown away.'],
+      ticks: [{ id: 'cd_portions', state: 'yes' }, { id: 'cd_fridge', state: 'yes' }, { id: 'cd_90min', state: 'confirm' }],
+      confirm: { id: 'cd_90min', question: 'SFBB asks for food to be cooled within 90 minutes. Is it usually under 90 minutes?' },
+      sources: [{ title: 'Chilling down hot food', source: 'FSA SFBB' }],
+    }
+  }
+  const savedOwn = sp.get('answered') ? { text: 'trays', draft: 'Cooked food is split into shallow trays.', ticks: { cd_portions: true } } : undefined
 
   if (view === 'review') {
     qc.setQueryData(['haccp-setup-existing', 'biz-1', 'site-1'], { templates: [], others: [], pack: null, packUpdatedAt: null })
@@ -58,7 +73,10 @@ function Preview() {
           <>
             <div className="flex min-w-0 flex-1 flex-col gap-3.5">
               <MethodContext methodId={q.method} quote={planQuote(q, live, { scotland: false })} />
-              {q.answer.kind === 'confirm_data'
+              {q.answer.kind === 'own_words'
+                ? <OwnWordsCard key={q.id} question={q} position="Question 6 of 9 in Chilling" initial={savedOwn} venueType="restaurant"
+                    taken={new Set()} onConfirm={(v) => onAnswer(q.id, v)} onDraft={setPending} draftMethod={mockDraft} />
+                : q.answer.kind === 'confirm_data'
                 ? <ConfirmData question={q} ctx={ctx} position="Question 2 of 6 in Management" onConfirm={(v) => onAnswer(q.id, v)} />
                 : <QuestionCard key={q.id} question={q} position="Question 1 of 9 in Chilling" initial={answers[q.id]} onConfirm={(v) => onAnswer(q.id, v)} onDraft={setPending} onBack={() => {}} onAskAssistant={() => {}} />}
             </div>

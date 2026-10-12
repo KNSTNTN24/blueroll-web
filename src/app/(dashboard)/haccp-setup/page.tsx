@@ -21,6 +21,8 @@ import { MethodContext } from './method-context'
 import { ContextAssistant, FillsPanel } from './side-panels'
 import { ConfirmData, DocumentsStep } from './data-steps'
 import { StepRail, type Step } from './step-rail'
+import { OwnWordsCard } from './own-words-card'
+import { answeredElsewhere, asOwnWords, SKIP } from '@/lib/haccp-setup/own-words'
 
 export default function HaccpSetupPage() {
   const { business, sites, currentSiteId, isManager, demoMode } = useAuth()
@@ -43,6 +45,17 @@ export default function HaccpSetupPage() {
     )
   }
   return <Setup businessId={businessId} siteId={siteId} />
+}
+
+function answeredLabel(q: Question, v: AnswerValue | undefined): string {
+  if (q.answer.kind === 'confirm_data') return v === true ? 'Confirmed' : 'Something missing'
+  if (q.answer.kind === 'documents') return 'Documents saved'
+  if (q.answer.kind === 'own_words') {
+    if (v === SKIP) return 'Skipped'
+    const d = asOwnWords(v)?.draft ?? ''
+    return d.length > 90 ? `${d.slice(0, 90)}\u2026` : d
+  }
+  return formatAnswer(q, v as AnswerValue)
 }
 
 function Notice({ text }: { text: string }) {
@@ -205,7 +218,7 @@ function SetupInner({ session, ctx, businessId, siteId }: {
                         <li key={q.id} className="flex items-start justify-between gap-3 border-b border-[#f1f2f4] px-4 py-2.5 text-[13px]">
                           <span className="flex flex-col gap-0.5">
                             <span className="text-[#5f6670]">{q.text}</span>
-                            <span className="font-semibold">{q.answer.kind === 'confirm_data' ? (answers[q.id] === true ? 'Confirmed' : 'Something missing') : q.answer.kind === 'documents' ? 'Documents saved' : formatAnswer(q, answers[q.id])}</span>
+                            <span className="font-semibold">{answeredLabel(q, answers[q.id])}</span>
                           </span>
                           <button type="button" onClick={() => setEditing(q.id)} className="min-h-9 shrink-0 rounded-lg border border-[#e2e4e8] px-2.5 text-[12px] font-semibold">Edit</button>
                         </li>
@@ -223,6 +236,11 @@ function SetupInner({ session, ctx, businessId, siteId }: {
                   ) : current.answer.kind === 'documents' ? (
                     <DocumentsStep ctx={ctx} initial={answers.documents as Record<string, string> | undefined}
                       onConfirm={(v) => onAnswer(current.id, v)} onBack={goBack} />
+                  ) : current.answer.kind === 'own_words' ? (
+                    <OwnWordsCard key={current.id} question={current} position={position} initial={answers[current.id]}
+                      venueType={answers.venue_type as string | undefined} taken={answeredElsewhere(current, answers)}
+                      onConfirm={(v) => onAnswer(current.id, v)} onBack={goBack}
+                      onDraft={(v) => setPending({ id: current.id, value: v })} />
                   ) : (
                     <QuestionCard key={current.id} question={current} position={position}
                       initial={answers[current.id] ?? suggestedAnswer(current, answers)}
