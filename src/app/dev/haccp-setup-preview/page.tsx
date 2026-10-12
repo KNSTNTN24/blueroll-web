@@ -50,6 +50,7 @@ function Preview() {
       ticks: [{ id: 'cd_portions', state: 'yes' }, { id: 'cd_fridge', state: 'yes' }, { id: 'cd_90min', state: 'confirm' }],
       confirm: { id: 'cd_90min', question: 'SFBB asks for food to be cooled within 90 minutes. Is it usually under 90 minutes?' },
       sources: [{ title: 'Chilling down hot food', source: 'FSA SFBB' }],
+      dropped: 0,
     }
   }
   const savedOwn = sp.get('answered') ? { text: 'trays', draft: 'Cooked food is split into shallow trays.', ticks: { cd_portions: true } } : undefined

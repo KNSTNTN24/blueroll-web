@@ -35,3 +35,14 @@ export function ownWordsValues(q: Question, answers: Answers): { fieldId: string
   for (const id of q.answer.ticks) if (a.ticks[id] === true && !taken.has(id)) out.push({ fieldId: id, value: true })
   return out
 }
+
+/** What to tell the owner about the assistant's draft: off-topic, emptied by the number guard, or sentences left out. */
+export function draftNotice(r: { draft: string[]; dropped: number }): string | null {
+  if (!r.draft.length) {
+    return r.dropped > 0
+      ? 'We left that out: it added a time or temperature you didn’t write. Add the times you use to your text, or use your words as written.'
+      : 'That doesn’t read like a description of this method. Add a little more, or use your words as written.'
+  }
+  if (r.dropped > 0) return `We left out ${r.dropped} sentence${r.dropped === 1 ? '' : 's'} that added a time or temperature you didn’t write.`
+  return null
+}

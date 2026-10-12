@@ -36,8 +36,10 @@ export interface DraftMethodResult {
   ticks: { id: string; state: TickState }[]
   confirm: { id: string; question: string } | null
   sources: { title: string; source: string }[]
+  /** Sentences left out because they added a number or a time/temperature the owner didn't write. */
+  dropped: number
 }
-const empty = (): DraftMethodResult => ({ draft: [], ticks: [], confirm: null, sources: [] })
+const empty = (dropped = 0): DraftMethodResult => ({ draft: [], ticks: [], confirm: null, sources: [], dropped })
 const has = (o: object, k: string) => Object.prototype.hasOwnProperty.call(o, k)
 
 export function isDraftMethodBody(b: unknown): b is { action: 'draft_method'; method: string; text: string; venue_type?: string } {
@@ -49,7 +51,14 @@ export function isDraftMethodBody(b: unknown): b is { action: 'draft_method'; me
 
 const WORDS: Record<string, string> = {
   one: '1', two: '2', three: '3', four: '4', five: '5', six: '6', seven: '7', eight: '8', nine: '9', ten: '10', eleven: '11', twelve: '12',
-  fifteen: '15', twenty: '20', thirty: '30', forty: '40', sixty: '60', ninety: '90', hundred: '100',
+  thirteen: '13', fourteen: '14', fifteen: '15', sixteen: '16', seventeen: '17', eighteen: '18', nineteen: '19',
+  twenty: '20', thirty: '30', forty: '40', fifty: '50', sixty: '60', seventy: '70', eighty: '80', ninety: '90', hundred: '100',
+  half: '0.5', quarter: '0.25',
+}
+const UNITS: Record<string, string> = {
+  min: 'min', mins: 'min', minute: 'min', minutes: 'min', h: 'h', hr: 'h', hrs: 'h', hour: 'h', hours: 'h',
+  day: 'day', days: 'day', week: 'week', weeks: 'week', month: 'month', months: 'month',
+  c: 'c', deg: 'c', degree: 'c', degrees: 'c', celsius: 'c',
 }
 /** Numbers in a text: digits ("1,5" → "1.5") and number words ("one" → "1"). In a draft sentence "one" is a pronoun, not a number. */
 export function numbersIn(s: string, forDraft = false): Set<string> {
@@ -61,7 +70,20 @@ export function numbersIn(s: string, forDraft = false): Set<string> {
   }
   return out
 }
-const grounded = (sentence: string, own: Set<string>) => [...numbersIn(sentence, true)].every((n) => own.has(n))
+/** Number + unit pairs ("2 hours" → "2:h", "-18°C" → "18:c", "one day" → "1:day"). */
+export function quantitiesIn(s: string): Set<string> {
+  const out = new Set<string>()
+  const tokens = s.toLowerCase().replace(/°\s*c?/g, ' degrees ').match(/\d+(?:[.,]\d+)?|[a-z]+/g) ?? []
+  tokens.forEach((t, i) => {
+    const v = /^\d/.test(t) ? t.replace(',', '.') : has(WORDS, t) ? WORDS[t] : null
+    const u = tokens[i + 1]
+    if (v && u && has(UNITS, u)) out.add(`${v}:${UNITS[u]}`)
+  })
+  return out
+}
+// A draft number must appear in the owner's words; a time, temperature or period must appear with the same unit.
+const grounded = (sentence: string, nums: Set<string>, qty: Set<string>) =>
+  [...numbersIn(sentence, true)].every((n) => nums.has(n)) && [...quantitiesIn(sentence)].every((q) => qty.has(q))
 
 export function buildDraftMethodRequest(spec: DraftMethodSpec, text: string, chunks: KnowledgeChunk[], venueType?: string) {
   const ids = spec.ticks.map((t) => t.id)
@@ -104,13 +126,17 @@ export function buildDraftMethodRequest(spec: DraftMethodSpec, text: string, chu
 export function parseDraftMethodResponse(resp: unknown, spec: DraftMethodSpec, ownText: string, chunks: KnowledgeChunk[]): DraftMethodResult {
   const input = toolInput(resp, 'draft_method')
   if (!input) return empty()
-  const own = numbersIn(ownText.slice(0, MAX_OWN_WORDS))
-  const draft = (Array.isArray(input.draft) ? input.draft : [])
+  const ownWords = ownText.slice(0, MAX_OWN_WORDS)
+  const nums = numbersIn(ownWords)
+  const qty = quantitiesIn(ownWords)
+  const written = (Array.isArray(input.draft) ? input.draft : [])
     .filter((s): s is string => typeof s === 'string')
     .map((s) => s.trim().slice(0, MAX_SENTENCE))
-    .filter((s) => s && grounded(s, own))
+    .filter(Boolean)
     .slice(0, MAX_SENTENCES)
-  if (!draft.length) return empty()
+  const draft = written.filter((s) => grounded(s, nums, qty))
+  const dropped = written.length - draft.length
+  if (!draft.length) return empty(dropped)
 
   const ids = new Set(spec.ticks.map((t) => t.id))
   const ticks: DraftMethodResult['ticks'] = []
@@ -131,5 +157,5 @@ export function parseDraftMethodResponse(resp: unknown, spec: DraftMethodSpec, o
   }
   const srcIds = Array.isArray(input.source_ids) ? input.source_ids.filter((x): x is string => typeof x === 'string') : []
   const sources = chunks.filter((ch) => srcIds.includes(ch.id)).map((ch) => ({ title: ch.title, source: ch.source }))
-  return { draft, ticks, confirm, sources }
+  return { draft, ticks, confirm, sources, dropped }
 }

@@ -128,6 +128,8 @@ export interface DraftMethodResult {
   ticks: { id: string; state: 'yes' | 'no' | 'confirm' }[]
   confirm: { id: string; question: string } | null
   sources: { title: string; source: string }[]
+  /** Sentences left out because they added a number or a time/temperature the owner didn't write. */
+  dropped: number
 }
 
 export async function assistantDraftMethod(method: string, text: string, venueType: string | undefined): Promise<DraftMethodResult> {

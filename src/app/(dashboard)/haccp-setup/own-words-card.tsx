@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { Sparkles } from 'lucide-react'
 import { findField } from '@/lib/haccp-pack/methods'
 import { AssistantError, assistantDraftMethod, type DraftMethodResult } from '@/lib/haccp-setup/api'
-import { asOwnWords, SKIP } from '@/lib/haccp-setup/own-words'
+import { asOwnWords, draftNotice, SKIP } from '@/lib/haccp-setup/own-words'
 import type { AnswerValue, OwnWordsAnswer, Question } from '@/lib/haccp-setup/types'
 
 // "In your own words" → plan text (design: AI-Answer.dc.html). The owner always has the last word on text and ticks.
@@ -46,7 +46,7 @@ export function OwnWordsCard({ question, position, initial, venueType, taken, on
     try {
       const r = await draftMethod(question.method, text, venueType)
       if (!r.draft.length) {
-        setError('That doesn’t read like a description of this method. Add a little more, or use your words as written.')
+        setError(draftNotice(r))
         return
       }
       setResult(r)
@@ -142,6 +142,7 @@ export function OwnWordsCard({ question, position, initial, venueType, taken, on
               })}
             </fieldset>
           )}
+          {result && draftNotice(result) && <p className="text-[12px] text-[#8a5a0c]">{draftNotice(result)}</p>}
           {result && result.sources.length > 0 && (
             <p className="text-[12px] text-[#5f6670]">Checked against: {result.sources.map((s) => `${s.source} — ${s.title}`).join('; ')}.</p>
           )}

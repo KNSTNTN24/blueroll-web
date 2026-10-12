@@ -6,7 +6,7 @@ import { evalCond } from '../conditions'
 import { visibleQuestions } from '../engine'
 import { buildPackDraft, EMPTY_PACK } from '../draft-pack'
 import { buildSetupContext, fillsPreview, planQuote } from '../context'
-import { asOwnWords, ownWordsValues, SKIP } from '../own-words'
+import { asOwnWords, draftNotice, ownWordsValues, SKIP } from '../own-words'
 import { makeRichBundle } from '@/lib/haccp-plan/fixtures'
 import type { Answers, OwnWordsAnswer } from '../types'
 
@@ -93,5 +93,17 @@ describe('own-words answers in the draft', () => {
     expect(asOwnWords(cooling)).toEqual(cooling)
     expect(asOwnWords(SKIP)).toBeNull()
     expect(asOwnWords({ documents: 'x' } as never)).toBeNull()
+  })
+})
+
+describe('draftNotice', () => {
+  it('explains a draft emptied by the number guard, not as off-topic', () => {
+    expect(draftNotice({ draft: [], dropped: 1 })).toMatch(/time or temperature you didn’t write/)
+    expect(draftNotice({ draft: [], dropped: 0 })).toMatch(/doesn’t read like a description/)
+  })
+  it('notes dropped sentences beside a draft, and says nothing otherwise', () => {
+    expect(draftNotice({ draft: ['a'], dropped: 2 })).toMatch(/^We left out 2 sentences/)
+    expect(draftNotice({ draft: ['a'], dropped: 1 })).toMatch(/^We left out 1 sentence that/)
+    expect(draftNotice({ draft: ['a'], dropped: 0 })).toBeNull()
   })
 })
