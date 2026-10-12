@@ -285,3 +285,12 @@ Behaviour:
 - [ ] Full gates: `npm test`, `deno test` (unchanged), `tsc`, `next build`.
 - [ ] Final whole-branch review (fresh reviewer, most capable model) with this plan's Review Focus.
 - [ ] Fix pass (TDD), then push → PR → merge → verify on prod (routes, dev preview 404) and ask the user to run through setup with a manager account.
+
+---
+
+## Amendment (2026-10-12): switch on checklists at apply
+
+The user asked for a review option to switch the new checklists on straight away.
+- **Task 5, Review:** add a checkbox "Switch on the selected checklists now" (default off). When it is on, the apply payload carries `activate: true`. After apply, show the "Switch on checklists" link only when not activated.
+- **Task 8, migration:** besides the `pack_changed` fix, new checklists are inserted with `active = coalesce((p_payload->>'activate')::boolean, false)`.
+- **`src/lib/haccp-setup/apply.ts`:** `toApplyPayload(…, opts?: { activate?: boolean })` adds `activate`. Test in `__tests__/apply.test.ts`: default false, true when asked.
