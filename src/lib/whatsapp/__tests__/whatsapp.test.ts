@@ -4,7 +4,7 @@ import text from './fixtures/text.json'
 import button from './fixtures/button.json'
 import flow from './fixtures/flow.json'
 import status from './fixtures/status.json'
-import { verifySignature, parseInbound, textMessage, buttonsMessage, templateMessage, flowMessage, makeSender } from '../../../../supabase/functions/_shared/channels/whatsapp'
+import { verifySignature, parseInbound, textMessage, buttonsMessage, listMessage, templateMessage, flowMessage, makeSender } from '../../../../supabase/functions/_shared/channels/whatsapp'
 import { maskPhone, maskId } from '../../../../supabase/functions/_shared/channels/mask'
 
 describe('verifySignature', () => {
@@ -36,6 +36,12 @@ describe('parseInbound', () => {
     expect(parseInbound({ entry: [{ changes: [{ value: { messages: {} } }] }] })).toEqual([])
     expect(parseInbound({ entry: [{ changes: [{ value: { messages: 5 } }] }] })).toEqual([])
   })
+  it('list reply (menu row) → button event with the row id', () => {
+    const wrap = (m: unknown) => ({ entry: [{ changes: [{ value: { messages: [m] } }] }] })
+    expect(parseInbound(wrap({ from: '447700900123', id: 'w', type: 'interactive', interactive: { type: 'list_reply', list_reply: { id: 'fill:t1:s1', title: 'Fridge' } } })))
+      .toEqual([{ kind: 'button', from: '447700900123', payload: 'fill:t1:s1', id: 'w' }])
+    expect(parseInbound(wrap({ from: '447700900123', id: 'w', type: 'interactive', interactive: { type: 'list_reply', list_reply: { id: '' } } }))).toEqual([])
+  })
   it('skips buttons with empty/non-string ids and non-digit senders', () => {
     const wrap = (m: unknown) => ({ entry: [{ changes: [{ value: { messages: [m] } }] }] })
     expect(parseInbound(wrap({ from: '447700900123', id: 'w', type: 'interactive', interactive: { type: 'button_reply', button_reply: { id: '' } } }))).toEqual([])
@@ -53,6 +59,11 @@ describe('builders', () => {
     expect(textMessage('44', 'hi')).toEqual({ messaging_product: 'whatsapp', to: '44', type: 'text', text: { body: 'hi', preview_url: false } })
     const b = buttonsMessage('44', 'Pick', [{ id: 'fill:a:s', title: 'A very long checklist name here' }]) as any
     expect(b.interactive.action.buttons[0].reply.title.length).toBeLessThanOrEqual(20)
+  })
+  it('list message', () => {
+    const m = listMessage('44', { header: 'H', body: 'B', footer: 'F', button: 'Choose a check', rows: [{ id: 'fill:a:s', title: 'A', description: 'Due 10:00' }] }) as any
+    expect(m.interactive).toEqual({ type: 'list', header: { type: 'text', text: 'H' }, body: { text: 'B' }, footer: { text: 'F' },
+      action: { button: 'Choose a check', sections: [{ title: 'Open checks', rows: [{ id: 'fill:a:s', title: 'A', description: 'Due 10:00' }] }] } })
   })
   it('template with quick replies', () => {
     const t = templateMessage('44', 'checklist_reminder', ['Fridge temps', '11:00', 'Wharf Side'], ['fill:t1:s1']) as any

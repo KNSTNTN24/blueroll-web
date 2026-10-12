@@ -85,10 +85,12 @@ describe('bot', () => {
     expect(f.state.revoked).toEqual(['id1'])
     expect(textOf(f.sent[0])).toBe(TEXT.stopped)
   })
-  it('CHECKS lists due checklists with fill buttons', async () => {
+  it('CHECKS sends a menu (list message) of due checklists with fill rows', async () => {
     const f = fake()
     await handleInbound({ kind: 'text', from, text: 'checks', id: 'x' }, f.d)
-    expect(f.sent[0].interactive.action.buttons[0].reply.id).toBe('fill:t1:s1')
+    expect(f.sent[0].interactive.type).toBe('list')
+    expect(f.sent[0].interactive.action.button).toBe('Choose a check')
+    expect(f.sent[0].interactive.action.sections[0].rows[0].id).toBe('fill:t1:s1')
   })
   it('fill button sends the form with a checklist token', async () => {
     const f = fake()
@@ -251,7 +253,7 @@ describe('bot', () => {
     expect(f.sent[0].interactive.action.parameters).toMatchObject({ flow_id: 'FC', flow_token: 'tok1' })
     expect(f.sent[0].interactive.action.parameters.flow_action_payload.data).toEqual({ item_name: 'Walk-in fridge', value_text: '9 °C (limit 0–5 °C)' })
     expect(f.tokens.get('tok1')).toMatchObject({ kind: 'corrective', response_id: 'r9', site_id: 's1', template_id: 't1', profile_id: 'p1' })
-    expect(f.sent[1].interactive.action.buttons[0].reply.id).toBe('fill:t1:s1')
+    expect(f.sent[1].interactive.action.sections[0].rows[0].id).toBe('fill:t1:s1')
   })
   it('pending corrective Flows are capped at 3 and skip sites the person no longer has', async () => {
     const mk = (i: number, site = 's1') => ({ response_id: 'r' + i, item: ITEMS[0], value: '9', site_id: site, template_id: 't1' })
