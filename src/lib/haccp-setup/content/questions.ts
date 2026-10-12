@@ -1,12 +1,14 @@
 // src/lib/haccp-setup/content/questions.ts
 import type { Question } from '../types'
 
-export const QUESTIONNAIRE_VERSION = 1
+export const QUESTIONNAIRE_VERSION = 2
 
 const HOT: Question['showIf'] = { any: [{ q: 'processes', has: 'cook_hot' }, { q: 'processes', has: 'reheat' }, { q: 'processes', has: 'hot_hold' }] }
 const HAS_PROBE: Question['showIf'] = { equipment: ['probe'] }
 
-export const QUESTIONS: Question[] = [
+type RawQuestion = Omit<Question, 'method' | 'fills'>
+
+const RAW: RawQuestion[] = [
   // ── Profile ──
   { id: 'venue_type', section: 'management', text: 'What kind of business is this site?',
     why: 'We use it to pre-fill typical answers. You can change any of them.',
@@ -95,6 +97,12 @@ export const QUESTIONS: Question[] = [
       { value: 'reusable_90', label: 'Reusable cloths washed at 90 °C' },
       { value: 'both', label: 'Both' },
     ] } },
+  { id: 'cloth_habits', section: 'cross', text: 'Which of these do you do with cloths? Tick any that apply.',
+    why: 'Colour-coding keeps raw-food cloths away from other areas; sanitiser between uses stops bacteria growing in them.',
+    answer: { kind: 'multi', options: [
+      { value: 'colour_coded', label: 'Different colour cloths for different areas', hint: 'e.g. red for raw meat, blue for general, green for salad' },
+      { value: 'sanitiser_between', label: 'Cloths kept in sanitiser between uses', hint: 'Solution changed at least every shift' },
+    ] } },
   { id: 'chemicals', section: 'cross', text: 'Where are cleaning chemicals stored?',
     why: 'Chemicals must never be stored with or above food.',
     answer: { kind: 'single', options: [
@@ -116,15 +124,29 @@ export const QUESTIONS: Question[] = [
   // ── Cleaning ──
   { id: 'handwash_basin', section: 'cleaning', text: 'Do you have a basin used only for handwashing, with hot water, soap and paper towels?',
     why: 'A dedicated handwash basin is a legal requirement in food areas.', answer: { kind: 'yes_no' } },
+  { id: 'handwash_signs', section: 'cleaning', text: 'Are there handwashing signs by the basins?',
+    why: 'Signs remind staff when and how to wash their hands; inspectors look for them.', answer: { kind: 'yes_no' } },
   { id: 'sanitiser', section: 'cleaning', text: 'Does your sanitiser meet BS EN 1276 or BS EN 13697, and do you leave it for the contact time on the label?',
     why: 'Only these standards prove a sanitiser kills E. coli; the contact time is what makes it work.',
     answer: { kind: 'yes_no' } },
+  { id: 'two_stage_clean', section: 'cleaning', text: 'Do you clean in two stages — first remove dirt and grease, then disinfect?',
+    why: 'Dirt and grease stop disinfectant from working, so SFBB asks for a clean first and a disinfect second.', answer: { kind: 'yes_no' } },
   { id: 'clean_as_go', section: 'cleaning', text: 'Do staff clear and clean as they go — surfaces cleaned between tasks, spills cleaned at once, waste removed regularly?',
     why: 'SFBB "Clear and clean as you go" method.', answer: { kind: 'yes_no' } },
   { id: 'cleaning_schedule', section: 'cleaning', text: 'Do you have a written cleaning schedule?',
     why: 'Inspectors ask to see what is cleaned, how often and by whom.', answer: { kind: 'yes_no' } },
 
   // ── Chilling ──
+  { id: 'fridge_check_method', section: 'chilling', text: 'How do you check your fridges?',
+    why: 'Chilled food must stay at 8 °C or below. How you measure decides how much you can trust the reading.',
+    answer: { kind: 'single', options: [
+      { value: 'probe', label: 'Digital probe thermometer', hint: 'Most accurate — what an EHO expects' },
+      { value: 'display', label: 'The fridge\u2019s own display', hint: 'Check it against a probe weekly' },
+      { value: 'dial', label: 'Dial thermometer inside', hint: 'Read at the warmest shelf' },
+      { value: 'logger', label: 'Wireless data logger', hint: 'Readings recorded automatically' },
+    ] } },
+  { id: 'fridge_checks_recorded', section: 'chilling', text: 'Do you check and record fridge temperatures at least once a day?',
+    why: 'A daily record is how you prove chilled food stayed cold.', answer: { kind: 'yes_no' } },
   { id: 'labels', section: 'chilling', text: 'Do you label food with the date it was prepared or opened?',
     why: 'Labels make sure food is used within its safe life.', answer: { kind: 'yes_no' } },
   { id: 'fifo', section: 'chilling', text: 'Do you rotate stock (first in, first out) and throw away food past its use-by date?',
@@ -140,6 +162,9 @@ export const QUESTIONS: Question[] = [
       { value: 'portions', label: 'Divide into small portions or shallow trays, then fridge' },
       { value: 'ice_bath', label: 'Ice bath or cold water, then fridge' },
     ] } },
+  { id: 'cool_90', section: 'chilling', text: 'Is cooked food always cooled to below 8 °C within 90 minutes?',
+    why: 'Food left warm lets bacteria and their toxins build up; 90 minutes is the SFBB limit.',
+    showIf: { q: 'processes', has: 'cool_cooked' }, answer: { kind: 'yes_no' } },
   { id: 'defrost_method', section: 'chilling', text: 'How do you defrost food?',
     why: 'Each method has its own SFBB safe method.',
     showIf: { q: 'processes', has: 'defrost' },
@@ -148,15 +173,41 @@ export const QUESTIONS: Question[] = [
       { value: 'microwave', label: 'In the microwave, then cooked at once' },
       { value: 'cold_water', label: 'Under cold running water' },
     ] } },
+  { id: 'no_refreeze', section: 'chilling', text: 'Do you make sure defrosted food is never frozen again?',
+    why: 'Refreezing lets bacteria that grew during defrosting survive into the next use.',
+    showIf: { q: 'processes', has: 'defrost' }, answer: { kind: 'yes_no' } },
   { id: 'freeze_own', section: 'chilling', text: 'Do you freeze food yourselves?',
     why: 'Freezing your own food needs labelling and a safe method.', answer: { kind: 'yes_no' } },
+  { id: 'freezer_minus18', section: 'chilling', text: 'Is your freezer at −18 °C or colder, and do you only freeze food that is still in date?',
+    why: 'Freezing stops bacteria growing but does not kill them, so food must be frozen while it is still safe.',
+    showIf: { equipment: ['freezer'] }, answer: { kind: 'yes_no' } },
 
   // ── Cooking ──
+  { id: 'cook_checks', section: 'cooking', text: 'How do you check food is cooked? Tick all that apply.',
+    why: 'Thorough cooking kills harmful bacteria. A probe gives proof; visual checks back it up.',
+    showIf: { q: 'processes', has: 'cook_hot' },
+    answer: { kind: 'multi', options: [
+      { value: 'core_75', label: 'Probe the core to 75 °C', hint: 'Or an equal time and temperature, e.g. 70 °C for 2 minutes' },
+      { value: 'visual', label: 'Check it is steaming hot, juices run clear, no pink', hint: 'Where it applies to the dish' },
+    ] } },
+  { id: 'hot_hold_rules', section: 'cooking', text: 'Which of these rules do you follow for food kept hot? Tick all that apply.',
+    why: 'Below 63 °C bacteria can grow. Food held below 63 °C must be used within 2 hours, once.',
+    showIf: { q: 'processes', has: 'hot_hold' },
+    answer: { kind: 'multi', options: [
+      { value: 'above_63', label: 'Kept at 63 °C or above', hint: 'Checked with a probe' },
+      { value: 'max_2h', label: 'Below 63 °C: used within 2 hours, then thrown away' },
+    ] } },
   { id: 'reheat_once', section: 'cooking', text: 'Is food reheated only once and checked with a probe?',
     why: 'Reheating more than once increases the risk; the core must reach 75 °C (82 °C in Scotland).',
     showIf: { q: 'processes', has: 'reheat' }, answer: { kind: 'yes_no' } },
+  { id: 'reheat_75', section: 'cooking', text: 'Is reheated food always brought to 75 °C in the core (82 °C in Scotland)?',
+    why: 'Reheating must kill any bacteria that grew while the food was stored.',
+    showIf: { q: 'processes', has: 'reheat' }, answer: { kind: 'yes_no' } },
   { id: 'probe_calibration', section: 'cooking', text: 'Do you check your probe thermometer in iced water and boiling water at least monthly?',
     why: 'A probe that reads wrong makes every temperature record wrong.',
+    showIf: HAS_PROBE, answer: { kind: 'yes_no' } },
+  { id: 'probe_clean', section: 'cooking', text: 'Do you clean and disinfect the probe before and after each use?',
+    why: 'A dirty probe carries bacteria from raw food into cooked food.',
     showIf: HAS_PROBE, answer: { kind: 'yes_no' } },
   { id: 'new_dishes', section: 'cooking', text: 'Before a new dish goes on the menu, do you check how it is cooked and update the allergen information?',
     why: 'SFBB Menu checks.', showIf: HOT, answer: { kind: 'yes_no' } },
@@ -171,3 +222,60 @@ export const QUESTIONS: Question[] = [
   { id: 'diary', section: 'management', text: 'Will you use Blueroll as your daily food safety diary?',
     why: 'Completed checklists in Blueroll are your SFBB daily diary records.', answer: { kind: 'yes_no' } },
 ]
+
+/** Each question's SFBB method and the pack fields it can set (see content/haccp-mapping.ts). */
+const META: Record<string, { method: string; fills: string[] }> = {
+  venue_type: { method: 'opening_closing', fills: [] },
+  processes: { method: 'cooking_safely', fills: ['ck_probe', 'hh_check', 'rh_procedure'] },
+  extra_care: { method: 'extra_care', fills: ['ec_eggs', 'ec_rice', 'ec_pulses', 'ec_shellfish', 'ec_procedure'] },
+  equipment: { method: 'chilled_storage', fills: [] },
+  separation: { method: 'separating_foods', fills: ['sf_raw_separate', 'rte_separate', 'rte_stored', 'sf_storage'] },
+  colour_boards: { method: 'separating_foods', fills: ['sf_colour_boards', 'sf_equipment', 'rte_utensils'] },
+  hygiene_rules: { method: 'personal_hygiene', fills: ['ph_hair', 'ph_jewellery', 'ph_nails', 'ph_cuts', 'hw_when'] },
+  illness_policy: { method: 'personal_hygiene', fills: ['ph_illness'] },
+  uniform: { method: 'personal_hygiene', fills: ['ph_uniform', 'ph_clothing'] },
+  changing: { method: 'personal_hygiene', fills: ['ph_changing'] },
+  allergen_matrix: { method: 'food_allergies', fills: ['fa_matrix', 'fa_procedure'] },
+  allergen_ask: { method: 'food_allergies', fills: ['fa_communication', 'fa_procedure'] },
+  allergen_training: { method: 'food_allergies', fills: ['fa_aware'] },
+  cloths: { method: 'cloths', fills: ['cl_single_use', 'cl_laundry', 'cl_method'] },
+  cloth_habits: { method: 'cloths', fills: ['cl_colour_coded', 'cl_stored'] },
+  chemicals: { method: 'contamination_prevention', fills: ['cp_chemicals', 'cp_chemicals_desc'] },
+  glass_policy: { method: 'contamination_prevention', fills: ['cp_glass', 'cp_physical', 'cp_describe'] },
+  pest_control: { method: 'pest_control', fills: ['pc_contract', 'pc_measures'] },
+  pest_proofing: { method: 'pest_control', fills: ['pc_proofing'] },
+  handwash_basin: { method: 'handwashing', fills: ['hw_basin', 'hw_soap', 'hw_towels'] },
+  handwash_signs: { method: 'handwashing', fills: ['hw_signs'] },
+  sanitiser: { method: 'cleaning_effectively', fills: ['ce_sanitiser', 'ce_contact'] },
+  two_stage_clean: { method: 'cleaning_effectively', fills: ['ce_2stage'] },
+  clean_as_go: { method: 'clear_clean', fills: ['ce_surfaces', 'cc_clear', 'cc_spills', 'cc_waste', 'cc_method'] },
+  cleaning_schedule: { method: 'cleaning_schedule', fills: ['cs_schedule'] },
+  fridge_check_method: { method: 'chilled_storage', fills: ['st_check_method'] },
+  fridge_checks_recorded: { method: 'chilled_storage', fills: ['st_temp', 'st_records'] },
+  labels: { method: 'chilled_storage', fills: ['st_labelled', 'fz_labelled'] },
+  fifo: { method: 'stock_control', fills: ['st_rotation', 'sc_fifo', 'sc_reject'] },
+  delivery_checks: { method: 'stock_control', fills: ['sc_dates', 'sc_delivery'] },
+  cooling_method: { method: 'chilling_down', fills: ['cd_fridge', 'cd_portions'] },
+  cool_90: { method: 'chilling_down', fills: ['cd_90min'] },
+  defrost_method: { method: 'defrosting', fills: ['df_fridge', 'df_microwave'] },
+  no_refreeze: { method: 'defrosting', fills: ['df_not_refreeze'] },
+  freeze_own: { method: 'freezing', fills: ['fz_labelled'] },
+  freezer_minus18: { method: 'freezing', fills: ['fz_temp', 'fz_suitable'] },
+  cook_checks: { method: 'cooking_safely', fills: ['ck_75c', 'ck_visual'] },
+  hot_hold_rules: { method: 'hot_holding', fills: ['hh_63c', 'hh_2hr'] },
+  reheat_once: { method: 'reheating', fills: ['rh_once', 'rh_check', 'rh_procedure'] },
+  reheat_75: { method: 'reheating', fills: ['rh_75c'] },
+  probe_calibration: { method: 'temperature_probes', fills: ['tp_calibrated', 'tp_boil_ice'] },
+  probe_clean: { method: 'temperature_probes', fills: ['tp_sanitised'] },
+  new_dishes: { method: 'menu_checks', fills: ['mc_new_dishes'] },
+  opening_closing: { method: 'opening_closing', fills: ['oc_opening', 'oc_closing', 'oc_recorded'] },
+  approved_suppliers: { method: 'suppliers', fills: ['sup_approved'] },
+  induction: { method: 'training', fills: ['tr_induction'] },
+  diary: { method: 'daily_diary', fills: ['dd_kept'] },
+}
+
+export const QUESTIONS: Question[] = RAW.map((q) => {
+  const meta = META[q.id]
+  if (!meta) throw new Error(`questions.ts: no META for ${q.id}`)
+  return { ...q, ...meta }
+})

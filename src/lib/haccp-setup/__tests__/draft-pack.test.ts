@@ -60,3 +60,33 @@ describe('FIELD_RULES', () => {
     expect(fields.find((f) => f.fieldId === 'hw_basin')).toBeUndefined()
   })
 })
+
+describe('selects and documents in the draft', () => {
+  const ctx = (answers: Ctx['answers']): Ctx => ({ answers, scotland: false })
+  it('writes a select value for the fridge check method', () => {
+    const d = buildPackDraft(ctx({ fridge_check_method: 'logger' }), null).find((f) => f.fieldId === 'st_check_method')!
+    expect(d).toMatchObject({ type: 'select', value: 'Data logger', status: 'new' })
+    expect(mergePack(null, [d]).selects.st_check_method).toBe('Data logger')
+  })
+  it('never overwrites a select the owner changed by hand', () => {
+    const p = pack({ selects: { st_check_method: 'Fridge display' }, overrides: { st_check_method: true } })
+    expect(buildPackDraft(ctx({ fridge_check_method: 'probe' }), p).find((f) => f.fieldId === 'st_check_method')!.status).toBe('manual')
+  })
+  it('writes attached documents into files, marked as from the questionnaire', () => {
+    const ref = JSON.stringify({ id: 'd1', title: 'Contract.pdf' })
+    const d = buildPackDraft(ctx({ documents: { pc_contract_file: ref } }), null).find((f) => f.fieldId === 'pc_contract_file')!
+    expect(d).toMatchObject({ type: 'file', value: ref, status: 'new' })
+    const merged = mergePack(null, [d])
+    expect(merged.files.pc_contract_file).toBe(ref)
+    expect(merged.sources!.pc_contract_file).toBe('questionnaire')
+  })
+  it('keeps a document the owner attached in the pack', () => {
+    const theirs = JSON.stringify({ id: 'd9', title: 'Theirs.pdf' })
+    const p = pack({ files: { pc_contract_file: theirs } })
+    const d = buildPackDraft(ctx({ documents: { pc_contract_file: JSON.stringify({ id: 'd1', title: 'Ours.pdf' }) } }), p)
+    expect(d.find((f) => f.fieldId === 'pc_contract_file')).toMatchObject({ status: 'kept', current: theirs })
+  })
+  it('ignores documents for fields that are not file fields', () => {
+    expect(buildPackDraft(ctx({ documents: { hw_basin: 'x' } }), null)).toEqual([])
+  })
+})

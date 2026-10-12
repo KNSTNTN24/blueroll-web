@@ -5,13 +5,15 @@ import { FIELD_RULES } from './content/haccp-mapping'
 
 export const EMPTY_PACK: PackData = { toggles: {}, texts: {}, files: {}, selects: {}, overrides: {}, sources: {} }
 
-function currentValue(type: 'toggle' | 'text' | 'select', id: string, pack: PackData): PackValue | undefined {
+type DraftType = DraftField['type']
+
+function currentValue(type: DraftType, id: string, pack: PackData): PackValue | undefined {
   if (type === 'toggle') return pack.toggles[id]
-  const v = type === 'text' ? pack.texts[id] : pack.selects[id]
+  const v = type === 'text' ? pack.texts[id] : type === 'file' ? pack.files[id] : pack.selects[id]
   return v === '' ? undefined : v
 }
 
-export function classifyField(fieldId: string, type: 'toggle' | 'text' | 'select', proposed: PackValue, pack: PackData | null):
+export function classifyField(fieldId: string, type: DraftType, proposed: PackValue, pack: PackData | null):
   { status: FieldStatus; current?: PackValue } {
   if (!pack) return { status: 'new' }
   if (pack.overrides?.[fieldId]) return { status: 'manual', current: currentValue(type, fieldId, pack) }
@@ -33,6 +35,16 @@ export function buildPackDraft(ctx: Ctx, pack: PackData | null): DraftField[] {
     const { status, current } = classifyField(rule.fieldId, type, value, pack)
     out.push({ fieldId: rule.fieldId, methodId: f.methodId, label: f.label, type, value, status, ...(current !== undefined ? { current } : {}) })
   }
+  // Documents attached in setup go into the pack's file fields.
+  const docs = ctx.answers.documents
+  if (docs && typeof docs === 'object' && !Array.isArray(docs)) {
+    for (const [fieldId, ref] of Object.entries(docs as Record<string, string>)) {
+      const f = findField(fieldId)
+      if (!f || f.type !== 'file' || typeof ref !== 'string' || !ref) continue
+      const { status, current } = classifyField(fieldId, 'file', ref, pack)
+      out.push({ fieldId, methodId: f.methodId, label: f.label, type: 'file', value: ref, status, ...(current !== undefined ? { current } : {}) })
+    }
+  }
   return out
 }
 
@@ -46,6 +58,7 @@ export function mergePack(pack: PackData | null, fields: DraftField[]): PackData
     if (f.status !== 'new') continue
     if (f.type === 'toggle') out.toggles[f.fieldId] = f.value as boolean
     else if (f.type === 'text') out.texts[f.fieldId] = f.value as string
+    else if (f.type === 'file') out.files[f.fieldId] = f.value as string
     else out.selects[f.fieldId] = f.value as string
     out.sources![f.fieldId] = 'questionnaire'
   }
