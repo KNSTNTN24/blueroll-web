@@ -142,12 +142,16 @@ export const flowMessage = (to: string, o: { flowId: string; token: string; cta:
   } } },
 })
 
-export function makeSender(cfg: { token: string; phoneNumberId: string; fetchFn?: typeof fetch }): SendFn {
+/** A Meta call that hangs longer than this is aborted and reported as a transient failure (status 0): the cron has 60 s. */
+export const SEND_TIMEOUT_MS = 10_000
+
+export function makeSender(cfg: { token: string; phoneNumberId: string; fetchFn?: typeof fetch; timeoutMs?: number }): SendFn {
   const f = cfg.fetchFn ?? fetch
   return async (msg) => {
     try {
       const r = await f(`https://graph.facebook.com/${GRAPH_VERSION}/${cfg.phoneNumberId}/messages`, {
         method: 'POST', headers: { Authorization: `Bearer ${cfg.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(msg),
+        signal: AbortSignal.timeout(cfg.timeoutMs ?? SEND_TIMEOUT_MS),
       })
       const j = await r.json().catch(() => ({}))
       const code = r.ok ? undefined : j?.error?.code

@@ -143,16 +143,50 @@ describe('runWhatsAppTeams — missed summary', () => {
     expect(w.sent.map((m) => m.to)).toEqual([ANNA.phone, BOSS.phone])
     expect(s.notifications).toHaveLength(1)
   })
-  // Review Focus 5: team_day_summary not approved yet.
-  it('template not approved → claim released, no notifications; the next run retries', async () => {
+  // Review Focus 5: team_day_summary not approved yet. Spec §5: managers ALWAYS get the app notification.
+  it('template not approved → app notification once anyway; WhatsApp claim released, the next run retries WhatsApp only', async () => {
     const { d, s } = fakeTeamDeps({ templates: [FRIDGE], mappings: [MAP[0]] })
     s.events.add('g1|morning:gm1|2026-10-14'); s.events.add('g1|overdue|tA:2026-10-14')
     const down = fakeSend(() => ({ ok: false, status: 404, id: null, errorCode: 132001 }))
-    await runWhatsAppTeams(d, down.send, at('2026-10-14T11:00:00Z'))
+    expect(await runWhatsAppTeams(d, down.send, at('2026-10-14T11:00:00Z'))).toMatchObject({ summaries: 0 })
     expect(s.events.has('g1|day_end|2026-10-14')).toBe(false)
-    expect(s.notifications).toEqual([])
+    expect(s.events.has('g1|day_end_app|2026-10-14')).toBe(true)
+    expect(s.notifications).toEqual([{ user_id: 'm1', type: 'team', title: 'Kitchen: checks missed today',
+      message: 'Kitchen at Ashfield Row today: 0 of 1 done. Missed: Fridge temps.', link: '/checklists' }])
     const up = fakeSend()
     expect(await runWhatsAppTeams(d, up.send, at('2026-10-14T11:10:00Z'))).toMatchObject({ summaries: 1 })
+    expect(up.sent.map((m) => m.template.name)).toEqual(['team_day_summary', 'team_day_summary'])
+    expect(s.notifications).toHaveLength(1)
+    await runWhatsAppTeams(d, up.send, at('2026-10-14T11:20:00Z'))
+    expect(up.sent).toHaveLength(2)
+    expect(s.notifications).toHaveLength(1)
+  })
+})
+
+describe('runWhatsAppTeams — run budget', () => {
+  const counting = (init: Parameters<typeof fakeTeamDeps>[0]) => {
+    const calls: string[] = []
+    const base = fakeTeamDeps(init)
+    const real = base.d.completionsSince
+    base.d.completionsSince = async (b, since) => { calls.push(b); return real(b, since) }
+    return { ...base, calls }
+  }
+  it('before the morning time a team costs no completions query', async () => {
+    const { d, calls } = counting({ templates: [FRIDGE, CLEAN], mappings: MAP })
+    const w = fakeSend()
+    expect(await runWhatsAppTeams(d, w.send, at('2026-10-14T08:59:00Z'))).toEqual({ morning: 0, overdue: 0, summaries: 0, failed: 0 })
+    expect(calls).toEqual([])
+    await runWhatsAppTeams(d, w.send, at('2026-10-14T09:00:00Z'))
+    expect(calls).toEqual(['b'])
+  })
+  it('two teams of one business share one completions fetch per run', async () => {
+    const { d, s, calls } = counting({ templates: [FRIDGE, CLEAN], mappings: [...MAP, { group_id: 'g2', template_id: 'tA' }, { group_id: 'g2', template_id: 'tB' }] })
+    s.teams.push({ ...TEAM, id: 'g2', title: 'Bar' })
+    s.members.push(member({ id: 'gm9', group_id: 'g2', profile_id: ANNA.profile_id, phone: ANNA.phone }))
+    const w = fakeSend()
+    expect(await runWhatsAppTeams(d, w.send, at('2026-10-14T09:00:00Z'))).toMatchObject({ morning: 2 })
+    expect(calls).toEqual(['b'])
+    expect(params(w.sent[1])).toEqual(['2', 'Bar (Ashfield Row)', 'Fridge temps (11:00), Cleaning'])
   })
 })
 

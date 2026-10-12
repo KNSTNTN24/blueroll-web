@@ -118,6 +118,12 @@ describe('makeSender', () => {
     const send = makeSender({ token: 'T', phoneNumberId: 'PN', fetchFn: (async () => new Response('{}', { status: 400 })) as any })
     expect(await send(textMessage('44', 'x'))).toEqual({ id: null, ok: false, status: 400 })
   })
+  it('aborts a hanging Meta call after the timeout: a transient failure (status 0, no error code)', async () => {
+    const send = makeSender({ token: 'T', phoneNumberId: 'PN', timeoutMs: 20, fetchFn: ((_url: string, init: any) => new Promise((_res, rej) => {
+      init.signal.addEventListener('abort', () => rej(init.signal.reason))
+    })) as any })
+    expect(await send(textMessage('44', 'x'))).toEqual({ id: null, ok: false, status: 0 })
+  })
 })
 
 describe('maskPhone', () => {
