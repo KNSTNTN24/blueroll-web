@@ -76,7 +76,7 @@ export function AnswerInput({ question, initial, onConfirm }: {
   return <EquipmentInput value={equipment} onChange={setEquipment} onConfirm={() => onConfirm(equipment)} />
 }
 
-function EquipmentInput({ value, onChange, onConfirm }: {
+export function EquipmentInput({ value, onChange, onConfirm }: {
   value: Equipment[]; onChange: (v: Equipment[]) => void; onConfirm: () => void
 }) {
   const [kind, setKind] = useState<EquipmentKind>('fridge')

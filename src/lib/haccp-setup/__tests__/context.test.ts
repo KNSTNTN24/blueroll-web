@@ -51,3 +51,21 @@ describe('planQuote', () => {
     expect(planQuote(q('cloths'), {}, { scotland: false })).toBeNull()
   })
 })
+
+describe('reviewComposition', () => {
+  it('splits every asked field into answers, Blueroll and open', async () => {
+    const { reviewComposition } = await import('../context')
+    const ctx = buildSetupContext({ ...empty, team: [{ full_name: 'Emma', role: 'owner' }] }, 's1', [])
+    const pack = { toggles: { hw_basin: true }, texts: {}, files: {}, selects: {}, overrides: {}, sources: {} }
+    const draft = [{ fieldId: 'hw_soap', methodId: 'handwashing', label: '', type: 'toggle' as const, value: true, status: 'new' as const }]
+    const r = reviewComposition(ctx, pack, draft)
+    const cleaning = r.sections.find((s) => s.id === 'cleaning')!
+    expect(cleaning.answers).toBe(2)
+    const mgmt = r.sections.find((s) => s.id === 'management')!
+    expect(mgmt.blueroll).toBe(1) // tr_responsible from the team
+    const total = r.sections.reduce((n, s) => n + s.total, 0)
+    expect(r.sections.reduce((n, s) => n + s.answers + s.blueroll + s.open, 0)).toBe(total)
+    expect(r.filled).toBe(3)
+    expect(r.open[0]).toMatchObject({ ref: '1.1' })
+  })
+})

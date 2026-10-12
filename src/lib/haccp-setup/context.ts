@@ -1,14 +1,15 @@
 // What the questionnaire knows about the site before asking anything: data it can
 // confirm instead of asking (menu, recipes, suppliers, team, checklists), the
 // documents it still needs, and previews of what each answer puts in the plan.
-import { HACCP_METHODS, findField } from '@/lib/haccp-pack/methods'
+import { HACCP_METHODS, findField, type SectionId } from '@/lib/haccp-pack/methods'
 import { computeAutoData, type AutoDataSources } from '@/lib/haccp-pack/auto-data'
 import { COVERED_FILE_REASON, packFields, scopeFrom, type PackScope } from '@/lib/haccp-pack/scope'
-import { methodRef } from '@/lib/haccp-plan/copy'
+import { SECTION_NAME, SECTION_ORDER, methodRef } from '@/lib/haccp-plan/copy'
+import { mergePack } from './draft-pack'
 import { FIELD_RULES } from './content/haccp-mapping'
 import { CHECKLIST_LIBRARY } from './content/checklists'
 import { condRefs, evalCond } from './conditions'
-import type { Answers, DataFlags, PackValue, Question } from './types'
+import type { Answers, DataFlags, DraftField, PackData, PackValue, Question } from './types'
 
 export interface SetupContext {
   sources: AutoDataSources
@@ -101,4 +102,36 @@ export function checklistsFor(q: Question, answers: Answers): string[] {
       return linked && !('always' in c.includeIf && !related.has(c.key)) && evalCond(c.includeIf, answers)
     })
     .map((c) => c.name)
+}
+
+export interface ReviewSection { id: SectionId; name: string; answers: number; blueroll: number; open: number; total: number }
+
+/** Where every asked pack field stands after applying the draft: from answers (or already in the pack), from Blueroll data, or open. */
+export function reviewComposition(ctx: SetupContext, pack: PackData | null, draft: DraftField[]): {
+  sections: ReviewSection[]; filled: number; total: number; open: { ref: string; label: string }[]
+} {
+  const merged = mergePack(pack, draft)
+  const isRef = (raw: string | undefined) => { try { return !!raw && !!JSON.parse(raw)?.title } catch { return false } }
+  const inPack = (id: string, type: string) =>
+    type === 'toggle' ? merged.toggles[id] === true
+      : type === 'file' ? isRef(merged.files[id])
+        : !!(type === 'text' ? merged.texts[id] : merged.selects[id])?.trim()
+  const sections: ReviewSection[] = []
+  const open: { ref: string; label: string }[] = []
+  let filled = 0, total = 0
+  for (const sid of SECTION_ORDER) {
+    const s: ReviewSection = { id: sid, name: SECTION_NAME[sid], answers: 0, blueroll: 0, open: 0, total: 0 }
+    for (const m of HACCP_METHODS.filter((x) => x.section === sid)) {
+      for (const f of packFields(m, ctx.scope)) {
+        s.total++
+        if (inPack(f.id, f.type)) s.answers++
+        else if (f.autoSource && ctx.auto[f.id] && !merged.overrides[f.id]) s.blueroll++
+        else { s.open++; open.push({ ref: methodRef(m.id), label: f.label }) }
+      }
+    }
+    filled += s.answers + s.blueroll
+    total += s.total
+    sections.push(s)
+  }
+  return { sections, filled, total, open }
 }
