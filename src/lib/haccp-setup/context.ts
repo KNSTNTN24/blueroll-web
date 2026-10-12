@@ -9,6 +9,7 @@ import { mergePack } from './draft-pack'
 import { FIELD_RULES } from './content/haccp-mapping'
 import { CHECKLIST_LIBRARY } from './content/checklists'
 import { condRefs, evalCond } from './conditions'
+import { ownWordsValues } from './own-words'
 import type { Answers, DataFlags, DraftField, PackData, PackValue, Question } from './types'
 
 export interface SetupContext {
@@ -50,6 +51,7 @@ export function buildSetupContext(
     team: !!auto.tr_responsible,
     checklists: !!(auto.st_method || auto.tp_method),
     documents_needed: neededFiles.length > 0,
+    autoFilled: Object.keys(auto).filter((k) => !!auto[k]),
   }
   return { sources, auto, scope, flags, neededFiles, coveredFiles, documents }
 }
@@ -60,6 +62,7 @@ export interface FillPreview { fieldId: string; label: string; ref: string; valu
 export function fillsPreview(q: Question, answers: Answers, ctx: { scotland: boolean }): FillPreview[] {
   const docs = (answers.documents && typeof answers.documents === 'object' && !Array.isArray(answers.documents))
     ? answers.documents as Record<string, string> : {}
+  const own = new Map(ownWordsValues(q, answers).map((x) => [x.fieldId, x.value]))
   return q.fills.map((fieldId) => {
     const f = findField(fieldId)!
     let value: PackValue | null = null
@@ -70,6 +73,7 @@ export function fillsPreview(q: Question, answers: Answers, ctx: { scotland: boo
         const v = r.value({ answers, scotland: ctx.scotland })
         if (v !== undefined && v !== false && v !== '') { value = v; break }
       }
+      if (value === null && own.has(fieldId)) value = own.get(fieldId)!
     }
     return { fieldId, label: f.label, ref: methodRef(f.methodId), value }
   })

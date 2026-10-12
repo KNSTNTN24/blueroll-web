@@ -4,7 +4,9 @@ export type VenueType = 'restaurant' | 'coffee_shop' | 'takeaway' | 'bakery'
 export const EQUIPMENT_KINDS = ['fridge', 'freezer', 'display_chiller', 'blast_chiller', 'dishwasher', 'probe', 'hot_hold', 'other'] as const
 export type EquipmentKind = (typeof EQUIPMENT_KINDS)[number]
 export interface Equipment { kind: EquipmentKind; label: string }
-export type AnswerValue = boolean | string | string[] | Equipment[] | Record<string, string>
+/** "In your own words" answer: what the owner wrote, the plan text they accepted, and the points they ticked. */
+export interface OwnWordsAnswer { text: string; draft: string; ticks: Record<string, boolean> }
+export type AnswerValue = boolean | string | string[] | Equipment[] | Record<string, string> | OwnWordsAnswer
 export type Answers = Record<string, AnswerValue>
 
 export type Cond =
@@ -17,6 +19,8 @@ export type Cond =
   | { not: Cond }
   /** True when Blueroll has data of this kind for the site (see context.ts). */
   | { data: DataSource | 'documents_needed' }
+  /** True when Blueroll already fills this pack field from the business's data (context.ts autoFilled). */
+  | { auto: string }
 
 export interface Option { value: string; label: string; hint?: string }
 export type AnswerSpec =
@@ -28,9 +32,11 @@ export type AnswerSpec =
   | { kind: 'confirm_data'; source: DataSource }
   /** Attach documents Blueroll can't build. Answer: Record<fileFieldId, fileRefJSON>. */
   | { kind: 'documents' }
+  /** The owner describes a method; the assistant drafts the plan text for `target` and suggests `ticks`. Answer: OwnWordsAnswer | 'skip'. */
+  | { kind: 'own_words'; target: string; ticks: string[]; label: string; placeholder: string }
 
 export type DataSource = 'raw_products' | 'menu_methods' | 'suppliers' | 'team' | 'checklists'
-export type DataFlags = Partial<Record<DataSource | 'documents_needed', boolean>>
+export type DataFlags = Partial<Record<DataSource | 'documents_needed', boolean>> & { autoFilled?: string[] }
 
 export interface Question {
   id: string
