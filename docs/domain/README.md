@@ -35,12 +35,15 @@ When a page and the database disagree, the database wins and the page has a bug.
 | [entities/haccp-plan.md](entities/haccp-plan.md) | The inspector-ready HACCP Plan: sections and where each number comes from, inspector links, PDF, sign-off. |
 | [concepts/channels.md](concepts/channels.md) | WhatsApp teams and Telegram groups: linking, consent, daily lists and reminders, forms, first-submit-wins, billing. |
 | [concepts/periods-and-due-checks.md](concepts/periods-and-due-checks.md) | What "due", "done", "overdue" and "missed" mean in each layer (DB, web, edge, mobile, reports, Plan) — read before touching schedules. |
+| [concepts/sfbb-structure.md](concepts/sfbb-structure.md) | How FSA *Safer Food, Better Business* is organised (sections, safe methods, diary, 4-weekly review) and how Blueroll maps onto it; key temperatures with SFBB page numbers. |
+| [concepts/allergens-and-dietary.md](concepts/allergens-and-dietary.md) | The 14 allergens: where stored, how a dish's allergens and dietary labels are worked out, matrix/exports, PPDS — and why auto-labels are unsafe. |
+| [concepts/deletion-and-cascades.md](concepts/deletion-and-cascades.md) | What delete / remove / deactivate really do per entity, the cascade map, files left in storage, and the rule for adding a delete. |
+| [concepts/status-and-value-sets.md](concepts/status-and-value-sets.md) | Every enumerated value set (statuses, kinds, categories): allowed values, where enforced, live drift, canonical choice. |
 | [concepts/marketing-and-external-data.md](concepts/marketing-and-external-data.md) | Not product data: the free-template lead list and email drip (personal data, #112), and the Toronto DineSafe cache for mobile onboarding. |
 
 Not yet separate pages (covered inside the pages above): business vs site scoping (`site.md`), out-of-range &
-corrective action and sign-off (`checklist-completion.md`), SFBB sections / safe methods (`haccp-pack.md`), allergens &
-dietary (`menu.md`, `recipe.md`), soft delete, auto-fill (`haccp-pack.md`), FSA/FHRS rating (`business.md`), checklist
-library (`setup-session.md`). Candidates for their own pages if they grow.
+corrective action and sign-off (`checklist-completion.md`), auto-fill (`haccp-pack.md`), FSA/FHRS rating (`business.md`),
+checklist library (`setup-session.md`).
 
 ## Conventions
 
