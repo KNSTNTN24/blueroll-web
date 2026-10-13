@@ -3,7 +3,7 @@
 > The customer account: one restaurant, café or group of sites that signs up, pays, and owns every record in Blueroll.
 
 **Tables:** `businesses` (31 columns), helpers `trial_grants`, `demo_force_exit` · **Scope:** business (the root of
-all scoping) · **Last verified:** 2026-10-13 against `main@b50e9d1` and the live DB (84 businesses)
+all scoping) · **Last verified:** 2026-10-13 (review pass) against `main@b50e9d1` and the live DB (84 businesses)
 
 ## What it is for
 
@@ -65,7 +65,7 @@ business, the owner profile (`role = 'owner'`), then calls `consume_trial` and `
 |---|---|
 | Web onboarding | `src/app/(auth)/onboarding/page.tsx:701-716`. FSA lookup straight from `api.ratings.food.gov.uk` (`:515`, `:662`). Multi-site: name = group name, FSA fields from the first site; then deletes the trigger-made site and inserts the real list (`:741-752`) |
 | Mobile onboarding | `haccp-mobile/lib/providers/auth_provider.dart:125` (single) and `:235` (group, mirrors web). FSA via `features/onboarding/data/fsa_api_client.dart` |
-| Join flow | `join_with_invite` — joins an existing business, never creates one. See [Member](member.md) / [Invite](invite.md) |
+| Join flow | `join_with_invite` — joins an existing business, never creates one. See [Member](member.md) / [Invite](member.md#lifecycle) |
 
 **Triggers on insert:** BEFORE `trg_set_default_trial` (14-day trial), BEFORE `trg_zz_subscription_arbiter`;
 AFTER `trg_business_default_site` (`create_default_site`: one `active` site named after the business, copying `fsa_rating`)
@@ -127,17 +127,17 @@ hiding the demo (2 live rows; nothing in either repo writes it).
 ## Gotchas
 
 1. **Any member can rewrite the business.** The UPDATE policy is just `id = get_my_business_id()`: kitchen staff can change
-   `name`, `fsa_rating`, `equipment`, `haccp_auto_fill`, `notification_prefs` by direct API call, and the Notifications tab is shown to every role.
+   `name`, `fsa_rating`, `equipment`, `haccp_auto_fill`, `notification_prefs` by direct API call, and the Notifications tab is shown to every role. [#66](https://github.com/KNSTNTN24/blueroll-web/issues/66)
 2. **`notification_prefs` is write-only.** The settings page saves 19 keys, but no edge function, cron or mobile code reads them —
-   switches have no effect. They are also business-wide, not per person, so one member's change applies to everyone.
-3. **The 4-weekly HACCP review banner is always "Never reviewed".** `haccp_last_reviewed_at` is read by the HACCP Pack and Plan but no code writes it (0 live rows).
+   switches have no effect. They are also business-wide, not per person, so one member's change applies to everyone. [#75](https://github.com/KNSTNTN24/blueroll-web/issues/75)
+3. **The 4-weekly HACCP review banner is always "Never reviewed".** `haccp_last_reviewed_at` is read by the HACCP Pack and Plan but no code writes it (0 live rows). The Plan looks at review completions first, so only the pack page always shows "Never reviewed" (see [HACCP Plan](haccp-plan.md)). [#76](https://github.com/KNSTNTN24/blueroll-web/issues/76)
 4. **FSA rating is a signup snapshot.** Nothing re-fetches it from the FSA; there is no edit UI. The topbar and dashboard print
-   `{fsa_rating}/5` (`topbar.tsx:81-84`, `dashboard/page.tsx:149`), giving "AwaitingInspection/5" or "Pass/5". For multi-site the business copies the first site's rating.
+   `{fsa_rating}/5` (`topbar.tsx:81-84`, `dashboard/page.tsx:149`), giving "AwaitingInspection/5" or "Pass/5". For multi-site the business copies the first site's rating. [#77](https://github.com/KNSTNTN24/blueroll-web/issues/77)
 5. **The trigger's default site is thrown away for groups.** Web and mobile group onboarding delete it client-side and insert the real
-   sites; if that step fails the business keeps zero or one wrong site (3 live businesses have no site).
+   sites; if that step fails the business keeps zero or one wrong site (3 live businesses have no site). [#94](https://github.com/KNSTNTN24/blueroll-web/issues/94)
 6. **Deletion is mobile-only and owner-by-legacy-role.** No web UI; the check uses `profiles.role`, not capabilities. App-store
    subscriptions are not cancelled (only Stripe), so a deleted iOS/Android customer can keep being billed by the store.
-7. **Equipment is effectively unused.** The Settings editor described in older notes no longer exists; the only writer is a toast in the AI checklist wizard. 0 live rows.
+7. **Equipment is effectively unused.** The Settings editor described in older notes no longer exists; the only writer is a toast in the AI checklist wizard. 0 live rows. [#94](https://github.com/KNSTNTN24/blueroll-web/issues/94)
 8. **Live-only objects:** `demo_force_exit`, `demo_daily_refresh`, `demo_clone_day`, `seed_default_checklists`, and the live
    `demo_business_id()` (with force-exit) are not in repo migrations, which still define `demo_business_id()` as an `IMMUTABLE` constant (`20260824120000_demo_mode_read_policies.sql:13-15`). [#59](https://github.com/KNSTNTN24/blueroll-web/issues/59)
 9. `src/lib/seed-checklists.ts` (`seedDefaultChecklists`) is dead code — nothing imports it; seeding is the SQL function.

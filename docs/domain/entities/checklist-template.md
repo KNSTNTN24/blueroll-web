@@ -4,7 +4,7 @@
 > it must be done, who does it and who signs it off. Staff fill it in; each fill-in is a *completion*.
 
 **Tables:** `checklist_templates`, `checklist_template_items` (items) · **Scope:** business, optionally one site ·
-**Last verified:** 2026-10-13 against `main@b50e9d1` and the live DB (1,438 templates, 8,255 items)
+**Last verified:** 2026-10-13 (review pass) against `main@b50e9d1` and the live DB (1,438 templates, 8,255 items)
 
 ## What it is for
 
@@ -18,9 +18,9 @@ records who did it and what they found, and feeds the reports, the HACCP Pack an
 |---|---|---|---|---|
 | Name, Description | `name`, `description` | What staff see. | text | — |
 | Frequency | `frequency` | How often it must be done. Defines the *period* a completion counts for. | `daily`, `weekly`, `monthly`, `four_weekly`, `custom` | DB `CHECK`; TS `CHECKLIST_FREQUENCIES` `src/lib/constants.ts:33`. **Periods differ by layer — Gotcha 3** |
-| Deadline | `deadline_time` | Time of day (HH:MM) it should be done by. Drives "Overdue" and channel reminders (from 30 min before). | `HH:MM` or null | nothing in DB; web compares with the *browser* clock (`src/lib/checklist-status.ts:20-26`), edge functions with `sites.timezone` (`supabase/functions/_shared/checklists-core/time.ts:49-55`) |
+| Deadline | `deadline_time` | Time of day (HH:MM) it should be done by. Drives "Overdue" and channel reminders (Telegram groups: from 30 min before; WhatsApp teams: a morning list 1 h before the earliest deadline plus an overdue nudge after it — see [Channels](../concepts/channels.md)). | `HH:MM` or null | nothing in DB; web compares with the *browser* clock (`src/lib/checklist-status.ts:20-26`), edge functions with `sites.timezone` (`supabase/functions/_shared/checklists-core/time.ts:49-55`) |
 | Several times a day | `multi_per_day`, `min_per_day` | Counter model: done when today's completions ≥ `min_per_day`; `0` = optional. | bool; int ≥ 0 | DB `CHECK (min_per_day >= 0)`; `checklist-status.ts:33-38`, `_shared/checklists-core/due.ts:18-20` |
-| Assigned to | `assigned_role_ids` (new), `assigned_roles` (legacy) | Which roles must do it. Ids of `roles` rows; the legacy column holds the same as tiers. | uuid[]; tier[] | nothing keeps them in sync except the web save (`checklists/new/page.tsx:257-261`) — Gotcha 4 |
+| Assigned to | `assigned_role_ids` (new), `assigned_roles` (legacy) | Which roles must do it. Ids of `roles` rows; the legacy column holds the same as tiers. | uuid[]; tier[] | nothing keeps them in sync except the web save (`checklists/new/page.tsx:257-261`); the SQL seed `seed_default_checklists`, the web onboarding fallback and mobile write no role ids, and no trigger derives them — Gotcha 4 |
 | Sign-off by | `supervisor_role` | A tier whose holder must countersign each completion. Null = no sign-off. Drives "Awaiting sign-off". | tier or null | UI only, by tier (`checklists/[id]/page.tsx:30,54`) — not the `sign_off` capability |
 | SFBB section | `sfbb_section` | Which part of SFBB it proves. Read by the HACCP Pack auto-fill and the HACCP Plan. | canonical: `cross`, `cleaning`, `chilling`, `cooking`, `management` (+ `temperature`, `probes` in the library) | nothing (free text) — see *Known drift* |
 | Active | `active` | Soft on/off. Inactive templates are not shown, not scheduled, not sent to channels. History stays. | bool | lists, cron, channels all filter `active` |
@@ -57,8 +57,8 @@ records who did it and what they found, and feeds the reports, the HACCP Pack an
 | Web editor `/checklists/new` | name, description, frequency, role ids + tiers, sign-off, deadline, multi-per-day, `active=true` | sends no `site_id` → the trigger pins it to the creator's primary site; no `sfbb_section` (`src/app/(dashboard)/checklists/new/page.tsx:262-293`) |
 | AI wizard (web) | fills the same form; saved by the editor | edge fn `ai-generate-checklist` only returns JSON, writes nothing |
 | *Set up my HACCP* (`apply_haccp_setup` RPC) | everything incl. `library_key`, `sfbb_section`, `site_id`, items with descriptions; `active` only if "switch on" was ticked | also appends missing items to existing library templates |
-| Onboarding defaults (web) | `is_default=true, active=false` | `src/app/(auth)/onboarding/page.tsx:1238-1345` (`src/lib/seed-checklists.ts` is an unused duplicate) |
-| Mobile editor and defaults | name, frequency, **tiers only**, sign-off, section, deadline, multi-per-day, `site_id` | never writes `assigned_role_ids` (`haccp-mobile/lib/screens/checklists/checklist_manage_screen.dart:160-221`, `utils/default_checklists.dart`) |
+| Onboarding defaults (SQL) | `is_default=true, active=false`, **no `assigned_role_ids`** | SQL `seed_default_checklists()`, called by `setup_business`: 6 templates incl. "4-Weekly HACCP Review", with an `is_default` guard. The web client copy `src/app/(auth)/onboarding/page.tsx:1238-1345` runs after the RPC and returns early when any `is_default` row exists, so it is effectively dead; `src/lib/seed-checklists.ts` is never imported |
+| Mobile editor and defaults | name, frequency, **tiers only**, sign-off, section, deadline, multi-per-day, `site_id` | never writes `assigned_role_ids` (`haccp-mobile/lib/screens/checklists/checklist_manage_screen.dart:160-221`); mobile seeds 10 defaults per site (`utils/default_checklists.dart`) |
 
 **Scheduled** — live cron `generate-checklist-instances` (01:10 daily) runs
 `generate_checklist_instances(null, today-2, today+1)` then `link_checklist_instances(null)`: one *instance* per
@@ -72,7 +72,7 @@ also upserts its instance as `completed` (trigger `_link_completion_instance`). 
 
 **Deleted** — mobile only (`checklist_detail_screen.dart:480-495`); web has no delete. Cascades (`ON DELETE CASCADE`)
 to items, completions, responses, instances, drafts and the channel rows (`channel_flows`, `channel_group_checklists`,
-form tokens, group takes, reminders).
+form tokens, group takes, reminders). There is no soft delete: the whole diary of that check is lost — Gotcha 11.
 
 ## Who can do what
 
@@ -80,9 +80,9 @@ form tokens, group takes, reminders).
 |---|---|---|
 | See a template | member of the business, and can see its site (`can_see_site_row`) | RLS "Business members can view templates" |
 | See items | member of the business (no site check) | RLS "Business members can view items" |
-| Create / edit / delete | `manage_checklists` capability, can see the site, business entitled | RLS "Managers can manage templates/items" + `entitlement_write_gate_*`. **UI shows the editor to owner/manager tier only** |
+| Create / edit / delete | templates: `manage_checklists` capability, can see the site, business entitled; items: business + `manage_checklists` only (no site check) | RLS "Managers can manage templates" / "Managers can manage items" + `entitlement_write_gate_*`. **UI shows the editor to owner/manager tier only** |
 | Fill in (complete) | any member of the business who can see the site; `complete_checklists` is *not* checked | RLS on `checklist_completions` |
-| Which templates a person is asked to do | owner or group admin: all; else `assigned_role_ids ∋ role_id` (web, edge) / tiers or "empty = everyone" (mobile) | `checklists/page.tsx:56-61`, `_shared/checklists-core/due.ts:4-6`, `haccp-mobile/lib/models/checklist.dart:137-149` |
+| Which templates a person is asked to do | web: owner or group admin see all, else `assigned_role_ids ∋ role_id`; edge: `assigned_role_ids ∋ role_id` with no owner/admin exception (`due.ts:4-10`); mobile: tiers or "empty = everyone" | `checklists/page.tsx:56-61`, `_shared/checklists-core/due.ts:4-10`, `haccp-mobile/lib/models/checklist.dart:137-149` |
 | Sign off | completed + `supervisor_role` set + not yet signed + viewer is owner/manager tier | `checklists/[id]/page.tsx:30,54` (RLS lets any site member update a completion) |
 
 See [Tiers, roles and capabilities](../concepts/roles-and-capabilities.md).
@@ -114,11 +114,14 @@ See [Tiers, roles and capabilities](../concepts/roles-and-capabilities.md).
    It works in **UTC** (not `sites.timezone`), ignores `deadline_time` and `multi_per_day`, and treats
    `four_weekly` as a calendar month and `custom` as daily. 30,796 of 44,982 live instances are `missed` — partly
    because defaults and inactive-then-active templates are scheduled from the day they exist. [#58](https://github.com/KNSTNTN24/blueroll-web/issues/58) [#59](https://github.com/KNSTNTN24/blueroll-web/issues/59)
-3. **"Period" has five definitions.** Web: week starts Monday, four-weekly = rolling 28 days from Monday−21,
+3. **"Period" has several definitions (see [Periods and due checks](../concepts/periods-and-due-checks.md)).** Web: week starts Monday, four-weekly = rolling 28 days from Monday−21,
    custom = today. Edge: same but in site time zone. Mobile: four-weekly = 28-day cycles from 2024-01-01, custom = no
    period. SQL: four-weekly = calendar month, custom = daily. `custom` has no defined schedule anywhere. [#58](https://github.com/KNSTNTN24/blueroll-web/issues/58)
-4. **Mobile ignores `assigned_role_ids`.** A template created or edited on mobile has no/stale role ids, so web and
-   channels hide it from people who have a `role_id` (everyone, live), while mobile shows it to all. [#56](https://github.com/KNSTNTN24/blueroll-web/issues/56)
+4. **Many templates have no `assigned_role_ids`.** Not only mobile: the SQL seed `seed_default_checklists` (called by
+   `setup_business`) and the web onboarding fallback also write none, and no trigger derives them. A template created or
+   edited on mobile has no/stale role ids too. Live 2026-10-13: 91 active templates with empty `assigned_role_ids` in 4
+   businesses (85 of them have no tiers either) — on web and in channels nobody but owners/group admins sees them, while
+   mobile shows them to everyone. [#56](https://github.com/KNSTNTN24/blueroll-web/issues/56)
 5. **Mobile rewrites unknown sections to `general`.** Editing a library template on mobile overwrites `cross`,
    `temperature` or `probes` with `general` (`checklist.dart:122-127`, `checklist_manage_screen.dart:169`). [#60](https://github.com/KNSTNTN24/blueroll-web/issues/60)
 6. **"All sites" is hard to get and hidden when you get it.** Edge, cron and RLS treat `site_id IS NULL` as "all
@@ -131,6 +134,8 @@ See [Tiers, roles and capabilities](../concepts/roles-and-capabilities.md).
 8. **Sign-off is gated by tier, not by the `sign_off` capability**, and the UI uses the browser clock for "Overdue". [#55](https://github.com/KNSTNTN24/blueroll-web/issues/55)
 9. **Item descriptions are lost** when saving from the web editor or the AI wizard.
 10. **Channels skip `photo` and `initials` items**; a *required* photo item makes the WhatsApp form unsupported.
+11. **Deleting a template deletes its history.** Delete (mobile only) cascades to every completion and response of that
+    template — the full diary is lost, there is no soft delete. Use *Active* off instead. [#115](https://github.com/KNSTNTN24/blueroll-web/issues/115)
 
 ## History
 

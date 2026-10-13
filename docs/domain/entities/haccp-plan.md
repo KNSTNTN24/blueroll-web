@@ -4,7 +4,7 @@
 > 28 days of real Blueroll records as proof, ready to show on screen, send as a link or download as a PDF.
 
 **Tables:** `haccp_plan_shares` (inspector links and PDF tokens), `haccp_signoffs` (one sign-off per site); reads
-`haccp_pack_data` and most operational tables · **Scope:** site · **Last verified:** 2026-10-13 against
+`haccp_pack_data` and most operational tables · **Scope:** site · **Last verified:** 2026-10-13 (review pass) against
 `main@b50e9d1` and the live DB (4 share rows, 9 sign-offs)
 
 ## What it is for
@@ -85,13 +85,15 @@ NULL`), `signed_by_name` (text copy shown on the Plan), `signed_at` (default now
 
 ### Known drift (live data, 2026-10-13)
 
-- Shares: 2 `inspector` (1 revoked, 1 live, 7-day, 4 views), 2 `pdf` (expired); all have a `site_id`.
+- Shares: 2 `inspector` (1 revoked and also expired, 3 views; 1 live, 7-day, 1 view), 2 `pdf` (expired); all have a `site_id`.
 - Sign-offs: 9 rows in 2 businesses; **5 have `signed_by` null** and date from 2026-06-18, before the table's migration
   (2026-07-07) — seeded/manual rows; **5 are on sites with no pack row** (signed off an empty plan); 1 site's pack was
   edited after its sign-off.
 - `checklist_responses` with `flagged=true`: 561 have `corrective_status` null, 5 `done`, none `needed` — so nearly every
   out-of-range reading shows as "not corrected".
-- No live template has `library_key='haccp_review'`; the last-review lookup works only by name (4 templates).
+- 1 live template has `library_key='haccp_review'` (inactive). The name regex matches 21 templates in 8 businesses
+  (4 active). Two pack-owning businesses have review completions (last 2026-09-28 and 2026-10-02), so their Plan review
+  is not overdue. Only the pack page (which reads `haccp_last_reviewed_at`) always says "Never reviewed".
 
 ## Lifecycle
 
@@ -149,24 +151,30 @@ NULL`), `signed_by_name` (text copy shown on the Plan), `signed_at` (default now
 
 1. **The edge function bypasses RLS.** Access is re-implemented in `decideAccess`; it does not check entitlement, so
    a lapsed business's members and old inspector links still get the full Plan. `haccp_plan_shares` has no
-   `entitlement_write_gate`, so links can be created too.
+   `entitlement_write_gate`, so links can be created too. [#96](https://github.com/KNSTNTN24/blueroll-web/issues/96)
 2. **"Manager" means `profiles.role` text**, not capabilities: a custom role with HACCP rights cannot share or sign; an
    owner-tier person always can ([#55](https://github.com/KNSTNTN24/blueroll-web/issues/55)).
 3. **Plan ≠ pack page.** The Plan prefers typed text over auto-fill, the pack page the opposite; the Plan's auto-fill
    sees only `all` documents and current owners/managers; the pack page sees all documents and removed members. Recipes,
    suppliers and documents are business-wide in both — not per site.
-4. **Sign-off is never invalidated**, only flagged "edited after"; web badge inserts, Plan and mobile upsert ([#79](https://github.com/KNSTNTN24/blueroll-web/issues/79)). Sites without a pack can be signed.
-5. **Revoke is reversible.** The guard lets a manager set `revoked_at` back to null; the UI never does.
+4. **Sign-off is never invalidated**, only flagged "edited after"; web badge inserts, Plan and mobile upsert ([#86](https://github.com/KNSTNTN24/blueroll-web/issues/86)). Sites without a pack can be signed.
+5. **Revoke is reversible.** The guard lets a manager set `revoked_at` back to null; the UI never does. [#96](https://github.com/KNSTNTN24/blueroll-web/issues/96)
 6. **Inspector views include PDF renders**: the inspector page's Download PDF renders the same token, so `view_count`
-   counts Chromium loads too. The in-app PDF never has a QR, even when an inspector link exists.
+   counts Chromium loads too. The in-app PDF never has a QR, even when an inspector link exists. [#96](https://github.com/KNSTNTN24/blueroll-web/issues/96)
 7. **Frozen deliveries are guessed** (≤ −5 °C); a chilled product at −3 °C is "in range", a −10 °C frozen one is flagged.
 8. **"Missed" days come from `checklist_instances`** and inherit its definition ([#58](https://github.com/KNSTNTN24/blueroll-web/issues/58));
    "N corrected" is almost always 0 because `corrective_status` is rarely set (see drift).
 9. **CORS**: only `https://app.blueroll.app`, `http://localhost:3001` and `PLAN_EXTRA_ORIGINS` (`index.ts:13-17`); Vercel
    previews need the env var. Preview PDFs need `VERCEL_AUTOMATION_BYPASS_SECRET`; `PLAN_RENDER_ORIGIN` overrides the origin.
-10. Spec and [HACCP Pack](haccp-pack.md) say the PDF token lives 15 min; code uses **10 min** (`share.ts:5`), RLS allows 15.
+10. The spec, [HACCP Pack](haccp-pack.md) and the code (`share.ts:5`) all say the PDF token lives **10 min**; only RLS
+    allows up to 15.
 11. No Plan on mobile; no Plan for "All sites"; businesses without sites (3 live) get a null-site Plan with no sign-off.
 12. `fetchAll` pages without `.order()` on several queries (`load.ts:70-103`), so >1000-row results could skip or repeat rows.
+13. **The PDF route accepts any valid token kind.** An inspector link can trigger a 25 s Chromium render every 15 s;
+    `PDF_MAX_LOADS` caps the `pdf` kind only.
+14. **A deleted business gives 500, not 404**: `loadBundle` throws on it.
+15. **Plan tokens are in URLs**, so they appear in request logs. "Never stored" is true for the database only (it keeps
+    the hash).
 
 ## History
 

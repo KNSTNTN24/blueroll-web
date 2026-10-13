@@ -6,7 +6,7 @@
 
 **Touches:** [Checklist template](../entities/checklist-template.md), [Checklist completion](../entities/checklist-completion.md),
 [Business](../entities/business.md) (switches), [Member](../entities/member.md) (chat-only members), [Site](../entities/site.md) ·
-**Last verified:** 2026-10-13 against `main@b50e9d1` and the live DB (84 businesses: WhatsApp on 1, Telegram on 2; 1 WhatsApp
+**Last verified:** 2026-10-13 (review pass) against `main@b50e9d1` and the live DB (84 businesses: WhatsApp on 1, Telegram on 2; 1 WhatsApp
 team with 2 active members; 2 Telegram groups; 12 checklist mappings; 37 published Flows; 6 identities, 4 active; 149 logged messages)
 
 ## The rule in plain words
@@ -98,7 +98,7 @@ active owner/manager by text role) and `profiles` trigger `trg_revoke_channel_id
 4. **Telegram "first submit wins" is per token, not per checklist.** `authorize` never re-checks whether the period is already
    done, and a silent list refresh (`tg-live.ts:141-172`) does not expire tokens of checklists completed elsewhere — an open form
    can still record a second completion for 24 h; two groups mapping the same checklist each hold a token. WhatsApp teams do check
-   (takes span all WhatsApp teams at the site + any-source completions), but nothing spans WhatsApp ↔ Telegram.
+   (takes span all WhatsApp teams at the site + any-source completions), but nothing spans WhatsApp ↔ Telegram. [#95](https://github.com/KNSTNTN24/blueroll-web/issues/95)
 5. **Corrective follow-ups are WhatsApp-only** and app completions never get `corrective_status`. [#79](https://github.com/KNSTNTN24/blueroll-web/issues/79)
 6. **Removal leaves team rows "Active".** Revoking identities (soft removal, `STOP`, number moved) does not touch
    `channel_group_members`; the person just stops receiving messages because `recipients()` needs an active identity
@@ -109,6 +109,7 @@ active owner/manager by text role) and `profiles` trigger `trg_revoke_channel_id
 9. **WhatsApp morning list skips nothing-open days and invited members**; the missed summary is capped at 23:50 local and the overdue
    nudge is skipped if the cron is down more than 1 h after the deadline (`team-day.ts:10-17`).
 10. **No mobile UI.** Mobile has no channel code; the web Team page shows WhatsApp team / "via Telegram group" columns.
+11. **Not yet documented:** which WhatsApp texts are Meta-approved templates and how to change them. [#111](https://github.com/KNSTNTN24/blueroll-web/issues/111)
 
 ## Where it is enforced
 

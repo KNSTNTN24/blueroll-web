@@ -9,8 +9,10 @@ From: Konstantin's Claude session, 2026-10-13. Repo: `KNSTNTN24/blueroll-web`.
    update that page in the same PR.
 2. **`AGENTS.md` is the entry point** (systems, code map, commands, workflow, conventions). `CLAUDE.md` is now short
    and imports it. The old Russian work log moved to `docs/history.md`; `docs/01–04` are marked outdated.
-3. **49 issues were filed (#50–#98)** from what the documentation work uncovered — check `gh issue list` before
-   starting work in an area; many domain-page *Gotchas* link to them.
+3. **Issues #50–#117 were filed** from what the documentation work uncovered: #50–#98 from the first pass,
+   reference-data issues #101–#111, and follow-ups #112–#117 from the 2026-10-13 review pass (which re-checked the
+   domain pages against code and the live DB and corrected them). Check `gh issue list` before starting work in an
+   area; many domain-page *Gotchas* link to them.
 
 ## Where to start
 
@@ -23,7 +25,8 @@ From: Konstantin's Claude session, 2026-10-13. Repo: `KNSTNTN24/blueroll-web`.
   gotchas, history. Verified against `main@b50e9d1` and the live DB on 2026-10-13.
 - `docs/reference/db.md` — exact structure (tables, columns, constraints, indexes, RLS, triggers, function signatures
   and grants, cron schedules, storage). Regenerate with
-  `SUPABASE_ACCESS_TOKEN=… npx tsx scripts/gen-db-reference.ts` after schema changes.
+  `SUPABASE_ACCESS_TOKEN=… npx tsx scripts/gen-db-reference.ts` after schema changes (`tsx` is not a devDependency;
+  npx will fetch it).
 
 ## Rules that changed how we work
 
@@ -31,7 +34,7 @@ From: Konstantin's Claude session, 2026-10-13. Repo: `KNSTNTN24/blueroll-web`.
   `remove_member`, some columns and policies) — #59. Check the live DB (read-only) before relying on a migration file.
 - **Permissions: use capabilities, not the tier text.** The DB enforces `has_capability(cap)`; most UI still checks
   `profiles.role` in owner/manager (#55). Don't add new tier checks. See `concepts/roles-and-capabilities.md`.
-- **Periods are defined five different ways** (DB in UTC, web, edge in site time zone, mobile, reports). Read
+- **Periods are defined several different ways** (DB in UTC, web, edge in site time zone, mobile, reports). Read
   `concepts/periods-and-due-checks.md` before touching anything "due/overdue/missed" (#58, #98).
 - **Edge functions are deployed with `--no-verify-jwt`**, so every function must verify the caller itself (several
   don't: #64, #83).

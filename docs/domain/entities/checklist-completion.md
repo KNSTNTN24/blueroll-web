@@ -5,7 +5,7 @@
 
 **Tables:** `checklist_completions`, `checklist_responses` (answers), `checklist_drafts` (half-filled forms),
 `checklist_instances` (what was due), `channel_group_takes` (team claims) · **Scope:** site (business + `site_id`) ·
-**Last verified:** 2026-10-13 against `main@b50e9d1` and the live DB (14,393 completions — 14,373 `app`, 6 `whatsapp`,
+**Last verified:** 2026-10-13 (review pass) against `main@b50e9d1` and the live DB (14,393 completions — 14,373 `app`, 6 `whatsapp`,
 14 `telegram`, 2,682 of them demo; 104,559 responses; 44,982 instances; 7 drafts; 1 group take)
 
 ## What it is for
@@ -49,7 +49,8 @@ in the private `documents` bucket, opened by 1-hour signed URL (`page.tsx:101-11
 
 **Instances** (`checklist_instances`): "this template is due at this site for this period". `due_date` = period start,
 `period_end` exclusive, `completion_id` (FK `ON DELETE SET NULL`), `status` `pending` | `completed` | `missed`
-(default `pending`; **no CHECK**). Unique on (template, site, due_date) `uq_checklist_instance`.
+(default `pending`; **no CHECK**). Unique index `uq_checklist_instance` on `(template_id, COALESCE(site_id, '00000000-…'), due_date)` — an upsert must
+target that expression, not the plain columns.
 
 ### Known drift (live data, 2026-10-13)
 
@@ -141,18 +142,18 @@ no delete. Responses cascade; photo files stay in storage; the linked instance k
 
 1. **"Already done" ignores the site on web and mobile.** The fill page looks for this period's completion by template +
    business only (`page.tsx:49`, mobile `:246-253`), so for a business-wide template a check done at site A shows as
-   completed at site B for anyone who can see both. Channels and instances do key by site.
+   completed at site B for anyone who can see both. Channels and instances do key by site. [#78](https://github.com/KNSTNTN24/blueroll-web/issues/78)
 2. **Anyone on the site can rewrite a completion.** The UPDATE policy has no column or capability limit: any member can sign
-   off (the UI's tier check is cosmetic), change `completed_at` (backdate) or `completed_by`. 959 live completions are self-signed.
+   off (the UI's tier check is cosmetic), change `completed_at` (backdate) or `completed_by`. 959 live completions are self-signed. [#71](https://github.com/KNSTNTN24/blueroll-web/issues/71)
 3. **Web and mobile drafts are different shapes.** Web stores `{itemId: {value, notes, flagged}}`, mobile `{itemId: "value"}`.
    Mobile opening a web draft puts `"{value: …}"` into the fields (`:301-307`); web opening a mobile draft gets strings where
-   it expects objects (`r.value` undefined; *unverified* whether it crashes). Live: both shapes present.
+   it expects objects (`r.value` undefined; *unverified* whether it crashes). Live: both shapes present. [#81](https://github.com/KNSTNTN24/blueroll-web/issues/81)
 4. **Corrective status is channel-only.** App flags stay `corrective_status=null` forever, so the HACCP Plan shows them as
    "flagged", never "corrected", even with a note; reminders and the 60-min manager alert exist only for WhatsApp.
    The flag notice says "is out of range" for a yes/no "No" too.
 5. **Two inserts, no transaction.** If the responses insert fails (web, mobile) the completion stays with no answers and
-   still counts as done; 824 live completions have no responses. Channels have the same split (`record.ts:21-28`).
-6. **Web accepts a lone `-` or `.` as a temperature** (`answered` only checks non-empty, `:79`); it is not flagged. 61 live.
+   still counts as done; 824 live completions have no responses. Channels have the same split (`record.ts:21-28`). [#80](https://github.com/KNSTNTN24/blueroll-web/issues/80)
+6. **Web accepts a lone `-` or `.` as a temperature** (`answered` only checks non-empty, `:79`); it is not flagged. 61 live. [#80](https://github.com/KNSTNTN24/blueroll-web/issues/80)
 7. **Missed counts disagree.** Reports compute `due − completed` from instances of *any* status (incl. today's and
    tomorrow's pending, inactive templates) against *all* completions (incl. extra multi-per-day ones), clamped at 0; the
    HACCP Plan uses instance `status='missed'`. Instances follow UTC calendar periods (template Gotchas 2–3).
@@ -162,8 +163,14 @@ no delete. Responses cascade; photo files stay in storage; the linked instance k
 9. **Responses are immutable from the app** (no UPDATE/DELETE policy) — a wrong answer can only be undone by deleting the
    whole completion, and only mobile can do that.
 10. **Photo answers.** File names are not sanitised (web or mobile), unlike document uploads, so names with special
-    characters can fail with "Invalid key" *(unverified live)*; files are not removed when the completion is deleted.
+    characters can fail with "Invalid key" *(unverified live)*; files are not removed when the completion is deleted. [#80](https://github.com/KNSTNTN24/blueroll-web/issues/80)
 11. **Drafts are per template + person, not per site or period** — yesterday's half-filled draft reloads today.
+12. **Multi-per-day templates with a sign-off role can never be signed off.** Web (`[id]/page.tsx:52-53`) and mobile
+    (`checklist_detail_screen.dart:263`) show sign-off only when `!multi_per_day`, yet "Sign-off required" is sent on
+    every fill; 12 active templates are affected. The web notice goes to `profiles.role = supervisor_role`, but the web
+    button shows only to owner/manager tier. [#79](https://github.com/KNSTNTN24/blueroll-web/issues/79)
+13. **Telegram group forms can record duplicate completions** — no period re-check on submit and form tokens do not
+    expire. [#95](https://github.com/KNSTNTN24/blueroll-web/issues/95)
 
 ## History
 

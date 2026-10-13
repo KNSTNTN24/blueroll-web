@@ -5,7 +5,7 @@
 
 **Tables:** `recipes`, `recipe_ingredients` (lines), `ingredients` (shared per business), `tags` + `recipe_tags`,
 `recipe_sites` (unused) · **Scope:** business (one catalogue for all sites) ·
-**Last verified:** 2026-10-13 against `main@b50e9d1` and the live DB (211 recipes in 9 businesses, 1,437 lines, 935 ingredients, 64 tags)
+**Last verified:** 2026-10-13 (review pass) against `main@b50e9d1` and the live DB (211 recipes in 9 businesses, 1,437 lines, 935 ingredients, 64 tags)
 
 ## What it is for
 
@@ -47,6 +47,14 @@ every recipe that uses it**. Allergen keys are lowercase: `EU_ALLERGENS` `src/li
 - **Allergens of a recipe** = union of its ingredients' `allergens` (`recipes/[id]/page.tsx:77`, `src/lib/dishes.ts:51-55`, mobile `models/recipe.dart:147-153`).
 - **Dietary** = override if set, else rule on those allergens (`src/lib/dietary.ts:19-24,32-40`): Vegan = no milk, eggs,
   fish, crustaceans, molluscs; Vegetarian = no fish, crustaceans, molluscs; Gluten-Free = no gluten; Dairy-Free = no milk.
+  Gluten-Free and Dairy-Free are regulated claims, auto-asserted from the *absence* of an allergen tag. Only the known
+  lowercase keys count: a mis-cased allergen (e.g. `Milk`) is dropped by `resolveAllergens` (`dishes.ts:54,63`) **and**
+  turns on Dairy-Free/Vegan ([#84](https://github.com/KNSTNTN24/blueroll-web/issues/84)).
+
+**Food-safety numbers in the HACCP method texts (check before reusing).** Some figures in code are not SFBB:
+- "75 °C for 2 s" (Cooking Safely, web, mobile, AI prompt) is wrong — SFBB says 75 °C for **30 s** ([#101](https://github.com/KNSTNTN24/blueroll-web/issues/101)).
+- "Cool below 8 °C within 90 min" and "hot hold max 2 hours" (mobile `recipe_haccp.dart:11,16`, AI prompt) are not SFBB:
+  SFBB says cool as quickly as possible; the 2-hour rule applies to food taken *out of* hot holding.
 
 ### Known drift (live data, 2026-10-13)
 
@@ -122,7 +130,7 @@ through RLS but sees no buttons; see [#55](https://github.com/KNSTNTN24/blueroll
 | Area | Location |
 |---|---|
 | Web pages | `src/app/(dashboard)/recipes/` (list, `[id]`, `new`, `edit/[id]`, `import`) |
-| Shared | `src/lib/haccp-methods.ts`, `src/lib/dietary.ts`, `src/lib/tags.ts`, `src/lib/dishes.ts`, `src/lib/constants.ts`, `src/components/tag-input` |
+| Shared | `src/lib/haccp-methods.ts`, `src/lib/dietary.ts`, `src/lib/tags.ts`, `src/lib/dishes.ts`, `src/lib/constants.ts`, `src/components/tag-input.tsx` |
 | Mobile | `haccp-mobile/lib/models/recipe.dart`, `features/kitchen/recipes/` (`recipe_actions.dart`, `recipe_form.dart`, `recipe_import_v2.dart`), `features/kitchen/dietary.dart` |
 | Edge / DB | `import-recipe`; RPCs `create_recipe_with_ingredients`, `attach_tag`, `copy_kitchen`; trigger `trg_cleanup_orphan_tag`; migrations `20260611120*`, `20260714180000_recipe_sites.sql` |
 
@@ -130,9 +138,9 @@ through RLS but sees no buttons; see [#55](https://github.com/KNSTNTN24/blueroll
 
 1. **Ingredients are shared, so allergen edits are global.** Ticking "milk" on *Butter* in one recipe rewrites the
    `ingredients` row, changing every recipe and every recipe-backed menu dish that uses Butter. Conversely the AI
-   import keeps the old allergens of an existing ingredient and drops what the AI detected.
+   import keeps the old allergens of an existing ingredient and drops what the AI detected. [#89](https://github.com/KNSTNTN24/blueroll-web/issues/89)
 2. **Empty method steps break saving.** `instructions` is `NOT NULL`, but web New/Edit and mobile send `null` when the
-   field is empty (`new/page.tsx:88`, `edit/[id]/page.tsx:206`, `recipe_actions.dart:74-75,106`). Only the RPC coalesces to `''`. *(not reproduced live — read-only)*
+   field is empty (`new/page.tsx:88`, `edit/[id]/page.tsx:206`, `recipe_actions.dart:74-75,106`). Only the RPC coalesces to `''`; there is no coalescing trigger, so the save really fails. [#90](https://github.com/KNSTNTN24/blueroll-web/issues/90)
 3. **Allergen spellings differ by client.** DB and web use lowercase keys (`soybeans`, `nuts`); mobile displays
    Title-case `Soya`/`Nuts` and maps back with `storageAllergenKey` (`recipe_actions.dart:47-49`). Anything stored in
    Title-case is silently dropped by the web (`dishes.ts:54,63`). [#60](https://github.com/KNSTNTN24/blueroll-web/issues/60)
@@ -141,14 +149,15 @@ through RLS but sees no buttons; see [#55](https://github.com/KNSTNTN24/blueroll
 5. **"Vegetarian" is a guess.** Meat is not an allergen, so a chicken dish with no fish/shellfish is auto-labelled
    Vegetarian (and Vegan if also no milk/eggs) unless someone sets the override. Mobile hides Vegetarian/Dairy-free when
    Vegan applies and shows "GF"/"DF" (`models/recipe.dart:161-190`); web shows all four labels, and web New/Import repeat the rules inline instead of using `dietary.ts`.
+   A mis-cased allergen key makes it worse (see *Derived* above). [#84](https://github.com/KNSTNTN24/blueroll-web/issues/84)
 6. **Inactive is cosmetic.** Pack, Setup, Plan and the menu's recipe list do not filter `active` (`haccp-pack/page.tsx:190-197`,
    `menu/page.tsx:74`); 10 live dishes are linked to inactive recipes.
 7. **Web import loses data:** AI tags are discarded (`tags: []`), the "From a link" mode only sends the text
-   `Recipe from <url>` — nothing fetches the page, so the AI invents a recipe (`import/page.tsx:58`); `haccp_methods` start empty.
+   `Recipe from <url>` — nothing fetches the page, so the AI invents a recipe (`import/page.tsx:58`); `haccp_methods` start empty. [#90](https://github.com/KNSTNTN24/blueroll-web/issues/90)
 8. **Web New writes free text into `extra_care_flags`** (the note typed under "Extra care", or `extra_care`) instead of
-   eggs/rice/pulses/shellfish (`new/page.tsx:95`); the Pack prints it as-is. Web New also always stores `minutes`.
+   eggs/rice/pulses/shellfish (`new/page.tsx:95`); the Pack prints it as-is. Web New also always stores `minutes`. [#90](https://github.com/KNSTNTN24/blueroll-web/issues/90)
 9. **Quantities are lost on web save.** Web New/Edit send `Number(qty)`, so "1/2" or "2-3" becomes `NaN` → null;
-   mobile and the RPC keep the text. Editing a recipe on the web also drops line `notes`.
+   mobile and the RPC keep the text. Editing a recipe on the web also drops line `notes`. [#90](https://github.com/KNSTNTN24/blueroll-web/issues/90)
 10. **`hot_holding_required` and the `hot_holding` method are separate fields** and disagree on 9 recipes; the Pack uses only the method.
 11. **`category` must not be dropped yet** — shipped mobile builds parse it as required (spec 2026-06-11). Web no longer
     writes it; mobile still does ("course"); the menu maps singular/plural (`dishes.ts:40-47`).

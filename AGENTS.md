@@ -61,6 +61,9 @@ npm run lint
 
 Edge function tests: `deno test supabase/functions/...`. Type-check a function: `deno check supabase/functions/<name>/index.ts`.
 
+Regenerate `docs/reference/db.md` after schema changes: `SUPABASE_ACCESS_TOKEN=… npx tsx scripts/gen-db-reference.ts`
+(`tsx` is not a devDependency; npx will fetch it).
+
 ## Workflow
 
 - Branches `KNS/*` (Maria works in her own branches) → PR → squash merge to `main` → Vercel deploys.

@@ -5,7 +5,7 @@
 > decides which sites' data they see.
 
 **Touches:** Member (`profiles`), Business, Site, Invite, Checklist template, Document ·
-**Last verified:** 2026-10-13 against `main@b50e9d1` and the live DB (`rszrggreuarvodcqeqrj`)
+**Last verified:** 2026-10-13 (review pass) against `main@b50e9d1` and the live DB (`rszrggreuarvodcqeqrj`)
 
 ## The rule in plain words
 
@@ -58,7 +58,7 @@ See *Gotchas* 1.
 | `manage_billing` | Manage billing | ✓ | | | | | no |
 
 Presets come from `seed_business_roles()` (live DB) and `PRESET_CAPS` (`src/lib/permissions.ts:70-78`); the two
-must match (comment at `permissions.ts:62-69`). Live data, 2026-10-13: 424 roles, 14 of them custom.
+must match (comment at `permissions.ts:62-69`). Live data, 2026-10-13: 434 roles (84 businesses × 5 presets + 14 custom).
 
 ## How it works
 
@@ -97,11 +97,14 @@ must match (comment at `permissions.ts:62-69`). Live data, 2026-10-13: 424 roles
 1. **UI and database disagree.** The DB enforces capabilities; the UI shows/hides by tier. A custom role or an edited
    preset changes what the DB allows but not what the screens show (e.g. a Chef given `manage_checklists` can save
    templates through the API but never sees the editor). New code: check capabilities, not the tier text. [#55](https://github.com/KNSTNTN24/blueroll-web/issues/55)
-2. **Overrides exist only in the database.** Nothing in web or mobile writes `member_capability_overrides`. [#55](https://github.com/KNSTNTN24/blueroll-web/issues/55)
+2. **Overrides exist only in the database.** Nothing in web or mobile writes `member_capability_overrides`. Live it has
+   14 rows — one profile, all 14 capabilities, written by hand on 2026-07-16 (manual/test). The table is part of the
+   design; do not drop it. [#55](https://github.com/KNSTNTN24/blueroll-web/issues/55)
 3. **`view_documents` is really "owner-level documents".** It lets you see every document, update any document,
    delete documents and remove per-person document access — not "view only" as the label says. Only Owner has it. [#55](https://github.com/KNSTNTN24/blueroll-web/issues/55)
 4. **Group admins count as owners in two guards** (`guard_owner_role_assignment`, `guard_group_admin_escalation`),
-   while the UI treats `is_group_admin` as scope only. Every owner was back-filled as group admin (38 live).
+   while the UI treats `is_group_admin` as scope only. Live: 38 group admins, 37 of them owners; 38 of 75 owners are
+   **not** group admins (single-site owners).
 5. **⚠ Possible owner escalation via invites (unverified end-to-end).** `invites` is writable by anyone with
    `manage_team` (Managers), including `role_id`. `join_with_invite` *inserts* the profile with that `role_id`, and
    the owner guard fires only `BEFORE UPDATE`. So a manager could invite an address they control with the Owner role.
@@ -113,12 +116,23 @@ must match (comment at `permissions.ts:62-69`). Live data, 2026-10-13: 424 roles
    gets full access whatever boxes are ticked, because tier `owner` short-circuits `has_capability`.
 8. **Removed members keep database access.** `get_my_business_id()` does not check `removed_at`; the web does not
    sign them out (`use-auth.ts:46-68`) and the web members lists do not filter them. Mobile does sign them out
-   (`haccp-mobile/lib/providers/auth_provider.dart:34-38`). Only mobile can remove a member. [#57](https://github.com/KNSTNTN24/blueroll-web/issues/57)
+   (`haccp-mobile/lib/providers/auth_provider.dart:34-38`). Only mobile can remove a member. A soft-removed manager also
+   keeps the text-role powers: `remove_member` nulls `role_id` but leaves `profiles.role`, and `get_my_role()` ignores
+   `removed_at`. [#57](https://github.com/KNSTNTN24/blueroll-web/issues/57)
 9. **Five capabilities are not enforced anywhere** (`complete_checklists`, `view_reports`, `manage_incidents`,
    `manage_deliveries`, `manage_billing`) although the role editor offers them. [#55](https://github.com/KNSTNTN24/blueroll-web/issues/55)
 10. **Multiple owners are allowed**; `manage-subscription` and `delete-account` just check the caller is an owner.
 11. **`sites.manager_id`** is set (back-filled to the owner) but no permission code reads it.
 12. **The test invite token `123456` is reusable** by design (`join_with_invite`, `20260411095739_test_invite_123456.sql`).
+    Expired invites still work too (31 joinable 6-digit codes live) and there is no rate limit on guessing. [#69](https://github.com/KNSTNTN24/blueroll-web/issues/69)
+13. **A Manager can demote the Owner.** Web Team settings shows the role dropdown on every member, the owner included
+    (`settings/members-roles.tsx:195`); RLS "Admins can manage member profiles" allows the update, and
+    `guard_owner_role_assignment` only guards moves *into* an owner role. Once demoted, `remove_member` no longer refuses
+    — a takeover chain. Mobile hides the dropdown for the owner (`team_tab.dart:903`). [#113](https://github.com/KNSTNTN24/blueroll-web/issues/113)
+14. **Edge functions deployed with `verify_jwt = false` trust the anon key alone.** `send-invite` and
+    `create-subscription` pass with just the public anon key ([#65](https://github.com/KNSTNTN24/blueroll-web/issues/65), [#64](https://github.com/KNSTNTN24/blueroll-web/issues/64)). Many SECURITY DEFINER
+    functions are anon-executable as well, incl. `list_template_leads()`, which returns lead emails to anonymous callers
+    ([#67](https://github.com/KNSTNTN24/blueroll-web/issues/67), [#112](https://github.com/KNSTNTN24/blueroll-web/issues/112)).
 
 ## History
 

@@ -5,7 +5,7 @@
 
 **Tables:** `suppliers`, `deliveries`, `delivery_photos` · **Storage:** bucket `documents`, folder `{business_id}/delivery-photos/` ·
 **Edge function:** `search-supplier-brands` · **Scope:** suppliers business-wide (optional `site_id`), deliveries per site ·
-**Last verified:** 2026-10-13 against `main@b50e9d1` and the live DB (49 suppliers in 9 businesses, 170 deliveries, 9 photos)
+**Last verified:** 2026-10-13 (review pass) against `main@b50e9d1` and the live DB (49 suppliers in 9 businesses, 170 deliveries, 9 photos)
 
 ## What it is for
 
@@ -53,8 +53,12 @@ Shown through 3600 s signed URLs (`deliveries/page.tsx:395,409`).
 | Web list badge | ≤ 5 green, ≤ 8 amber, > 8 red; header counts "> 5" as breaches | `deliveries/page.tsx:28-32,78` |
 | Web form hint | > 5 → "Above 5°C for chilled goods — check and consider rejecting" | `deliveries/page.tsx:134-135,248` |
 | Mobile badge | same 5 / 8 bands | `haccp-mobile/lib/features/ops/ops_meta.dart:51-55` |
+| Mobile list badge | `deliveryStatus()`: ≤ 8 "Accepted" | `ops_meta.dart:4,35-39`, used at `deliveries_tab.dart:995` |
 | Mobile verdict | ≤ −15 "OK · frozen", ≤ 5 "OK to accept", else "Above 5°C — check" | `features/ops/deliveries_tab.dart:410-417` |
 | HACCP Plan proof | reading ≤ −5 is *guessed* frozen and fails above −15; otherwise fails above 5 | `supabase/functions/_shared/haccp-plan/load.ts:15,159-165`, `aggregate.ts:33-34,108-124` |
+
+For reference, SFBB: 8 °C is the legal maximum for chilled food, 5 °C or below is recommended; frozen food should be
+−18 °C. The app's −15 °C for frozen is house policy, not SFBB.
 
 ### Known drift (live data, 2026-10-13)
 
@@ -128,24 +132,26 @@ Editing changes site (web only), supplier, temperature, notes and photos — nev
 ## Gotchas
 
 1. **Web cannot save a supplier without delivery days.** The save sends `delivery_days: null` when no day is ticked
-   (`suppliers/page.tsx:115`), but the column is `NOT NULL` — the insert/update fails with a not-null error toast. Mobile omits the field, so it gets `{}`.
+   (`suppliers/page.tsx:115`), but the column is `NOT NULL` — the insert/update fails with a not-null error toast. Mobile omits the field, so it gets `{}`. [#92](https://github.com/KNSTNTN24/blueroll-web/issues/92)
 2. **Day spelling is not enforced.** Canonical `Mon`…`Sun`, no `CHECK`; 3 live suppliers use `monday`… and look empty on web. [#60](https://github.com/KNSTNTN24/blueroll-web/issues/60)
-3. **Temperature has no stored verdict and three rules.** Web/mobile badges treat everything ≤ 5 as OK; the mobile verdict
-   knows frozen (≤ −15); the Plan guesses "frozen" from ≤ −5 and so marks −10 °C as out of range while the app said "OK to accept".
+3. **Temperature has no stored verdict and four rules.** Web/mobile badges treat everything ≤ 5 as OK; the mobile list
+   badge `deliveryStatus()` says "Accepted" up to 8 °C; the mobile verdict knows frozen (≤ −15); the Plan guesses "frozen"
+   from ≤ −5 and so marks −10 °C as out of range while the app said "OK to accept".
    Nothing records accept/reject, nothing sends a `delivery` notification (the type exists only for display), and `manage_deliveries` gates nothing.
-4. **Web `sf_delivery_schedule` lists suppliers with no days** as "Name: " — the filter `s.delivery_days` is true for `[]` (`auto-data.ts:198`); mobile filters non-empty.
+   [#93](https://github.com/KNSTNTN24/blueroll-web/issues/93) [#102](https://github.com/KNSTNTN24/blueroll-web/issues/102)
+4. **Web `sf_delivery_schedule` lists suppliers with no days** as "Name: " — the filter `s.delivery_days` is true for `[]` (`auto-data.ts:198`); mobile filters non-empty. [#92](https://github.com/KNSTNTN24/blueroll-web/issues/92)
 5. **`suppliers.site_id` is decorative.** No UI writes or filters it, RLS ignores it, pack and Plan read every supplier
    of the business. Yet a site hard-delete cascades and deletes those 8 site-tagged suppliers.
 6. **Mobile is a reduced editor:** no email, address, website, notes or delivery days; removing a logo leaves `logo_source='brandfetch'`;
-   never sets `logo_verified`/`logo_updated_at`. Editing on mobile keeps the hidden fields (they are not in the payload).
+   never sets `logo_verified`/`logo_updated_at`. Editing on mobile keeps the hidden fields (they are not in the payload). [#92](https://github.com/KNSTNTN24/blueroll-web/issues/92)
 7. **Delivery deletion leaks files**: photo objects stay in `documents/{business}/delivery-photos/` after a delivery is deleted
-   (both platforms) or a photo is removed on mobile. Business purge is the only cleanup.
+   (both platforms) or a photo is removed on mobile. Business purge is the only cleanup. [#93](https://github.com/KNSTNTN24/blueroll-web/issues/93)
 8. **UI checks tier, DB checks capability** for suppliers: a custom role with `manage_suppliers` but a staff tier sees no buttons;
    a manager-tier role without it sees buttons that fail. [#55](https://github.com/KNSTNTN24/blueroll-web/issues/55)
 9. **Delivery time cannot be corrected** on the main web form or mobile (always "now"); only the legacy, half-hidden
    `/deliveries/new` allows backdating — and it skips photos and the site picker (trigger picks the user's primary site).
 10. **Logos are hot-linked** to `cdn.brandfetch.io` with the client id in the URL; if Brandfetch drops the image the UI falls
-    back to initials, but the row keeps the dead URL. Any member, even without `manage_suppliers`, can call the search function.
+    back to initials, but the row keeps the dead URL. Any member, even without `manage_suppliers`, can call the search function. [#92](https://github.com/KNSTNTN24/blueroll-web/issues/92)
 11. `delivery_photos` RLS checks only the business, not the site — a site-limited member can read other sites' photo rows directly.
 12. `suppliers`, `deliveries`, `delivery_photos` creation is not in `supabase/migrations` beyond `001_initial_schema.sql` (no
     `deliveries`/`delivery_photos` DDL at all). [#59](https://github.com/KNSTNTN24/blueroll-web/issues/59)

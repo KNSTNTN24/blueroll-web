@@ -4,7 +4,7 @@
 > restaurants has three. Checks, incidents, deliveries and the team's day happen *at a site*.
 
 **Tables:** `sites`, `member_sites` (who works where) · **Scope:** business (a site belongs to exactly one business) ·
-**Last verified:** 2026-10-13 against `main@b50e9d1` and the live DB (107 sites in 81 businesses)
+**Last verified:** 2026-10-13 (review pass) against `main@b50e9d1` and the live DB (107 sites in 81 businesses)
 
 ## What it is for
 
@@ -40,7 +40,7 @@ Also `id`, `business_id` (FK `ON DELETE CASCADE`), `created_at` (shown as "live 
 | Path | Status | Seeds checklists? | Where |
 |---|---|---|---|
 | Business insert → trigger `trg_business_default_site` → `create_default_site()` | `active`, name = business name or "Main site", rating copied | no (business-level seeding does it) | `20260707175109_business_default_site.sql` |
-| Web multi-site onboarding: deletes the default site, inserts one row per chosen FSA establishment, invites a manager per site (`invites.site_id` matched by postcode), owner becomes `is_group_admin`, `profiles.site_id = null` | `onboarding` | business-level `seedDefaultChecklists` only (no `site_id`) | `src/app/(auth)/onboarding/page.tsx:742-775` |
+| Web multi-site onboarding: deletes the default site, inserts one row per chosen FSA establishment, invites a manager per site (`invites.site_id` matched by postcode), owner becomes `is_group_admin`, `profiles.site_id = null` | `onboarding` | only the business-level SQL `seed_default_checklists` run by `setup_business` (no `site_id`) | `src/app/(auth)/onboarding/page.tsx:742-775` |
 | Mobile multi-site onboarding: same sequence after RPC `setup_business` | `onboarding` | no | `haccp-mobile/lib/providers/auth_provider.dart:233-300` |
 | Web Settings → Sites → "Add site" (FSA postcode search) | `onboarding` | **no** | `src/app/(dashboard)/settings/sites-settings.tsx:297-316` |
 | Mobile Profile → Group → Sites → add (group admins; capped at 3) | `onboarding` | yes, `DefaultChecklists.seedForSite` (inactive templates, 12 s timeout) | `haccp-mobile/lib/features/sites/manage_sites_sheet.dart:20,50,407-455`, `utils/default_checklists.dart:79` |
@@ -51,8 +51,8 @@ Also `id`, `business_id` (FK `ON DELETE CASCADE`), `created_at` (shown as "live 
 (`sites-settings.tsx:150-161`, "records kept for 4 years"). Records stay; web and mobile site lists hide
 `status='removed'` (`src/hooks/use-auth.ts:81-87`, `haccp-mobile/lib/providers/sites_provider.dart:12-17`), channels
 hide `removed_at is not null` (`supabase/functions/_shared/channels/groups-db.ts:206`, `teams-db.ts:139-140`).
-**Deleted (hard):** only the multi-site onboarding replace step. FKs: 22 site-scoped tables `ON DELETE CASCADE`
-(all records of the site go), `profiles`, `invites`, `feedback_requests`, `channel_messages_log` `SET NULL`.
+**Deleted (hard):** only the multi-site onboarding replace step. FKs to `sites`: 25 `ON DELETE CASCADE`
+(all records of the site go) and 4 `SET NULL` (`profiles`, `invites`, `feedback_requests`, `channel_messages_log`).
 Business purge cascades through `business_id`.
 
 **Billing:** `trg_sites_sync_quantity` (AFTER INSERT/DELETE) → `sites_sync_quantity()` → `pg_net` POST to edge
@@ -142,23 +142,23 @@ The nightly `generate_checklist_instances` fans a null-site template out to **ev
 1. **Removing a site keeps billing and keeps generating work.** Web writes `status='removed'`, but `billable_site_count`
    only excludes `'archived'` (a status nothing writes), and the quantity trigger fires on INSERT/DELETE, not UPDATE —
    so Stripe quantity is never lowered. `generate_checklist_instances` ignores `removed_at`/`status`, so a removed site
-   keeps getting daily instances (later "missed"). The code comment "hiding it … stops billing" is false.
+   keeps getting daily instances (later "missed"). The code comment "hiding it … stops billing" is false. [#74](https://github.com/KNSTNTN24/blueroll-web/issues/74)
 2. **`onboarding` is a dead-end status.** Every added site starts `onboarding`; no code, RPC or trigger sets `active`.
    It only paints an "Onboarding" badge and makes the estate dashboard list the site under triage forever
-   (`estate-dashboard.tsx:60,87`). 22 live sites are stuck.
+   (`estate-dashboard.tsx:60,87`). 22 live sites are stuck. [#74](https://github.com/KNSTNTN24/blueroll-web/issues/74)
 3. **No `CHECK` on `status`**: `removed` (web/mobile), `archived` (billing) and `active`/`onboarding` are three
    vocabularies that never meet. Filters disagree too: lists use `status`, channels and membership triggers use `removed_at`.
 4. **Web "Add site" is half a flow:** no checklist seeding (mobile seeds), and the manager invite gets no `site_id` and
    no email (`sites-settings.tsx:307-309` vs onboarding / mobile which patch `invites.site_id` and call `send-invite`).
    The joining manager then lands on no site; with >1 site `grant_default_site_membership` does nothing, so they fall
-   back to seeing **every** site.
+   back to seeing **every** site. [#74](https://github.com/KNSTNTN24/blueroll-web/issues/74)
 5. **UI gate ≠ DB gate.** Web shows the Sites tab to managers, mobile to any group admin, but only `manage_sites`
    (Owner preset) may write — a manager's "Add site" fails with an RLS error (#55).
 6. **Web has no site cap, mobile caps at 3** (`kMaxSelfServeSites`); web text says "£24.99/mo per site" while store
    pricing is tiered and clamped to 3.
-7. **Null-site rows from the default trigger.** Web `seedDefaultChecklists` sends no `site_id` (`src/lib/seed-checklists.ts:90-96`);
-   when the owner's `profiles.site_id` is still null the trigger leaves it null — all 71 null-site templates are
-   defaults in 12 single-site businesses. They are invisible to members scoped by `member_sites` and hidden whenever a site is picked.
+7. **Null-site default templates.** The SQL seed `seed_default_checklists` (called by `setup_business`) writes `site_id`
+   null; `src/lib/seed-checklists.ts` is never imported. All 71 null-site templates are old default seeds in 12
+   single-site businesses. They are invisible to members scoped by `member_sites` and hidden whenever a site is picked.
 8. **Members with no `member_sites` row see the whole business** (fallback in both helpers, `20260901120000`). Removed
    members' memberships are not cleared (#57).
 9. **`timezone` is used only by edge functions** (channel reminders, live lists, form times, HACCP Plan). The web uses

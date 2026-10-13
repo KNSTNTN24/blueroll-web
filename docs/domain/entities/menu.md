@@ -4,7 +4,7 @@
 > allergens a guest or an inspector must be told — traced from a recipe, or declared and signed by a named person.
 
 **Tables:** `menu_items` (a dish), `menu_categories` (a site's menu sections) · **Scope:** business-wide row, placed on
-sites by `site_ids`; sections are per site · **Last verified:** 2026-10-13 against `main@b50e9d1` and the live DB
+sites by `site_ids`; sections are per site · **Last verified:** 2026-10-13 (review pass) against `main@b50e9d1` and the live DB
 (166 dishes in 5 businesses; 91 sections on 17 sites)
 
 ## What it is for
@@ -47,7 +47,8 @@ Also `id`, `business_id` (FK `ON DELETE CASCADE`). No `created_at`.
 - `category`: 25 distinct values — slugs singular **and** plural (`main` 17, `starter` 8, `starters` 5, `mains` 3 …) plus
   section names written by mobile (`Small Plates` 19, `Noodles` 15 …). Harmless while sections drive grouping.
 - `declared_allergens`: all canonical lowercase except **`Milk` 1** (on a `recipe` dish, so never read).
-- `dietary`: `Vegetarian` 8, `vegetarian` 5, `Vegan` 4, `vegan` 2, `gluten_free` 1. The lowercase five are all on
+- `dietary`: `Vegetarian` 8, `vegetarian` 5, `Vegan` 4, `vegan` 2, `gluten_free` 1. The 8 lowercase rows (vegetarian 5, vegan 2,
+  gluten_free 1) are all on
   `recipe` dishes (ignored); no code in either repo writes lowercase, so they came from an import/SQL. Canonical: Title-case with hyphen.
 - `recipe` dishes carrying leftovers: 24 with `declared_allergens`, 16 with `dietary`, 19 with an attestation — all ignored.
 - `manual` 116 / `recipe` 50; 114 manual dishes have no `attested_by` id (name only) and `display_order` runs 0–114 in one
@@ -150,19 +151,23 @@ Backfill `20260717120000` put pre-July dishes on every site of their business.
 ## Gotchas
 
 1. **`site_ids` is shared, the dish is not per site.** Adding a recipe to site B reuses site A's row, so allergens,
-   name and source are one record for all sites; only the section differs. RLS ignores sites entirely.
+   name and source are one record for all sites; only the section differs. RLS ignores sites entirely. [#91](https://github.com/KNSTNTN24/blueroll-web/issues/91)
 2. **Auto dietary only looks at allergens.** A beef or chicken recipe with no fish/milk/egg allergens is labelled
-   Vegan and Vegetarian unless someone sets the recipe overrides (`src/lib/dietary.ts:19-20`).
+   Vegan and Vegetarian unless someone sets the recipe overrides (`src/lib/dietary.ts:19-20`). Gluten-Free and
+   Dairy-Free are regulated claims, yet they are asserted automatically from the *absence* of an allergen tag. It
+   compounds with Gotcha 7: a mis-cased allergen (e.g. `Milk`) is dropped by `resolveAllergens` (`dishes.ts:54,63`)
+   **and** turns on Dairy-Free/Vegan. [#84](https://github.com/KNSTNTN24/blueroll-web/issues/84)
 3. **Recipe→manual conversion loses dietary.** `convertDishesToManual` snapshots allergens but not `dietary`, so the
-   dish falls back to whatever stale `dietary` the row held (usually none) (`src/lib/dishes.ts:88-95`; mobile same).
+   dish falls back to whatever stale `dietary` the row held (usually none) (`src/lib/dishes.ts:88-95`; mobile same). [#91](https://github.com/KNSTNTN24/blueroll-web/issues/91)
 4. **Mobile HACCP Pack auto-fill ignores recipe dishes:** it lists `declaredAllergens` only, so every recipe-backed dish
    reads "none" (or stale leftovers), for all sites (`haccp-mobile/lib/providers/haccp_autofill_provider.dart:76-85`).
-5. **No dish editing anywhere.** A wrong declaration can only be fixed by delete + re-add (losing sections on other sites).
+5. **No dish editing anywhere.** A wrong declaration can only be fixed by delete + re-add (losing sections on other sites). [#91](https://github.com/KNSTNTN24/blueroll-web/issues/91)
 6. **`may_contain`, `price`, `active`, `display_order` are dead fields** for writers; `menuHasAllergens` and the Plan honour
    `active`, the web Menu/Allergens pages do not, mobile matrix does.
-7. **Unknown allergen keys vanish on web** (`Milk` ≠ `milk`) — a mis-cased declaration prints as "None declared".
-8. **Mobile add-from-recipe throws** when a recipe already has two dishes (`.maybeSingle()`, `kitchen_provider.dart:131`; 1 live case).
-9. **Sections are writable while unentitled** — `menu_categories` has no restrictive entitlement gate (dishes do).
+7. **Unknown allergen keys vanish on web** (`Milk` ≠ `milk`) — a mis-cased declaration prints as "None declared"
+   (and switches on dietary labels — Gotcha 2).
+8. **Mobile add-from-recipe throws** when a recipe already has two dishes (`.maybeSingle()`, `kitchen_provider.dart:131`; 1 live case). [#91](https://github.com/KNSTNTN24/blueroll-web/issues/91)
+9. **Sections are writable while unentitled** — `menu_categories` has no restrictive entitlement gate (dishes do). [#91](https://github.com/KNSTNTN24/blueroll-web/issues/91)
 10. **Exports differ:** web PDF = allergens + source; web matrix = allergens only; mobile PDF adds dietary; none print may-contain.
 
 ## History
