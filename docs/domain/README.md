@@ -29,11 +29,15 @@ When a page and the database disagree, the database wins and the page has a bug.
 | [entities/supplier-and-delivery.md](entities/supplier-and-delivery.md) | Who supplies food and the goods-in check (temperature, photos) for each delivery. |
 | [entities/haccp-pack.md](entities/haccp-pack.md) | The site's SFBB/HACCP answers (5 sections, 26 methods), auto-fill, scope rule, Set up my HACCP, HACCP Plan. |
 | [entities/incident-and-notification.md](entities/incident-and-notification.md) | Incidents and complaints; in-app notifications (who creates them, no push/email); barely used diary tables. |
+| [entities/setup-session.md](entities/setup-session.md) | *Set up my HACCP*: the questionnaire session, answer kinds, apply (pack + checklists), the AI assistant and its guards. |
+| [entities/haccp-plan.md](entities/haccp-plan.md) | The inspector-ready HACCP Plan: sections and where each number comes from, inspector links, PDF, sign-off. |
+| [concepts/channels.md](concepts/channels.md) | WhatsApp teams and Telegram groups: linking, consent, daily lists and reminders, forms, first-submit-wins, billing. |
+| [concepts/periods-and-due-checks.md](concepts/periods-and-due-checks.md) | What "due", "done", "overdue" and "missed" mean in each layer (DB, web, edge, mobile, reports, Plan) — read before touching schedules. |
 
-Planned (not written yet): Setup session, HACCP Plan (own page), Channel identity, Channel group;
-concepts: business vs site scoping, periods & missed checks, out-of-range & corrective action, sign-off,
-SFBB sections / safe methods / recipe HACCP methods, allergens & dietary, channels,
-soft delete, auto-fill, FSA/FHRS rating, checklist library.
+Not yet separate pages (covered inside the pages above): business vs site scoping (`site.md`), out-of-range &
+corrective action and sign-off (`checklist-completion.md`), SFBB sections / safe methods (`haccp-pack.md`), allergens &
+dietary (`menu.md`, `recipe.md`), soft delete, auto-fill (`haccp-pack.md`), FSA/FHRS rating (`business.md`), checklist
+library (`setup-session.md`). Candidates for their own pages if they grow.
 
 ## Conventions
 

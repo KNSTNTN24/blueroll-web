@@ -106,7 +106,7 @@ failing with `pack_changed` if `updated_at` moved since the draft. Specs: `2026-
 `/haccp-pack/document` renders the Plan: `buildPlan` (`src/lib/haccp-plan/build.ts`) over a bundle loaded by edge
 function `haccp-plan` (`supabase/functions/_shared/haccp-plan/load.ts`, service role). Manual text wins, then
 auto-fill (`build.ts:37-45`). The Plan only lists documents with access `all` and current members (`scope.ts`).
-PDF via `/api/haccp-plan/pdf` with a 15-minute `pdf` token; inspector links up to 30 days, owner/manager only, revocable;
+PDF via `/api/haccp-plan/pdf` with a 10-minute `pdf` token (code `share.ts:5`; RLS would allow 15); inspector links up to 30 days, owner/manager only, revocable;
 only `sha256(token)` is stored in `haccp_plan_shares` (`20261012120000_haccp_plan_shares.sql`). Sign-off: one row
 per site in `haccp_signoffs` (live RLS: member of the business who can see the site, plus restrictive
 `is_active_business_manager` for writes). Spec: `2026-10-11-haccp-plan-document-design.md`.
