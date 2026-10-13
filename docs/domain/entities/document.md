@@ -52,8 +52,8 @@ document. Written only by the mobile app (on upload and via owner-only "Manage a
 best-effort removes the old object (web `documents/edit/[id]/page.tsx:70-97`, mobile `documents_provider.dart:144-211`).
 Access level is not editable on the web.
 
-**Expiring:** mobile `StartupChecks` (on dashboard open) notifies managers at 30 days, 7 days and ≤1 day before
-`expires_at` (type `document` in `notifications`) — `haccp-mobile/lib/utils/startup_checks.dart:70-104`. No server job.
+**Expiring:** only mobile `StartupChecks` was ever written to notify managers (30 days, 7 days, ≤1 day before `expires_at`;
+`haccp-mobile/lib/utils/startup_checks.dart:70-104`), and it no longer runs in the current build (Gotcha 4). No server job.
 
 **Deleted:** storage object first, then the row (web `page.tsx:87-91`, `[id]/page.tsx:61-69`; mobile
 `documents_provider.dart:120-142`). `document_access` rows cascade. Business purge deletes rows and the edge function
@@ -100,9 +100,10 @@ See [Tiers, roles and capabilities](../concepts/roles-and-capabilities.md).
    `view_documents`; the row delete matches nothing without an error, the UI says "Document deleted", and a row
    pointing at a missing file remains. Likewise a Chef can upload the file but not insert the row (orphan object). [#54](https://github.com/KNSTNTN24/blueroll-web/issues/54)
 3. **`view_documents` is owner-level**, not "view only": edit and delete any document, remove access grants. [#55](https://github.com/KNSTNTN24/blueroll-web/issues/55)
-4. **No server-side expiry reminders.** The web helper `notifyExpiringDocument` (`src/lib/notifications.ts:63-67`) is
-   never called; reminders come only from a mobile app that someone opens, deduped in memory per device (duplicates
-   across devices; already-expired documents are never notified). [#61](https://github.com/KNSTNTN24/blueroll-web/issues/61)
+4. **No working expiry reminders.** The only sender was mobile `StartupChecks` (on dashboard open; deduped in memory
+   per device), and the current mobile build no longer routes the screen that runs it — the last expiry notification in
+   the live DB is from 2026-07-30. The web helper `notifyExpiringDocument` (`src/lib/notifications.ts:63-67`) is never
+   called. See [Incident & notification](incident-and-notification.md). [#61](https://github.com/KNSTNTN24/blueroll-web/issues/61)
 5. **`document_access` is readable by every signed-in user** (live policy `document_access_select USING true`), across businesses. [#51](https://github.com/KNSTNTN24/blueroll-web/issues/51)
 6. **Site is cosmetic.** RLS ignores `site_id`; the pack, picker and Plan ignore it; site-filtered lists hide null-site rows.
 7. **Web and mobile HACCP Pack files are incompatible.** Web stores `{"id","title"}`, mobile stores a raw storage path;

@@ -24,11 +24,15 @@ When a page and the database disagree, the database wins and the page has a bug.
 | [entities/member.md](entities/member.md) | A person in a business (profile) and how they get there (invite, join, removal, check-ins). |
 | [entities/checklist-completion.md](entities/checklist-completion.md) | One fill-in of a checklist: answers, flags, corrective actions, sign-off, drafts, due/missed instances, reports. |
 | [concepts/subscription-and-entitlement.md](concepts/subscription-and-entitlement.md) | Stripe / App Store / Google Play / manual sources, trial, grace, what "entitled" unlocks and the paywall. |
+| [entities/recipe.md](entities/recipe.md) | A dish's recipe: ingredients and their allergens, dietary flags, HACCP methods, tags, AI import. |
+| [entities/menu.md](entities/menu.md) | Dishes on the menu per site, categories, and the allergen & dietary rules shown to customers and inspectors. |
+| [entities/supplier-and-delivery.md](entities/supplier-and-delivery.md) | Who supplies food and the goods-in check (temperature, photos) for each delivery. |
+| [entities/haccp-pack.md](entities/haccp-pack.md) | The site's SFBB/HACCP answers (5 sections, 26 methods), auto-fill, scope rule, Set up my HACCP, HACCP Plan. |
+| [entities/incident-and-notification.md](entities/incident-and-notification.md) | Incidents and complaints; in-app notifications (who creates them, no push/email); barely used diary tables. |
 
-Planned (not written yet): Recipe, Ingredient, Menu, Supplier, Delivery, HACCP Pack,
-Setup session, HACCP Plan, Incident, Training record, Channel identity, Channel group, Notification;
+Planned (not written yet): Setup session, HACCP Plan (own page), Channel identity, Channel group;
 concepts: business vs site scoping, periods & missed checks, out-of-range & corrective action, sign-off,
-SFBB sections / safe methods / recipe HACCP methods, allergens & dietary, channels, entitlement,
+SFBB sections / safe methods / recipe HACCP methods, allergens & dietary, channels,
 soft delete, auto-fill, FSA/FHRS rating, checklist library.
 
 ## Conventions
