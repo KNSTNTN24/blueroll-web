@@ -109,18 +109,18 @@ See [Tiers, roles and capabilities](../concepts/roles-and-capabilities.md).
 ## Gotchas
 
 1. **Editing a template deletes its answer history.** Edit = delete all items + re-insert; `checklist_responses.item_id`
-   is `ON DELETE CASCADE`, so every past response of that template disappears (completions stay, empty).
+   is `ON DELETE CASCADE`, so every past response of that template disappears (completions stay, empty). [#52](https://github.com/KNSTNTN24/blueroll-web/issues/52)
 2. **The schedule lives only in the live DB.** Cron `generate-checklist-instances` is not in any repo migration.
    It works in **UTC** (not `sites.timezone`), ignores `deadline_time` and `multi_per_day`, and treats
    `four_weekly` as a calendar month and `custom` as daily. 30,796 of 44,982 live instances are `missed` — partly
-   because defaults and inactive-then-active templates are scheduled from the day they exist.
+   because defaults and inactive-then-active templates are scheduled from the day they exist. [#58](https://github.com/KNSTNTN24/blueroll-web/issues/58) [#59](https://github.com/KNSTNTN24/blueroll-web/issues/59)
 3. **"Period" has five definitions.** Web: week starts Monday, four-weekly = rolling 28 days from Monday−21,
    custom = today. Edge: same but in site time zone. Mobile: four-weekly = 28-day cycles from 2024-01-01, custom = no
-   period. SQL: four-weekly = calendar month, custom = daily. `custom` has no defined schedule anywhere.
+   period. SQL: four-weekly = calendar month, custom = daily. `custom` has no defined schedule anywhere. [#58](https://github.com/KNSTNTN24/blueroll-web/issues/58)
 4. **Mobile ignores `assigned_role_ids`.** A template created or edited on mobile has no/stale role ids, so web and
-   channels hide it from people who have a `role_id` (everyone, live), while mobile shows it to all.
+   channels hide it from people who have a `role_id` (everyone, live), while mobile shows it to all. [#56](https://github.com/KNSTNTN24/blueroll-web/issues/56)
 5. **Mobile rewrites unknown sections to `general`.** Editing a library template on mobile overwrites `cross`,
-   `temperature` or `probes` with `general` (`checklist.dart:122-127`, `checklist_manage_screen.dart:169`).
+   `temperature` or `probes` with `general` (`checklist.dart:122-127`, `checklist_manage_screen.dart:169`). [#60](https://github.com/KNSTNTN24/blueroll-web/issues/60)
 6. **"All sites" is hard to get and hidden when you get it.** Edge, cron and RLS treat `site_id IS NULL` as "all
    sites", but the insert trigger turns a null into the creator's primary site, and the web and mobile lists filter
    `.eq('site_id', current)` (`checklists/page.tsx:62,79`, `haccp-mobile/lib/providers/dashboard_provider.dart:66`), so
@@ -128,7 +128,7 @@ See [Tiers, roles and capabilities](../concepts/roles-and-capabilities.md).
 7. **Flags are decided by the client.** Web `autoFlag`, mobile `_isFlagged`, edge `flagResponse` each apply
    "yes_no = no, or temperature outside [min,max]"; the server does not re-check. Web and mobile never set
    `corrective_status`; only channels do.
-8. **Sign-off is gated by tier, not by the `sign_off` capability**, and the UI uses the browser clock for "Overdue".
+8. **Sign-off is gated by tier, not by the `sign_off` capability**, and the UI uses the browser clock for "Overdue". [#55](https://github.com/KNSTNTN24/blueroll-web/issues/55)
 9. **Item descriptions are lost** when saving from the web editor or the AI wizard.
 10. **Channels skip `photo` and `initials` items**; a *required* photo item makes the WhatsApp form unsupported.
 

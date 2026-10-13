@@ -96,26 +96,26 @@ must match (comment at `permissions.ts:62-69`). Live data, 2026-10-13: 424 roles
 
 1. **UI and database disagree.** The DB enforces capabilities; the UI shows/hides by tier. A custom role or an edited
    preset changes what the DB allows but not what the screens show (e.g. a Chef given `manage_checklists` can save
-   templates through the API but never sees the editor). New code: check capabilities, not the tier text.
-2. **Overrides exist only in the database.** Nothing in web or mobile writes `member_capability_overrides`.
+   templates through the API but never sees the editor). New code: check capabilities, not the tier text. [#55](https://github.com/KNSTNTN24/blueroll-web/issues/55)
+2. **Overrides exist only in the database.** Nothing in web or mobile writes `member_capability_overrides`. [#55](https://github.com/KNSTNTN24/blueroll-web/issues/55)
 3. **`view_documents` is really "owner-level documents".** It lets you see every document, update any document,
-   delete documents and remove per-person document access — not "view only" as the label says. Only Owner has it.
+   delete documents and remove per-person document access — not "view only" as the label says. Only Owner has it. [#55](https://github.com/KNSTNTN24/blueroll-web/issues/55)
 4. **Group admins count as owners in two guards** (`guard_owner_role_assignment`, `guard_group_admin_escalation`),
    while the UI treats `is_group_admin` as scope only. Every owner was back-filled as group admin (38 live).
 5. **⚠ Possible owner escalation via invites (unverified end-to-end).** `invites` is writable by anyone with
    `manage_team` (Managers), including `role_id`. `join_with_invite` *inserts* the profile with that `role_id`, and
    the owner guard fires only `BEFORE UPDATE`. So a manager could invite an address they control with the Owner role.
-   `create_invite` refuses tier `owner`, but the client patches `role_id` afterwards.
+   `create_invite` refuses tier `owner`, but the client patches `role_id` afterwards. [#50](https://github.com/KNSTNTN24/blueroll-web/issues/50)
 6. **Live DB differs from the repo.** Repo `roles_write` checks `has_capability('manage_roles')`
    (`20260714130200_rbac_functions.sql:47-50`); the live policy checks `get_my_role() in (owner, manager)`.
-   `get_my_role()` and `remove_member()` exist live but in no repo migration.
+   `get_my_role()` and `remove_member()` exist live but in no repo migration. [#59](https://github.com/KNSTNTN24/blueroll-web/issues/59)
 7. **"Start from Owner" creates an owner-tier custom role** (`members-roles.tsx:267,276,318-327`) — anyone given it
    gets full access whatever boxes are ticked, because tier `owner` short-circuits `has_capability`.
 8. **Removed members keep database access.** `get_my_business_id()` does not check `removed_at`; the web does not
    sign them out (`use-auth.ts:46-68`) and the web members lists do not filter them. Mobile does sign them out
-   (`haccp-mobile/lib/providers/auth_provider.dart:34-38`). Only mobile can remove a member.
+   (`haccp-mobile/lib/providers/auth_provider.dart:34-38`). Only mobile can remove a member. [#57](https://github.com/KNSTNTN24/blueroll-web/issues/57)
 9. **Five capabilities are not enforced anywhere** (`complete_checklists`, `view_reports`, `manage_incidents`,
-   `manage_deliveries`, `manage_billing`) although the role editor offers them.
+   `manage_deliveries`, `manage_billing`) although the role editor offers them. [#55](https://github.com/KNSTNTN24/blueroll-web/issues/55)
 10. **Multiple owners are allowed**; `manage-subscription` and `delete-account` just check the caller is an owner.
 11. **`sites.manager_id`** is set (back-filled to the owner) but no permission code reads it.
 12. **The test invite token `123456` is reusable** by design (`join_with_invite`, `20260411095739_test_invite_123456.sql`).

@@ -95,18 +95,18 @@ See [Tiers, roles and capabilities](../concepts/roles-and-capabilities.md).
 
 1. **`managers` documents are hidden from managers.** The web list saves "Managers" as `managers`; RLS only knows
    `managers_only`, so such a document is visible only to holders of `view_documents` (owners) — not even to the
-   manager who uploaded it. Web detail labels it "Owner only"; mobile shows it as "All staff". 7 live rows.
+   manager who uploaded it. Web detail labels it "Owner only"; mobile shows it as "All staff". 7 live rows. [#53](https://github.com/KNSTNTN24/blueroll-web/issues/53)
 2. **A manager's delete half-fails silently.** Storage lets a manager delete the file, but the row needs
    `view_documents`; the row delete matches nothing without an error, the UI says "Document deleted", and a row
-   pointing at a missing file remains. Likewise a Chef can upload the file but not insert the row (orphan object).
-3. **`view_documents` is owner-level**, not "view only": edit and delete any document, remove access grants.
+   pointing at a missing file remains. Likewise a Chef can upload the file but not insert the row (orphan object). [#54](https://github.com/KNSTNTN24/blueroll-web/issues/54)
+3. **`view_documents` is owner-level**, not "view only": edit and delete any document, remove access grants. [#55](https://github.com/KNSTNTN24/blueroll-web/issues/55)
 4. **No server-side expiry reminders.** The web helper `notifyExpiringDocument` (`src/lib/notifications.ts:63-67`) is
    never called; reminders come only from a mobile app that someone opens, deduped in memory per device (duplicates
-   across devices; already-expired documents are never notified).
-5. **`document_access` is readable by every signed-in user** (live policy `document_access_select USING true`), across businesses.
+   across devices; already-expired documents are never notified). [#61](https://github.com/KNSTNTN24/blueroll-web/issues/61)
+5. **`document_access` is readable by every signed-in user** (live policy `document_access_select USING true`), across businesses. [#51](https://github.com/KNSTNTN24/blueroll-web/issues/51)
 6. **Site is cosmetic.** RLS ignores `site_id`; the pack, picker and Plan ignore it; site-filtered lists hide null-site rows.
 7. **Web and mobile HACCP Pack files are incompatible.** Web stores `{"id","title"}`, mobile stores a raw storage path;
-   each shows the other's as empty or garbage, and mobile pack files never appear in Documents or get expiry tracking.
+   each shows the other's as empty or garbage, and mobile pack files never appear in Documents or get expiry tracking. [#62](https://github.com/KNSTNTN24/blueroll-web/issues/62)
 8. **Mobile does not sanitise file names** (web replaces `[^a-zA-Z0-9._-]` with `_` because special characters gave storage "Invalid key" errors).
 9. **Dead entry points:** list rows don't link to the detail page; the command palette's `/documents?upload=true` is
    ignored; `/documents/upload` is unlinked.
