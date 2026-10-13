@@ -19,9 +19,13 @@ When a page and the database disagree, the database wins and the page has a bug.
 | [entities/checklist-template.md](entities/checklist-template.md) | A reusable checklist (items, frequency, who does it, who signs off); the cron turns it into due checks per site. |
 | [entities/document.md](entities/document.md) | A file a business keeps for compliance (certificates, policies, contracts), with category, visibility and expiry. |
 | [concepts/roles-and-capabilities.md](concepts/roles-and-capabilities.md) | Tiers, roles, capabilities and per-person overrides: how Blueroll decides who may do what, and on which sites. |
+| [entities/business.md](entities/business.md) | The customer account: profile, FSA rating, settings, channel switches, soft delete and purge, demo business. |
+| [entities/site.md](entities/site.md) | One premises of a business: status, removal, time zone, billing, and which data is per-site vs business-wide. |
+| [entities/member.md](entities/member.md) | A person in a business (profile) and how they get there (invite, join, removal, check-ins). |
+| [entities/checklist-completion.md](entities/checklist-completion.md) | One fill-in of a checklist: answers, flags, corrective actions, sign-off, drafts, due/missed instances, reports. |
+| [concepts/subscription-and-entitlement.md](concepts/subscription-and-entitlement.md) | Stripe / App Store / Google Play / manual sources, trial, grace, what "entitled" unlocks and the paywall. |
 
-Planned (not written yet): Business, Site, Member, Invite, Subscription & entitlement, Checklist item,
-Checklist instance, Completion & response, Recipe, Ingredient, Menu, Supplier, Delivery, HACCP Pack,
+Planned (not written yet): Recipe, Ingredient, Menu, Supplier, Delivery, HACCP Pack,
 Setup session, HACCP Plan, Incident, Training record, Channel identity, Channel group, Notification;
 concepts: business vs site scoping, periods & missed checks, out-of-range & corrective action, sign-off,
 SFBB sections / safe methods / recipe HACCP methods, allergens & dietary, channels, entitlement,
