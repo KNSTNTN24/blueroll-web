@@ -58,7 +58,7 @@ Also `id`, `business_id` (FK `ON DELETE CASCADE`). No `created_at`.
 
 ## Allergens and dietary — the rules
 
-**The 14** (UK FIR / Natasha's Law), storage key → label (`src/lib/constants.ts:2-13`): `gluten` Gluten (cereals),
+**The 14** (the UK list of 14 allergens that must be declared; Natasha's Law is only the PPDS labelling rule — see [Allergens & dietary](../concepts/allergens-and-dietary.md)), storage key → label (`src/lib/constants.ts:2-13`): `gluten` Gluten (cereals),
 `crustaceans`, `eggs`, `fish`, `peanuts`, `soybeans` Soybeans, `milk`, `nuts` Tree Nuts, `celery`, `mustard`, `sesame`,
 `sulphites`, `lupin`, `molluscs`. Mobile displays them Title-case with its own order and `Soya`/`Nuts`
 (`haccp-mobile/lib/features/kitchen/dietary.dart:5-20`) but writes the same lowercase keys (`add_dish_screen.dart:25-30`).
