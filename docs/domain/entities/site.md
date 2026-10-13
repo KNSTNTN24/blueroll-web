@@ -48,7 +48,7 @@ Also `id`, `business_id` (FK `ON DELETE CASCADE`), `created_at` (shown as "live 
 **Edited:** web only — name, address, manager (`sites-settings.tsx:139-148`). Mobile has no edit.
 
 **Removed (soft):** web only — `status='removed', removed_at=now()`, blocked if it is the last site
-(`sites-settings.tsx:150-161`, "records kept for 4 years"). Records stay; web and mobile site lists hide
+(`sites-settings.tsx:150-161`, "records kept for 4 years" — UI copy only: nothing purges site records after 4 years). Records stay; web and mobile site lists hide
 `status='removed'` (`src/hooks/use-auth.ts:81-87`, `haccp-mobile/lib/providers/sites_provider.dart:12-17`), channels
 hide `removed_at is not null` (`supabase/functions/_shared/channels/groups-db.ts:206`, `teams-db.ts:139-140`).
 **Deleted (hard):** only the multi-site onboarding replace step. FKs to `sites`: 25 `ON DELETE CASCADE`

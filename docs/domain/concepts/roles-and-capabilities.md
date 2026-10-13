@@ -36,7 +36,7 @@ See *Gotchas* 1.
 | **Override** | Per-person exception: `granted = true` adds a capability on top of the role, `false` removes it. No row = inherit. | `member_capability_overrides` (`20260714160000_member_capability_overrides.sql:3-12`) |
 | **Site membership** | Which sites a member works at. Many-to-many. `profiles.site_id` is kept pointing at one of them ("primary site"). | `member_sites`; trigger `keep_primary_site` (`20260714140000_member_sites.sql:3-45`) |
 | **Group admin** | Sees every site of the business (estate-wide scope). Not an admin *grant* — it is about scope — but the DB treats group admins like owners in two guards (Gotcha 4). | `profiles.is_group_admin`; `am_i_group_admin()` (`20260712100100_multisite_rls_helpers.sql:4-7`) |
-| **Legacy role text** | `profiles.role` — the tier as text, kept for old readers. Two-way synced with `profiles.role_id`. | trigger `trg_sync_profile_role` → `sync_profile_role_text()` (`20260716173000_profile_role_two_way_sync.sql:14-54`) |
+| **Legacy role text** | `profiles.role` — the tier as text. "Legacy" in name only: it is still what most screens, edge functions and several SQL helpers gate on (#55) — do not drop it. Two-way synced with `profiles.role_id`. | trigger `trg_sync_profile_role` → `sync_profile_role_text()` (`20260716173000_profile_role_two_way_sync.sql:14-54`) |
 
 ## The 14 capabilities and the presets
 
@@ -47,11 +47,11 @@ See *Gotchas* 1.
 | `manage_incidents` | Manage incidents | ✓ | ✓ | ✓ | ✓ | ✓ | no |
 | `manage_deliveries` | Manage deliveries | ✓ | ✓ | ✓ | ✓ | ✓ | no |
 | `manage_recipes` | Manage recipes & menu | ✓ | ✓ | ✓ | | | RLS on recipes, ingredients, tags, menu, recipe_sites |
-| `manage_checklists` | Manage checklists | ✓ | ✓ | | | | RLS on templates, items, 4-weekly reviews, notification rules |
-| `sign_off` | Sign off checklists | ✓ | ✓ | | | | RLS: delete others' completions |
-| `manage_documents` | Manage documents | ✓ | ✓ | | | | RLS on documents (see [Document](../entities/document.md)) |
+| `manage_checklists` | Manage checklist templates | ✓ | ✓ | | | | RLS on templates, items, 4-weekly reviews, notification rules |
+| `sign_off` | Sign off completions | ✓ | ✓ | | | | RLS: delete others' completions |
+| `manage_documents` | Add/edit documents | ✓ | ✓ | | | | RLS on documents (see [Document](../entities/document.md)) |
 | `manage_suppliers` | Manage suppliers | ✓ | ✓ | | | | RLS on suppliers |
-| `manage_team` | Manage team | ✓ | ✓ | | | | RLS on invites, profiles (update), training_records |
+| `manage_team` | Manage team & invites | ✓ | ✓ | | | | RLS on invites, profiles (update), training_records |
 | `view_documents` | View documents | ✓ | | | | | RLS on documents — **much wider than the label**, Gotcha 3 |
 | `manage_sites` | Manage sites | ✓ | | | | | RLS `sites_write` |
 | `manage_roles` | Manage roles | ✓ | | | | | RLS on overrides (and `roles` in the repo, not live — Gotcha 6) |

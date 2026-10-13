@@ -34,7 +34,7 @@ same 115 ids). Section ids: `cross`, `cleaning`, `chilling`, `cooking`, `managem
 
 | Field (UI label) | DB column / key | Meaning | Allowed values | Enforced by |
 |---|---|---|---|---|
-| Site | `site_id` | Whose pack this is. One row per (business, site). | site uuid; null only for a business with no sites | DB `UNIQUE (business_id, site_id)` (`uq_haccp_pack_business_site`), FK `ON DELETE CASCADE`; trigger `trg_site_id_default` fills the caller's home site if null |
+| Site | `site_id` | Whose pack this is. One row per (business, site). | site uuid; null only for a business with no sites | DB `UNIQUE (business_id, site_id)` (`uq_haccp_pack_business_site`), FK `ON DELETE CASCADE`; trigger `trg_site_id_default` fills the caller's primary site (`profiles.site_id`) if null — a null-site pack is a degenerate case, not a shared group pack |
 | Business | `business_id` | Owner business. | uuid | FK `ON DELETE CASCADE` |
 | Yes/no points | `data.toggles` | `{fieldId: true/false}` | boolean | code only |
 | Descriptions | `data.texts` | Free text typed by the owner, or written by setup. | string | code only |

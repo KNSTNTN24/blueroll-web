@@ -15,7 +15,7 @@ Read this page before changing any of it, and change all layers together or none
 ```
 period(template, t)  = the window [start, end) that contains t, by template.frequency   -- differs per layer, table A
 done(period, site)   = completions of the template in that period (at that site) >= need  -- need = min_per_day per day if multi_per_day, else 1
-overdue              = not done AND clock > today's deadline_time                          -- UI and channels only; never stored
+overdue              = not done AND clock > today's deadline_time                          -- UI and channels only; never stored as state (the 6,301 'Overdue Checklist' notifications are client-generated history)
 missed               = the period has ended AND not done                                   -- stored only by SQL (instances.status='missed')
 ```
 
