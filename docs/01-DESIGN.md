@@ -1,3 +1,5 @@
+> **Outdated (2026-10-13).** Kept for history. Current, verified description: [`docs/domain/`](domain/README.md).
+
 # Blueroll Web v2 — Дизайн и организация интерфейса
 
 ## Философия
