@@ -4,7 +4,7 @@
 
 **Touches:** [Checklist template](../entities/checklist-template.md) (`frequency`, `deadline_time`, `multi_per_day`, `min_per_day`),
 [Checklist completion](../entities/checklist-completion.md) (`completed_at`, `checklist_instances`), [Site](../entities/site.md) (`timezone`) ·
-**Last verified:** 2026-10-13 against `main@b50e9d1` and the live DB (`rszrggreuarvodcqeqrj`) · **Issue:** [#58](https://github.com/KNSTNTN24/blueroll-web/issues/58)
+**Last verified:** 2026-10-13 (review pass) against `main@b50e9d1` and the live DB (`rszrggreuarvodcqeqrj`) · **Issue:** [#58](https://github.com/KNSTNTN24/blueroll-web/issues/58)
 
 ## The rule in plain words
 
@@ -15,7 +15,7 @@ Read this page before changing any of it, and change all layers together or none
 ```
 period(template, t)  = the window [start, end) that contains t, by template.frequency   -- differs per layer, table A
 done(period, site)   = completions of the template in that period (at that site) >= need  -- need = min_per_day per day if multi_per_day, else 1
-overdue              = not done AND clock > today's deadline_time                          -- UI and channels only; never stored
+overdue              = not done AND clock > today's deadline_time                          -- UI and channels only; never stored as state (the 6,301 'Overdue Checklist' notifications are client-generated history)
 missed               = the period has ended AND not done                                   -- stored only by SQL (instances.status='missed')
 ```
 
@@ -63,8 +63,8 @@ missed               = the period has ended AND not done                        
 **3. "Fridge temps" daily, `multi_per_day`, `min_per_day = 2`, deadline 14:00; one fill at 09:00.**
 - Web / mobile: "1/2 today", never Overdue. Channels: still due; Telegram group reminder 13:30–14:00, overdue after 14:00;
   the next WhatsApp team take is `2026-10-13#2`.
-- SQL: the 09:00 fill completes the day's instance → **never missed**. Live: 242 of 1,838 completed multi-per-day
-  instances had fewer than `min_per_day` fills that UTC day.
+- SQL: the 09:00 fill completes the day's instance → **never missed**. Live: 288 of 2,092 — counting, for each
+  multi-per-day template, site and UTC date with completions, the days with fewer completions than `min_per_day`.
 - Reports: 1 due, 1 completed → 100%. If staff fill it 3 times, 3 completions offset 2 real misses elsewhere in the total.
 
 **4. `custom` ("As needed", `haccp-setup/draft-review.tsx:16`).** SQL and web schedule it **daily** (3,266 live `missed`
@@ -90,8 +90,9 @@ One definition, owned by the database, read by everyone:
    Reports and HACCP Plan "missed" — example 1.
 2. **`four_weekly` has three meanings** (calendar month, rolling 22–28 days, fixed 28-day cycles) — example 2.
 3. **`custom` is daily, "no period" or "done forever"** depending on the layer — example 4.
-4. **SQL ignores `multi_per_day`**: the first fill completes the instance — example 3. A monthly template with
-   `multi_per_day` (1 live) is counted per day by web/edge and per month by SQL.
+4. **SQL ignores `multi_per_day`**: the first fill completes the instance — example 3. Non-daily templates with
+   `multi_per_day` have the same split — 77 live (74 `custom`, 2 weekly, 1 monthly; 17 of the `custom` ones active):
+   counted per day by web/edge and per period by SQL.
 5. **The deadline applies every day, whatever the frequency.** A weekly check with 10:00 shows "Overdue" from 10:00 each
    day until done; channels re-remind daily and the WhatsApp team summary lists it as "missed" each evening.
 6. **The site dashboard only loads today's completions** (`dashboard/page.tsx:85`) but compares them with weekly/monthly

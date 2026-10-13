@@ -5,7 +5,7 @@
 
 **Tables:** `profiles` (1 row per `auth.users` row), `invites`, `staff_checkins`, `training_records` ·
 **Scope:** business (primary site in `site_id`, real site scope in `member_sites`) ·
-**Last verified:** 2026-10-13 against `main@b50e9d1` and the live DB (154 profiles, 76 invites)
+**Last verified:** 2026-10-13 (review pass) against `main@b50e9d1` and the live DB (154 profiles, 76 invites)
 
 ## What it is for
 
@@ -108,7 +108,7 @@ purge exist, but **no web or mobile code reads or writes it**; 0 live rows. The 
 
 - **Concepts:** [Tiers, roles and capabilities](../concepts/roles-and-capabilities.md) (role, overrides, `member_sites`, group admin).
 - **Entities:** [Document](document.md) (`uploaded_by` cascades), [Checklist template](checklist-template.md) (assignees, sign-off), Business, Site, Channel identity (planned).
-- **Channel identities:** `channel_identities` links a profile to a WhatsApp number / Telegram user via one-time `channel_link_codes`; revoked on soft removal or business change. Live: WhatsApp 2 active, Telegram 2 active + 2 revoked.
+- **Channel identities:** `channel_identities` links a profile to a WhatsApp number / Telegram user (the old one-time `channel_link_codes` flow is retired — see [Channels](../concepts/channels.md)); revoked on soft removal or business change. Live: WhatsApp 2 active, Telegram 2 active + 2 revoked.
 - **Demo:** every signed-in user can *read* the showcase business `a8ff4795-…` (`src/lib/demo.ts:8`, migration `20260824120000_demo_mode_read_policies.sql`); it has a single owner profile and no demo staff. `demo_force_exit` hides it for 24 h. Cron `demo-daily-refresh` keeps it fresh and trims its check-ins to 45 days.
 
 ## Where in code
@@ -127,26 +127,30 @@ purge exist, but **no web or mobile code reads or writes it**; 0 live rows. The 
    set their own `role_id` to the Manager preset, or their `business_id` to any entitled business id they know. Likewise a
    fresh login with no profile can `INSERT` itself into any entitled business with any `role_id` (owner guard is `UPDATE` only; cf. #50).
 2. **Invite expiry is not enforced.** `join_with_invite` checks only `used_at`, not `expires_at` (1 live invite used after expiry),
-   and does not compare the signup email to `invites.email` — anyone holding the 6 digits joins.
+   and does not compare the signup email to `invites.email` — anyone holding the 6 digits joins. Live: 31 expired 6-digit
+   codes are still joinable, and there is no rate limit on guessing codes. [#69](https://github.com/KNSTNTN24/blueroll-web/issues/69)
 3. **`123456` is a live back door** into a real business (8 members) as Kitchen Staff, forever (`expires_at` 2099).
    Separately, the legacy mobile `/setup` screen (reached after login with no profile) treats `123456` as a local
    "team access" flag and opens the dashboard **without joining anything** (`screens/auth/setup_screen.dart:188-195`).
 4. **Signup happens before join/setup.** If `join_with_invite` fails (bad code), the web leaves a login with no profile and a
    retry says "already registered" (`onboarding/page.tsx:682-700`). 3 such live logins.
 5. **`send-invite` sends any email to anyone.** It only checks that an `Authorization` header is present and trusts `to`, `code`,
-   names (inserted into the HTML unescaped) from the body (`send-invite/index.ts:3-4,20-32`).
+   names (inserted into the HTML unescaped) from the body (`send-invite/index.ts:3-4,20-32`). It is deployed with
+   `verify_jwt = false`, so the public anon key alone passes (same for `create-subscription`). [#65](https://github.com/KNSTNTN24/blueroll-web/issues/65)
 6. **`certifications` has no writer.** Web shows it (and counts "trained") but neither app edits it; mobile ignores it. **`preferences`**
    is saved but no screen uses it (no °F, timezone or date-format rendering).
 7. **Hard delete can destroy records.** A removed member with no blocking history is deleted and their uploaded documents cascade
-   away (see [Document](document.md)); their login survives, so they can sign in again and start a new business.
-   A soft-removed member cannot rejoin anywhere ("User already has a profile"). Removed members keep web access (#57).
+   away (see [Document](document.md), [#114](https://github.com/KNSTNTN24/blueroll-web/issues/114)); their login survives, so they can sign in again and start a new business.
+   A soft-removed member cannot rejoin anywhere ("User already has a profile"). Removed members keep web access
+   ([#57](https://github.com/KNSTNTN24/blueroll-web/issues/57)); a soft-removed manager also keeps the text-role powers, because `remove_member` nulls `role_id` but
+   leaves `profiles.role`, and `get_my_role()` ignores `removed_at`.
 8. **Web Settings → Sites "Add site" invite is lost:** it calls `create_invite` but never sends the email, attaches the site or shows
    the code (`settings/sites-settings.tsx:307-309`). Also `create_invite` checks uniqueness only among active invites while `token` is
    globally `UNIQUE` — a collision with one of 52 old six-digit tokens fails the insert instead of retrying.
 9. **Live-only objects:** `remove_member`, `get_my_role`, and the columns `removed_at`, `certifications`, `avatar_url` are in no repo migration (#59).
 10. **Check-ins never close** on their own (150 stale open rows inflate "on shift" counts on mobile, which reads by `date`); web and mobile
     disagree on what "today" means and on which site a check-in belongs to. Legacy emoji moods remain in data.
-11. **Single-site owners are not group admins** (only the one-off back-fill and the multi-site onboarding set it): 38 of 75 owners are.
+11. **Single-site owners are not group admins** (only the one-off back-fill and the multi-site onboarding set it): 37 of 75 owners are group admins.
 
 ## History
 

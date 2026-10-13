@@ -3,7 +3,7 @@
 > One run of the *Set up my HACCP* questionnaire for one site: plain questions about how the kitchen works, saved as
 > you go, then reviewed and applied to fill the HACCP Pack and add the checklists the FSA expects.
 
-**Tables:** `haccp_setup_sessions`, `ai_usage_log` (assistant usage) · **Scope:** site · **Last verified:** 2026-10-13
+**Tables:** `haccp_setup_sessions`, `ai_usage_log` (assistant usage) · **Scope:** site · **Last verified:** 2026-10-13 (review pass)
 against `main@b50e9d1` and the live DB (17 sessions: 8 abandoned, 6 applied, 3 in progress; 2 businesses, 6 sites)
 
 ## What it is for
@@ -94,7 +94,7 @@ states `yes|no|confirm` (`:141-157`). The owner edits and "Use this", "Use my wo
 
 | Action | Rule | Enforced in |
 |---|---|---|
-| See / start / answer / abandon | `profiles.role` ∈ owner, manager in that business (legacy tier, not capabilities) | RLS `managers read/create/update setup sessions` → `is_business_manager()`; UI `isManager` (`hooks/use-auth.ts:204`) |
+| See / start / answer / abandon | `profiles.role` ∈ owner, manager in that business (legacy tier, not capabilities); **no site check** — Gotcha 12 | RLS `managers read/create/update setup sessions` → `is_business_manager()`; UI `isManager` (`hooks/use-auth.ts:204`) |
 | Apply | same + RLS on `checklist_templates`/items (`manage_checklists`, entitlement) and `haccp_pack_data` (entitlement), since the RPC is invoker | `apply_haccp_setup` |
 | Use the assistant | owner/manager by `profiles.role`; 30 calls per business per rolling 24 h, shared by all actions | `haccp-assistant/index.ts:37-38,59-74` |
 | Demo business | blocked in UI ("Not available in demo mode") | `page.tsx:34` |
@@ -105,7 +105,7 @@ See [Roles and capabilities](../concepts/roles-and-capabilities.md).
 
 - [HACCP Pack](haccp-pack.md) — target of the fields; the pack page shows the *Set up my HACCP* panel (`haccp-pack/setup-hero.tsx`, managers only, `page.tsx:557`): Start / Continue — N% / Review (`hero.ts:14-28`).
 - [Checklist template](checklist-template.md) — `library_key` templates; [Document](document.md) — documents step; [Site](site.md), [Member](member.md).
-- **Mobile** — no questionnaire; a manager-only button opens `https://app.blueroll.app/haccp-setup` in the browser (`haccp-mobile/lib/features/haccp/site_haccp.dart:109-117`).
+- **Mobile** — no questionnaire. A manager-only button that opens `https://app.blueroll.app/haccp-setup` in the browser (`haccp-mobile/lib/features/haccp/site_haccp.dart:109-117`) exists only on the unmerged branch `KNS/haccp-setup-link` (haccp-mobile commit `3c60d76`), **not on mobile main**.
 
 ## Where in code
 
@@ -125,27 +125,32 @@ See [Roles and capabilities](../concepts/roles-and-capabilities.md).
    capabilities or `removed_at`; but apply runs as invoker, so a "manager" without `manage_checklists` (or an
    unentitled business) gets a raw RLS error on apply. [#55](https://github.com/KNSTNTN24/blueroll-web/issues/55) [#57](https://github.com/KNSTNTN24/blueroll-web/issues/57)
 3. **"Start over" does not start empty after an earlier apply.** It abandons the session, and the next one is seeded
-   from the last applied session's answers (`api.ts:20-27`).
+   from the last applied session's answers (`api.ts:20-27`). This is by design (comment at `api.ts:20`); the problem is the
+   label — users expect an empty form. [#97](https://github.com/KNSTNTN24/blueroll-web/issues/97)
 4. **Just opening `/haccp-setup` creates a session**, and nothing prevents two `in_progress` sessions per site (no
    unique index; the app takes the newest). After an apply, "Review with questions" creates a new open session, so the
-   panel then says "Continue — N%".
+   panel then says "Continue — N%". [#97](https://github.com/KNSTNTN24/blueroll-web/issues/97)
 5. **Version is decorative.** `questionnaire_version` is stamped at insert, never bumped when an old session continues
    under new questions (spec: "old sessions continue") and never read; `applied_summary.questionnaire_version` copies it,
-   so v1-stamped sessions applied with v2 content are indistinguishable.
+   so v1-stamped sessions applied with v2 content are indistinguishable. [#97](https://github.com/KNSTNTN24/blueroll-web/issues/97)
 6. **"Answers win" is by `fills`, not by value.** An own-words tick is dropped if any answered question *could* set
    that field — e.g. `cooling_method = blast_chiller` sets no `cd_portions`, yet the owner's `cd_portions` tick is
-   still discarded (`own-words.ts:17-24`, `haccp-mapping.ts:114`).
+   still discarded (`own-words.ts:17-24`, `haccp-mapping.ts:114`). [#97](https://github.com/KNSTNTN24/blueroll-web/issues/97)
 7. **Only `new` fields are written; values from elsewhere are never replaced.** A text typed on mobile or before
    setup is "kept" even if the answers now say otherwise; only earlier setup values are refreshed.
 8. **The RPC trusts the client's pack.** It upserts the whole `data` merged in the browser; the guard is only the
    `updated_at` match. A checklist-only apply skips that guard.
 9. **Assistant limit is per business, rolling 24 h**, counts failed model calls (reserved first), and the UI says
    "today's limit". `answer` with no knowledge match is free.
-10. **Mobile link has no site**: the web opens on its own `currentSiteId`, which may differ from the site viewed on mobile.
+10. **Mobile link has no site** (branch `KNS/haccp-setup-link` only, not on mobile main): the web opens on its own
+    `currentSiteId`, which may differ from the site viewed on mobile.
 11. Abandon does not touch `updated_at`; there is no `abandoned_at`.
+12. **Site-restricted managers can run setup for any site.** Session RLS uses `is_business_manager` and
+    `apply_haccp_setup` has no `can_see_site_row` check, so a manager limited to site A can read, answer and apply
+    sessions for site B. [#117](https://github.com/KNSTNTN24/blueroll-web/issues/117)
 
 ## History
 
 - 2026-10-12 v2 + Phase B own words (`2026-10-12-haccp-setup-v2-design.md`); `20261012130000` — pack check only when the pack is written, `activate`.
 - 2026-10-06 table, RLS, `library_key`, `ai_usage_log`, `apply_haccp_setup` (`20261006120000_haccp_setup.sql`); spec `2026-10-05-haccp-setup-questionnaire-design.md`.
-- Mobile: `haccp-mobile@3c60d76` link to the web questionnaire.
+- Mobile: `haccp-mobile@3c60d76` link to the web questionnaire — on branch `KNS/haccp-setup-link`, not merged to main.

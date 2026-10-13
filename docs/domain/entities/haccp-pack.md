@@ -4,7 +4,7 @@
 > "our pest-control company is …"), one pack per site, partly typed by the owner and partly filled from Blueroll data.
 
 **Tables:** `haccp_pack_data` (the answers), `haccp_signoffs` (per-site confirmation), `haccp_setup_sessions`
-(*Set up my HACCP*), `haccp_plan_shares` (Plan links) · **Scope:** site · **Last verified:** 2026-10-13 against
+(*Set up my HACCP*), `haccp_plan_shares` (Plan links) · **Scope:** site · **Last verified:** 2026-10-13 (review pass) against
 `main@b50e9d1` and the live DB (9 pack rows, 6 businesses)
 
 ## What it is for
@@ -34,7 +34,7 @@ same 115 ids). Section ids: `cross`, `cleaning`, `chilling`, `cooking`, `managem
 
 | Field (UI label) | DB column / key | Meaning | Allowed values | Enforced by |
 |---|---|---|---|---|
-| Site | `site_id` | Whose pack this is. One row per (business, site). | site uuid; null only for a business with no sites | DB `UNIQUE (business_id, site_id)` (`uq_haccp_pack_business_site`), FK `ON DELETE CASCADE`; trigger `trg_site_id_default` fills the caller's home site if null |
+| Site | `site_id` | Whose pack this is. One row per (business, site). | site uuid; null only for a business with no sites | DB `UNIQUE (business_id, site_id)` (`uq_haccp_pack_business_site`), FK `ON DELETE CASCADE`; trigger `trg_site_id_default` fills the caller's primary site (`profiles.site_id`) if null — a null-site pack is a degenerate case, not a shared group pack |
 | Business | `business_id` | Owner business. | uuid | FK `ON DELETE CASCADE` |
 | Yes/no points | `data.toggles` | `{fieldId: true/false}` | boolean | code only |
 | Descriptions | `data.texts` | Free text typed by the owner, or written by setup. | string | code only |
@@ -142,24 +142,25 @@ per site in `haccp_signoffs` (live RLS: member of the business who can see the s
 1. **Web and mobile file values are incompatible.** Web stores `{"id","title"}`, mobile a raw storage path; web's
    `parseFileRef` treats a path as empty, mobile shows the JSON as a file name. Mobile uploads never become documents. [#62](https://github.com/KNSTNTN24/blueroll-web/issues/62)
 2. **Mobile wipes "From setup".** Mobile's `HaccpPackRow` has no `sources` and `toData()` writes only five keys
-   (`models/haccp.dart:47-53`); any mobile save upserts the whole `data` and drops every `sources` mark for that site.
+   (`models/haccp.dart:47-53`); any mobile save upserts the whole `data` and drops every `sources` mark for that site. [#86](https://github.com/KNSTNTN24/blueroll-web/issues/86)
 3. **Setup answers hidden by auto-fill on the pack page.** Setup writes `texts` without `overrides`; the page shows the
    auto value whenever one exists (`showAuto`, `page.tsx:819`), while the Plan prefers the text (`build.ts:39-40`).
-   Hits own-words targets that also auto-fill (`pc_company`, `cd_method`, `df_method`, `fz_method`, `tp_method`, `tr_records`).
+   Hits own-words targets that also auto-fill (`pc_company`, `cd_method`, `df_method`, `fz_method`, `tp_method`, `tr_records`). [#86](https://github.com/KNSTNTN24/blueroll-web/issues/86)
 4. **Mobile ignores `haccp_auto_fill` and the scope rule**; its auto-fill uses only recipes, dishes and suppliers
    (`haccp_autofill_provider.dart:104-109`), and it still asks `fa_allergens_list` and covered files — mobile % ≠ web %.
 5. **"Revert to auto-fill" does not revert.** It calls `updateField(id,'text','')`, which sets `overrides[id] = true`
-   again (`page.tsx:913-923`, `:331-333`); the field stays empty and auto-fill stays hidden.
+   again (`page.tsx:913-923`, `:331-333`); the field stays empty and auto-fill stays hidden. [#86](https://github.com/KNSTNTN24/blueroll-web/issues/86)
 6. **"Never reviewed" for everyone.** Nothing writes `businesses.haccp_last_reviewed_at`, so the 4-week review badge
    is always overdue. [#76](https://github.com/KNSTNTN24/blueroll-web/issues/76)
 7. **Any member, any site, can edit or delete any pack** — RLS checks only business membership; no capability, no
    `can_see_site_row`, and the pack page has no edit gate. Same for the business-wide `haccp_auto_fill` switch.
+   DELETE on `haccp_pack_data` has no entitlement gate either (the write gates cover INSERT/UPDATE only). [#85](https://github.com/KNSTNTN24/blueroll-web/issues/85)
 8. **Auto-fill ignores the site** for recipes, suppliers, documents and team (business-wide queries, `page.tsx:186-270`);
    the pack page's team query includes removed members, the Plan's does not (`load.ts:81`).
 9. **Per-site migration did not seed sibling sites.** `20260712100000` had already moved each business-level row to
    the oldest site, so `20260731180000`'s copy step (`where site_id is null`) found nothing; other sites started empty
-   *(effect on live inferred from row counts)*. The `20260713101000` "group-wide" note is obsolete.
-10. Sign-off is never invalidated when the pack changes; web `site-signoff.tsx` inserts (one-shot), Plan/mobile upsert.
+   *(effect on live inferred from row counts)*. The `20260713101000` "group-wide" note is obsolete. [#86](https://github.com/KNSTNTN24/blueroll-web/issues/86)
+10. Sign-off is never invalidated when the pack changes; web `site-signoff.tsx` inserts (one-shot), Plan/mobile upsert. [#86](https://github.com/KNSTNTN24/blueroll-web/issues/86)
 
 ## History
 

@@ -14,6 +14,8 @@ When a page and the database disagree, the database wins and the page has a bug.
 
 ## Index
 
+**Start with [glossary.md](glossary.md)** — every term in one line, with what the web app, the mobile app and the database call it, plus the food-safety vocabulary (HACCP, SFBB, FSA, EHO…).
+
 | Page | One line |
 |---|---|
 | [entities/checklist-template.md](entities/checklist-template.md) | A reusable checklist (items, frequency, who does it, who signs off); the cron turns it into due checks per site. |
@@ -33,6 +35,7 @@ When a page and the database disagree, the database wins and the page has a bug.
 | [entities/haccp-plan.md](entities/haccp-plan.md) | The inspector-ready HACCP Plan: sections and where each number comes from, inspector links, PDF, sign-off. |
 | [concepts/channels.md](concepts/channels.md) | WhatsApp teams and Telegram groups: linking, consent, daily lists and reminders, forms, first-submit-wins, billing. |
 | [concepts/periods-and-due-checks.md](concepts/periods-and-due-checks.md) | What "due", "done", "overdue" and "missed" mean in each layer (DB, web, edge, mobile, reports, Plan) — read before touching schedules. |
+| [concepts/marketing-and-external-data.md](concepts/marketing-and-external-data.md) | Not product data: the free-template lead list and email drip (personal data, #112), and the Toronto DineSafe cache for mobile onboarding. |
 
 Not yet separate pages (covered inside the pages above): business vs site scoping (`site.md`), out-of-range &
 corrective action and sign-off (`checklist-completion.md`), SFBB sections / safe methods (`haccp-pack.md`), allergens &

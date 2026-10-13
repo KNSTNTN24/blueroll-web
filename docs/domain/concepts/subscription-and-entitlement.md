@@ -5,7 +5,7 @@
 > writes when it is not live, and web and mobile each show a paywall by their own, different rule.
 
 **Touches:** Business (`businesses`), Site, Member (`profiles`), [Roles & capabilities](roles-and-capabilities.md) ·
-**Last verified:** 2026-10-13 against `main@b50e9d1` and the live DB (`rszrggreuarvodcqeqrj`)
+**Last verified:** 2026-10-13 (review pass) against `main@b50e9d1` and the live DB (`rszrggreuarvodcqeqrj`)
 
 ## The rule in plain words
 
@@ -77,8 +77,8 @@ The paywall blocks the whole app (all routes), not single features; there is no 
   counted from the **visible sites list** (`paywall_screen.dart:96-117`, `purchase_provider.dart:20-38`).
 - Web: `create-subscription` sends one price with no `quantity`; the paywall copy says £24.99/mo.
 - Trigger `trg_sites_sync_quantity` (AFTER INSERT/DELETE on `sites`) posts to edge function
-  `sync-site-quantity` via `pg_net`. **That function is not in the repo** (`supabase/functions/` on main); whether it
-  is deployed is *(unverified)*. Archiving a site is an UPDATE and does not fire the trigger.
+  `sync-site-quantity` via `pg_net`. **That function's source is not in the repo** (`supabase/functions/` on main), but it
+  **is deployed** live (v11, `verify_jwt = false`). Archiving a site is an UPDATE and does not fire the trigger.
 
 ## Cancellation and account deletion
 
@@ -90,12 +90,12 @@ The paywall blocks the whole app (all routes), not single features; there is no 
   (text role), **immediately deletes** the Stripe subscription (no refund logic), sets `deleted_at`; cron
   `purge-deleted-businesses` (03:00 daily) hard-deletes after 30 days. Store subscriptions are **not** cancelled.
 
-## Known drift (live, 2026-10-13, 84 businesses)
+## Known drift (live, 2026-10-13, 84 businesses incl. 1 soft-deleted)
 
 | Column | Values |
 |---|---|
 | `subscription_status` | `trialing` 48 · `active` 20 · `canceled` 16 (no `none`) |
-| …recomputed now | 45 of the 48 `trialing` would be `canceled` (trial ended, row not touched since) + 1 more stale; only **23** businesses are entitled |
+| …recomputed now | 45 of the 48 `trialing` would be `canceled` (trial ended, row not touched since) + 1 more stale; only **23 of 83** live (not deleted) businesses are entitled [#72](https://github.com/KNSTNTN24/blueroll-web/issues/72) |
 | `manual_status` | `trialing` 58 · `active` 19 · NULL 6 · literal `'none'` 1 |
 | `stripe_status` | NULL 77 · `canceling` 3 (all past `until`) · `active` 3 · `canceled` 1 |
 | `iap_status` | NULL 69 · `active` 10 · `canceled` 4 · literal `'none'` 1 |
@@ -135,8 +135,8 @@ read `canceled`, not `none`. `subscription_status` defaults to the literal `'non
     (SECURITY DEFINER) — leaks site counts and paid status of any business id.
 12. Owner checks use the **text role** (`profiles.role = 'owner'`) in `record_iap_purchase`, `manage-subscription`,
     `delete-account`, not the `manage_billing` capability (never enforced, see roles page).
-13. `demo_force_exit` (named in the brief) does not exist in the live DB, repo or mobile *(not found)*. Demo mode
-    reads the demo business but the web gate uses `realBusiness`.
+13. `demo_force_exit` exists **live only** (a table, 2 rows, read by the live `demo_business_id()`; see
+    [Business](../entities/business.md)). Demo mode reads the demo business but the web gate uses `realBusiness`.
 
 ## History
 

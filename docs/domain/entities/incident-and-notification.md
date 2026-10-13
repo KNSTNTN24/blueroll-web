@@ -5,7 +5,7 @@
 > "Overdue checklist") with a link to the thing it is about.
 
 **Tables:** `incidents` · `notifications` (+ unused `notification_rules`) · **Scope:** incident = site row of a business;
-notification = one person · **Last verified:** 2026-10-13 against `main@b50e9d1` and the live DB
+notification = one person · **Last verified:** 2026-10-13 (review pass) against `main@b50e9d1` and the live DB
 (35 incidents in 8 businesses; 9,467 notifications for 57 people, 647 read)
 
 ## What it is for
@@ -19,7 +19,7 @@ that each app polls. There is **no push and no email** behind them (Gotcha 9).
 
 | Field (UI label) | DB column | Meaning | Allowed values | Enforced by |
 |---|---|---|---|---|
-| Type | `type` | Complaint from a customer vs internal incident. | `complaint`, `incident` | DB `CHECK incidents_type_check`; `INCIDENT_TYPES` `src/lib/constants.ts:69`. Mobile derives it: `Complaint` category → `complaint` (`haccp-mobile/lib/providers/ops_provider.dart:20,145`) |
+| Type | `type` | Complaint from a customer vs internal incident. | `complaint`, `incident` | DB `CHECK incidents_type_check` (the only enforcement; `INCIDENT_TYPES` `src/lib/constants.ts:69` is unused). Mobile derives it: `Complaint` category → `complaint` (`haccp-mobile/lib/providers/ops_provider.dart:20,145`) |
 | Category | `category` | What kind of problem. | `Injury`, `Equipment`, `Illness`, `Complaint`, `Other` (capitalised), default `Other` | DB `CHECK incidents_category_chk`; mobile `_kCategories` `features/ops/incidents_tab.dart:17`. **Web never sets or shows it** |
 | Severity | `severity` | How bad. | `low`, `medium`, `high`, `critical`, default `medium` | DB `CHECK incidents_severity_chk`. **Web never sets or shows it** |
 | Description | `description` | What happened. Mobile writes `"<title> — <description>"` when a title is typed (`ops_provider.dart:83`). | text, required | `NOT NULL` |
@@ -138,27 +138,29 @@ The `manage_incidents` capability ("Log and resolve incidents", `src/lib/permiss
 ## Gotchas
 
 1. **Deleting an incident does nothing.** No DELETE policy on `incidents`; the delete matches 0 rows without error and
-   both apps toast "Incident deleted" (`page.tsx:151-153`, `incidents_tab.dart:680-692`). The row returns on refresh.
-2. **Anyone can resolve, reopen or rewrite any incident** on a site they see — staff included; `manage_incidents` is decorative.
+   both apps toast "Incident deleted" (`page.tsx:151-153`, `incidents_tab.dart:680-692`). The row returns on refresh. [#87](https://github.com/KNSTNTN24/blueroll-web/issues/87)
+2. **Anyone can resolve, reopen or rewrite any incident** on a site they see — staff included; `manage_incidents` is decorative. [#87](https://github.com/KNSTNTN24/blueroll-web/issues/87)
 3. **Web and mobile capture different halves.** Web writes action taken, follow-up and date but no severity/category
    (everything is `medium`/`Other`); mobile writes severity/category but no action/follow-up. Editing on mobile re-derives
-   `type` from category, so a web complaint left as `Other` silently becomes an `incident`.
+   `type` from category, so a web complaint left as `Other` silently becomes an `incident`. [#87](https://github.com/KNSTNTN24/blueroll-web/issues/87)
 4. **Notification insert is open to every signed-in user** (`WITH CHECK true`): any account can drop a notification with
-   any title and link into any user's inbox, including other businesses'. Web follows the link with `router.push` unchecked.
+   any title and link into any user's inbox, including other businesses'. Web follows the link with `router.push` unchecked. [#82](https://github.com/KNSTNTN24/blueroll-web/issues/82)
 5. **Mobile incident links 404 on web.** Mobile writes `/incidents/<id>`; the web has no such route (17 live rows).
-   Conversely mobile ignores `/settings` links.
+   Conversely mobile ignores `/settings` links. Notification texts are duplicated in web and mobile and parsed by a DB
+   trigger to build links. [#108](https://github.com/KNSTNTN24/blueroll-web/issues/108)
 6. **Recipients are by tier text**, not capability or site: custom roles with `manage_incidents` get nothing, managers of
-   other sites get everything, and web/mobile helpers still notify removed members ([#57](https://github.com/KNSTNTN24/blueroll-web/issues/57)).
+   other sites get everything, and web/mobile helpers still notify removed members ([#57](https://github.com/KNSTNTN24/blueroll-web/issues/57), [#88](https://github.com/KNSTNTN24/blueroll-web/issues/88)).
 7. **Overdue and expiry notices come from a client loop.** `StartupChecks` fires on each device once per day, per business,
    ignoring site, frequency and the business time zone — 6,301 duplicates-prone "Overdue Checklist" rows. In current mobile
    source its only caller, `screens/dashboard/dashboard_screen.dart:28`, is no longer routed, yet rows still arrive (last
-   2026-10-12), presumably from older installed builds *(unverified)*; the last "Expiring Document" was 2026-06-16
-   ([#58](https://github.com/KNSTNTN24/blueroll-web/issues/58), [#61](https://github.com/KNSTNTN24/blueroll-web/issues/61)).
+   2026-10-12), presumably from older installed builds *(unverified)*. The last expiry notice (type `document`) is from 2026-07-30 and
+   has the web wording ("… expires in 14 days"), so `notifyExpiringDocument` was called at least once; it has no caller in
+   current code (see [Document](document.md)) ([#58](https://github.com/KNSTNTN24/blueroll-web/issues/58), [#61](https://github.com/KNSTNTN24/blueroll-web/issues/61), [#88](https://github.com/KNSTNTN24/blueroll-web/issues/88)).
 8. **"Critical" means nothing.** Severity `critical` triggers no special notice; settings promise "Critical alerts — high-risk
    incidents" (`notifications-settings.tsx:15`) but no code writes type `critical`.
 9. **No push, no email.** No FCM/APNs package in `pubspec.yaml`, no device-token table, `notifications` is not in the
    realtime publication; web polls every 60 s. Resend is used only by `send-invite` and `send-feedback`. The Settings
-   email/push toggles (`businesses.notification_prefs`) are saved and never read ([#75](https://github.com/KNSTNTN24/blueroll-web/issues/75)).
+   email/push toggles (`businesses.notification_prefs`) are saved and never read ([#75](https://github.com/KNSTNTN24/blueroll-web/issues/75), [#88](https://github.com/KNSTNTN24/blueroll-web/issues/88)).
 10. **Notification failures are swallowed.** Web awaits the insert but ignores its error; mobile wraps it in `try/catch`
     or fires it un-awaited. A report always succeeds even if nobody is told.
 11. Only 7% of notifications are ever read; nothing expires or deletes them.
