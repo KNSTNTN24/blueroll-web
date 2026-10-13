@@ -19,6 +19,7 @@ This repo is the web app **and** the shared backend (Supabase migrations and edg
    that most changes get wrong (permissions; when a check is due/done/missed).
 3. **Specs** in `docs/superpowers/specs/` — *why* a feature was built the way it was (history, newest by date).
 4. Open issues on GitHub (`gh issue list`) — known bugs; many are linked from the domain pages' *Gotchas*.
+5. **`docs/handoff-2026-10.md`** — what changed in October 2026 (new docs, working rules, recent features, open issues).
 
 When you change how something behaves, **update its `docs/domain/` page in the same PR**. When the live database and
 the docs or the repo disagree, the live database wins — several objects exist only in production (see issue #59).
