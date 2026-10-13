@@ -59,6 +59,11 @@ Next.js 15 · TypeScript · Tailwind CSS · shadcn/ui · Supabase · TanStack Qu
 - 10 notification types (added HACCP review overdue)
 - Spec-first architecture: 4 design documents in docs/
 
+## Documentation
+
+Start with [`AGENTS.md`](AGENTS.md) and the domain docs in [`docs/domain/`](docs/domain/README.md) (current, verified).
+The documents below are the original April 2026 specs, kept for history.
+
 ## Spec Documents
 
 - `docs/01-DESIGN.md` — UI organization, colors, typography, components
