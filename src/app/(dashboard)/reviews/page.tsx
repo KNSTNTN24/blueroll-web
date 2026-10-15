@@ -19,7 +19,7 @@ export default function ReviewsPage() {
   const [filter, setFilter] = useState<ReviewFilter>('needs_reply')
   const qc = useQueryClient()
   const key = ['reviews', business?.id, siteId]
-  const { data: reviews = [], isLoading } = useQuery({ queryKey: key, enabled: !!business?.id, queryFn: () => listReviews(business!.id, siteId || null) })
+  const { data: reviews = [], isLoading, isError, refetch } = useQuery({ queryKey: key, enabled: !!business?.id, queryFn: () => listReviews(business!.id, siteId || null) })
   const { data: canAct = false } = useQuery({ queryKey: ['can-manage-reviews', business?.id], enabled: !!business?.id, queryFn: canManageReviews })
   const siteNames = useMemo(() => new Map(sites.map((s) => [s.id, s.name])), [sites])
   const shown = reviews.filter((r) => matchesFilter(r, filter))
@@ -44,13 +44,19 @@ export default function ReviewsPage() {
         )}
       </div>
       {isLoading ? <p className="text-[13px] text-muted-foreground">Loading…</p>
+        : isError ? (
+          <div className="flex items-center gap-3 text-[13px]">
+            <p className="text-muted-foreground">We couldn’t load reviews. Please try again.</p>
+            <Button variant="outline" size="sm" onClick={() => refetch()}>Retry</Button>
+          </div>
+        )
         : shown.length === 0 ? <p className="text-[13px] text-muted-foreground">No reviews here.</p>
         : shown.map((r) => <ReviewCard key={`${r.id}:${r.version}:${r.status}:${currentDraft(r)?.draft_version ?? 0}`} review={r} siteName={r.site_id ? siteNames.get(r.site_id) ?? '' : ''} canAct={canAct} onChanged={() => qc.invalidateQueries({ queryKey: key })} />)}
     </div>
   )
 }
 
-function ReviewCard({ review: r, siteName, canAct, onChanged }: { review: WebReview; siteName: string; canAct: boolean; onChanged: () => void }) {
+function ReviewCard({ review: r, siteName, canAct, onChanged }: { review: WebReview; siteName: string; canAct: boolean; onChanged: () => Promise<unknown> | void }) {
   const draft = currentDraft(r)
   const [text, setText] = useState(draft?.text ?? '')
   const [busy, setBusy] = useState(false)
@@ -66,8 +72,7 @@ function ReviewCard({ review: r, siteName, canAct, onChanged }: { review: WebRev
       setBusy(true)
       try { await reviewAction({ action: 'edit', review_id: r.id, review_version: r.version, text }) }
       catch (e) { toast.error(e instanceof Error ? e.message : String(e)); setBusy(false); return }
-      setBusy(false)
-      onChanged()
+      try { await onChanged() } finally { setBusy(false) }
       toast.message('Saved your edit — press Publish again to post it.')
       return
     }
@@ -99,8 +104,8 @@ function ReviewCard({ review: r, siteName, canAct, onChanged }: { review: WebRev
           )}
           {(draft || edited) && (
             <div className="mt-2 flex flex-wrap justify-end gap-2">
-              <Button variant="outline" size="sm" disabled={busy} onClick={() => act({ action: 'another', review_id: r.id })}>Another version</Button>
-              {r.status !== 'skipped' && <Button variant="outline" size="sm" disabled={busy} onClick={() => act({ action: 'skip', review_id: r.id })}>Skip</Button>}
+              <Button variant="outline" size="sm" disabled={busy || edited} onClick={() => act({ action: 'another', review_id: r.id })}>Another version</Button>
+              {r.status !== 'skipped' && <Button variant="outline" size="sm" disabled={busy || edited} onClick={() => act({ action: 'skip', review_id: r.id })}>Skip</Button>}
               <Button size="sm" disabled={busy || !text.trim()} onClick={publish}>{edited ? 'Save edit' : 'Publish'}</Button>
             </div>
           )}
