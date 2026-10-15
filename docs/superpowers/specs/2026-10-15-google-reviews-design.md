@@ -1,6 +1,6 @@
 # Google reviews in Telegram and WhatsApp — Design Spec
 
-**Date:** 2026-10-15 · **Status:** draft for review · **Decisions:** pending (Kostya, Maria)
+**Date:** 2026-10-15 · **Status:** draft for review · **Decisions:** Kostya (15.10.2026)
 Builds on the channel model of `2026-10-11-telegram-groups-design.md` and `2026-10-12-whatsapp-teams-design.md`
 (groups, teams, webhooks, cron, `channel_messages_log`). Nothing in checklists changes.
 
@@ -19,7 +19,7 @@ Success criteria:
 - Food-safety complaints (illness, allergy, foreign body) are flagged 🚨 and never get a cheerful auto-draft.
 - Who drafted, edited and published each reply is recorded.
 
-## 2. Decisions (proposed)
+## 2. Decisions
 
 | Topic | Decision |
 |---|---|
@@ -28,14 +28,16 @@ Success criteria:
 | Scope | `https://www.googleapis.com/auth/business.manage`, offline access (refresh token). |
 | One connection per business | A business has at most one active Google connection. Several Google accounts per business: out of scope. |
 | Restaurants ↔ sites | Each Google location is mapped to one Blueroll site (auto-suggested by postcode, then name) or left off. Only enabled, mapped locations are synced. |
-| Where reviews go | Per site: any linked Telegram group with **Reviews** ticked for that site, and/or any WhatsApp team at that site with **Reviews** ticked. |
-| Who may publish | Telegram: **admins of the group** (Telegram `creator`/`administrator`) — other members see the card but get "Only group admins can publish". WhatsApp: any active member of a team with Reviews on (the manager chose those people when building the team). |
+| Telegram bot | A **separate bot**, @BluerollReviewsBot (name to confirm in BotFather), with its own token, webhook and link codes. The checklists bot @BluerollChecksBot is not touched. |
+| Where reviews go | Per site: any Telegram group linked to the reviews bot and routed to that site, and/or any WhatsApp team at that site with **Reviews** ticked. |
+| Who may publish | **Any current member** of a reviews Telegram group, and any active member of a WhatsApp team with Reviews on. The group/team is the security boundary (the manager decides who is in it); membership is re-checked on every press and the person is recorded. |
 | Who may set it up | New capability **`manage_reviews`** (Owner and Manager presets). Gates connecting Google, mapping and routing in RLS and in the UI (capability, not the tier text). |
 | Drafts | Claude, one call per review version, returns JSON (language, flags, reply). Model in one constant in `_shared/reviews/draft.ts` (current Sonnet). |
 | Publish | Two taps: **Publish** → "Publish this reply?" **Yes / Cancel** (60 s). Then `PUT …/reviews/{id}/reply`. |
+| 5★ reviews | Same flow as any other rating: draft + buttons, no auto-publish. |
 | Polling vs push | Poll every 15 min (cron). Pub/Sub push (`NEW_REVIEW`, `UPDATED_REVIEW`) is phase 2. |
 | History on connect | Reviews older than the connection are imported silently (`notify = false`) and shown on the web Reviews page; only reviews created or updated after connecting go to chat. |
-| Subscription | Requires an active subscription (`entitlement_write_gate_*`); sync pauses while the business is not entitled. Whether it is an add-on — open question §13. |
+| Subscription | **Included in the plan**, no add-on. Needs an active subscription like any write (`entitlement_write_gate_*`); sync and publishing pause while the business is not entitled. |
 
 ## 3. What the client does
 
@@ -46,7 +48,7 @@ Success criteria:
 3. Back in Blueroll: list of their Google locations with address and status. Each row: **Site** select (pre-filled when
    the postcode or name matches), **Sync** toggle. Locations Google says we cannot reply to (not verified / no voice of
    merchant) show "Not verified on Google — replies are disabled" and cannot be enabled.
-4. **Where to send reviews**: per site, tick existing Telegram groups and WhatsApp teams (links to create one if none).
+4. **Where to send reviews**: per site, pick reviews Telegram groups (link one: §8) and/or tick WhatsApp teams at that site.
 5. **Reply style** (optional): tone (Warm / Neutral / Formal), sign-off (e.g. "— The Casa-Mia team"), things never to say,
    2–3 example replies. Defaults are fine.
 6. **Save**. First sync runs at once; the page shows "Connected as name@gmail.com · 4 restaurants · last checked 14:05".
@@ -59,14 +61,19 @@ cards' buttons. Imported reviews and the audit stay (deleted with the business).
 
 ## 4. Our setup (once)
 
-- Google Cloud project for Blueroll reviews (under hello@blueroll.app), APIs enabled: My Business Account Management,
+- The existing Google Cloud project `tactile-reason-492410-d0` (hello@blueroll.app, already used for GA4/Search Console
+  and Play), APIs enabled: My Business Account Management,
   Business Information, Verifications, Notifications (phase 2), My Business v4.
 - **GBP API access request** for that project (form; default quota is 0 until approved — the critical path, start now).
 - OAuth consent screen: External, app name Blueroll, homepage https://blueroll.app, privacy policy updated to mention
   Google Business Profile data, authorised redirect `https://app.blueroll.app/api/google/callback`.
 - **OAuth app verification** for `business.manage` (sensitive scope): until verified, users see "Google hasn't verified
   this app" and the app is limited to 100 users. Pilot can run unverified.
-- Supabase secrets: `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`; Vault secret `reviews_cron_secret`.
+  A new OAuth client "Blueroll web — reviews" in that project; the consent screen is the project's (shared with the
+  Outreach mail client, so its name/logo must read "Blueroll").
+- New Telegram bot in BotFather (privacy mode on, "Allow groups" on), webhook to edge `telegram-reviews-webhook`.
+- Supabase secrets: `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `TELEGRAM_REVIEWS_BOT_TOKEN`,
+  `TELEGRAM_REVIEWS_WEBHOOK_SECRET`; Vault secret `reviews_cron_secret`.
 - Anthropic key already exists (`ANTHROPIC_API_KEY`).
 
 ## 5. Connect flow (technical)
@@ -128,9 +135,19 @@ failure → card goes out with "Couldn't draft a reply — tap Edit to write one
 
 ## 8. Telegram
 
-Same bot as checklists (@BluerollChecksBot) and the same webhook; a group already linked to the business gets a
-**Reviews** tick per site in Settings → Messaging → Telegram groups. Privacy mode stays on: the bot receives commands,
-callback queries and **replies to its own messages**, which is all it needs.
+A separate bot (@BluerollReviewsBot) with its own edge function `telegram-reviews-webhook` (secret header checked as in
+`telegram-webhook`). Shared Telegram helpers (`_shared/channels/telegram.ts`) take the bot token as a parameter.
+Privacy mode stays on: the bot receives commands, callback queries and **replies to its own messages**, which is all it
+needs.
+
+**Linking a group** (same pattern as checklist groups): Settings → Google reviews → **Link a Telegram group** shows a
+6-digit code (`issue_group_link_code('telegram_reviews')`, 15 min, one use, 5 failures per chat per hour) → the manager
+adds the reviews bot to the managers' group and sends `/link 123456` → "Linked to <business>. Choose which restaurants
+this group gets in Settings." → the manager picks sites. The group is a `channel_groups` row with
+`channel = 'telegram_reviews'`, so one Telegram group can be linked to both bots independently. Unlink from Settings or
+by removing the bot (`my_chat_member` left/kicked); migration to a supergroup keeps the link. The daily "anyone can add
+people" warning from the checklist groups applies here too, worded for reviews ("anyone added to this group can publish
+replies on Google"). Commands: `/link`, `/pending` (repost cards still needing a reply), `/help`.
 
 Card (HTML, escaped):
 
@@ -148,14 +165,15 @@ Hi Sarah, thank you for letting us know…
 - Review text over 1 500 characters is clipped with "… (full text on Google)" and a link to the review.
 - `callback_data`: `rv:<action>:<review_id>:<draft_version>` (fits 64 bytes); a press for an old draft version →
   "This reply changed — use the latest card".
-- **Who may press**: `getChatMember` → `creator`/`administrator` only; others get the alert "Only group admins can
-  publish or edit replies". (Skip is admin-only too.)
+- **Who may press**: any current member — `getChatMember` → `creator`, `administrator`, `member`, or `restricted` with
+  `is_member: true`; anyone else gets "You're no longer in this group". The Telegram user id and name are recorded on
+  every draft edit, skip and publish.
 - **Publish** → card buttons become `[ Yes, publish ] [ Cancel ]`; Yes within 60 s → publish (§10) → card text ends with
   "✅ Published by Anna · 14:07", buttons removed.
 - **Edit** → bot sends "Reply to this message with the new text for Sarah K.'s review" with `force_reply` +
-  `selective`; the admin's reply becomes draft version n+1 (source `edited`, author recorded), the card is edited to
-  show it and the bot deletes its prompt and the admin's message (best effort). A reply from a non-admin is ignored with
-  a short note.
+  `selective`; that person's reply becomes draft version n+1 (source `edited`, author recorded), the card is edited to
+  show it and the bot deletes its prompt and the reply message (best effort). Replies from anyone else to that prompt
+  are ignored.
 - **Another** → new AI draft, card edited.
 - **Skip** → "Skipped by Anna", buttons removed. Still available on the web page.
 - `answerCallbackQuery` on every press (spinner off), errors as alert text.
@@ -210,7 +228,9 @@ viewers via `can_see_site_row`), writes only through edge functions (service rol
   connection), `title`, `address`, `postcode`, `can_reply bool`, `site_id` null (FK sites, set null),
   `enabled bool default false`, `last_review_update_time`. Client may update `site_id`, `enabled`.
 - `review_routes`: (`site_id`, `group_id` → `channel_groups`) PK. Client insert/delete with `manage_reviews` and same
-  business. Telegram: group linked; WhatsApp: team at that site.
+  business. Telegram: a linked `telegram_reviews` group; WhatsApp: a team at that site.
+- `channel_groups.channel` and `channel_group_link_codes.channel` accept the new value `'telegram_reviews'`;
+  `issue_group_link_code(channel)` accepts it for `manage_reviews` holders.
 - `review_settings`: `business_id` PK, `tone`, `sign_off`, `avoid text`, `examples text[]`. Client upsert.
 - `reviews`: `id`, `business_id`, `location_id`, `site_id`, `google_review_name` unique, `version int`, `stars 1–5`,
   `comment`, `reviewer_name`, `review_url`, `create_time`, `update_time`, `google_reply`, `google_reply_time`,
@@ -228,15 +248,14 @@ viewers via `can_see_site_row`), writes only through edge functions (service rol
 - Business deletion: everything cascades from `businesses`; the purge job also revokes the Google token and deletes the
   Vault secret (`google-connect {action:'revoke'}`).
 
-## 13. Open questions
+## 13. Resolved questions (15.10.2026)
 
-1. Paid add-on or part of the plan? (Affects the entitlement check and the pricing page.)
-2. Telegram publish rights = group admins (proposed) vs any group member vs only people linked to a Blueroll profile
-   with `manage_reviews`.
-3. Is the two-tap confirm wanted, or one tap on Publish?
-4. Auto-publish for 5★ reviews with no text (opt-in per business)? Proposed: not in v1.
-5. Separate Google Cloud project or reuse `tactile-reason-492410-d0`?
-6. A separate "Blueroll Reviews" Telegram bot, or reuse @BluerollChecksBot (proposed)?
+1. Part of the plan, not an add-on.
+2. Telegram: any group member may publish (not only admins).
+3. Two-tap confirm stays.
+4. 5★ reviews use the normal flow; no auto-publish.
+5. Reuse Google Cloud project `tactile-reason-492410-d0`.
+6. Separate Telegram bot for reviews.
 
 ## 14. Testing
 
@@ -246,10 +265,11 @@ viewers via `can_see_site_row`), writes only through edge functions (service rol
 - Sync: new / edited text / edited stars / reply added on Google / deleted / historic import silent / paging stop /
   50-card cap / not entitled → skipped.
 - Draft: JSON parsing, flags → 🚨 + cautious draft, language, length, regeneration cap, API failure path.
-- Telegram: card render + escaping + clipping, callback parsing, stale draft version, non-admin press, confirm timeout,
-  force-reply edit from admin and non-admin, card updates in several groups.
+- Telegram (reviews bot): `/link` codes and limits, card render + escaping + clipping, callback parsing, stale draft
+  version, press by a member who left, confirm timeout, force-reply edit (author vs someone else), card updates in
+  several groups, a group linked to both bots.
 - WhatsApp: template vs in-window card, More list, edit session timeout, others notified only in window.
-- Publish: race (two admins), 404, 401, 5xx release, audit rows.
+- Publish: race (two members), 404, 401, 5xx release, audit rows.
 - Pilot: Fern & Fig with one real Google location, Telegram "Managers" group and Kostya's WhatsApp; leave a test review,
   publish from Telegram, edit from WhatsApp, reply directly on Google and see the cards update.
 
@@ -257,8 +277,8 @@ viewers via `can_see_site_row`), writes only through edge functions (service rol
 
 1. **v1**: connect + mapping + routing + sync (poll) + drafts + Telegram cards + publish + Reviews page (read + actions).
 2. **v1.1**: WhatsApp cards (needs the `review_new` template approved by Meta).
-3. **v2**: Pub/Sub push, weekly summary per site (average rating, unanswered count), auto-publish rules, incident link
-   pre-fill, mobile app view.
+3. **v2**: Pub/Sub push, weekly summary per site (average rating, unanswered count), incident link pre-fill, mobile
+   app view.
 
 ## 16. Out of scope
 
