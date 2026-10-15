@@ -12,7 +12,8 @@ import { firstName } from './team-text.ts'
 // deno-lint-ignore no-explicit-any
 type Any = any
 
-export type GroupChannel = 'telegram' | 'whatsapp'   // channel-neutral model (spec §9); only 'telegram' is implemented
+// Channel-neutral model (spec 2026-10-11 §9). 'telegram_reviews' = @BluerollReviewsBot groups (spec 2026-10-15).
+export type GroupChannel = 'telegram' | 'whatsapp' | 'telegram_reviews'
 export interface ChannelGroup { id: string; business_id: string; channel: GroupChannel; chat_id: string; title: string; alerts: boolean }
 export interface LiveListRow {
   id: string; group_id: string; site_id: string; list_date: string; message_id: string
