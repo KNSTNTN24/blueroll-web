@@ -267,3 +267,34 @@ function fakeCtxWithInvite() {
   const { d: g } = fakeGroupDeps({ ...RV_INIT,  groups: [{ ...GROUP_ROW }] })
   return { g, ...f }
 }
+
+describe('entitlement on every bot action (I4)', () => {
+  const notReady = (o: Parameters<typeof setup>[0] = {}) => { const a = setup(o); a.g.ready = async () => false; return a }
+  it('a card press for a business that is not ready → unavailable alert, nothing else', async () => {
+    for (const act of ['p', 'y', 'c', 's', 'a', 'e']) {
+      const { r, g, ctx, s, calls, inputs } = notReady({ replies: ['Second take'] })
+      const at = Math.floor(NOW.getTime() / 1000)
+      await handleReviewsEvent(cb(act === 'y' ? `rv:y:${r.id}:1:${at}` : `rv:${act}:${r.id}:1`), g, ctx)
+      expect(calls.map((c) => c.method)).toEqual(['answerCallbackQuery'])
+      expect(calls[0].body).toMatchObject({ text: RV_TEXT.unavailable, show_alert: true })
+      expect(s.reviews[0].status).toBe('drafted')
+      expect(s.drafts).toHaveLength(1)
+      expect(s.prompts).toEqual([])
+      expect(inputs).toEqual([])
+    }
+  })
+  it('an edit reply for a business that is not ready → unavailable, no new draft', async () => {
+    const { r, g, ctx, s, calls } = notReady()
+    s.prompts.push({ chat_id: '-100', prompt_message_id: '50', card_message_id: '7', review_id: r.id, review_version: 1, user_id: '42', expires_at: '2026-10-15T14:00:00Z' })
+    await handleReviewsEvent({ kind: 'reply', chatId: '-100', messageId: '21', replyTo: '50', userId: '42', userName: 'Anna', text: 'New text', id: id() }, g, ctx)
+    expect(calls.map((c) => c.body.text)).toEqual([RV_TEXT.unavailable])
+    expect(s.drafts).toHaveLength(1)
+  })
+  it('/pending for a business that is not ready → unavailable before any drafting', async () => {
+    const { g, ctx, s, calls, inputs } = notReady({ status: 'new' })
+    s.drafts = []
+    await handleReviewsEvent({ kind: 'command', chatId: '-100', chatTitle: 'Managers', userId: '42', command: 'pending', arg: '', id: id() }, g, ctx)
+    expect(calls.map((c) => c.body.text)).toEqual([RV_TEXT.unavailable])
+    expect(inputs).toEqual([])
+  })
+})

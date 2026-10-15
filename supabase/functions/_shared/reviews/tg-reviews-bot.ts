@@ -158,6 +158,7 @@ async function onCallback(e: Callback, g: GroupDeps, ctx: Ctx, now: Date) {
   if (!c) { await answer(ctx.tg, e.callbackId); return }
   const group = await g.groupByChat(e.chatId)
   if (!group) { await answer(ctx.tg, e.callbackId, RV_TEXT.noLongerLinked, true); return }
+  if (!(await g.ready(group.business_id))) { await answer(ctx.tg, e.callbackId, RV_TEXT.unavailable, true); return }
   const ms = memberStatus(await ctx.tg('getChatMember', { chat_id: e.chatId, user_id: Number(e.userId) }))
   if (ms === 'not_member') { await answer(ctx.tg, e.callbackId, RV_TEXT.notMember, true); return }
   if (ms === 'unknown') { await answer(ctx.tg, e.callbackId, RV_TEXT.telegramDown, true); return }
@@ -232,8 +233,10 @@ async function onReply(e: Reply, g: GroupDeps, ctx: Ctx, now: Date) {
     return
   }
   const group = await g.groupByChat(e.chatId)
+  if (!group) return
+  if (!(await g.ready(group.business_id))) { await say(ctx.tg, e.chatId, RV_TEXT.unavailable); return }
   const r = await ctx.d.review(p.review_id)
-  if (!group || !r || r.business_id !== group.business_id) return
+  if (!r || r.business_id !== group.business_id) return
   const res = await doEdit(ctx, r.id, p.review_version, e.text, { channel: 'telegram', profile_id: null, external_id: e.userId, name: e.userName })
   if (!res.ok) { await say(ctx.tg, e.chatId, res.text); return }
   await ctx.d.dropEditPrompt(e.chatId, e.replyTo)
