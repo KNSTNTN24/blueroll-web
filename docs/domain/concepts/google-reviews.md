@@ -6,7 +6,7 @@
 **Touches:** [Business](../entities/business.md), [Site](../entities/site.md), [Roles and capabilities](roles-and-capabilities.md) (`manage_reviews`),
 [Channels](channels.md) (`telegram_reviews` is a third channel value), [Incident](../entities/incident-and-notification.md) (complaint link),
 [Subscription and entitlement](subscription-and-entitlement.md) (sync and publishing stop when unpaid) ·
-**Last verified:** 2026-10-15 against branch `claude/restaurant-reviews-bot-iquz2t` (not yet in production — migrations not applied)
+**Last verified:** 2026-10-15 against branch `claude/restaurant-reviews-bot-iquz2t@76b4745` (not yet in production — migrations not applied)
 
 ## The rule in plain words
 
@@ -57,7 +57,7 @@ Telegram reviews groups reuse `channel_groups` (`channel = 'telegram_reviews'`) 
    scope, requires a refresh token, lists accounts and locations (with Voice of Merchant verification), stores the token in Vault, inserts the
    connection and upserts the locations. A suggested site is pre-selected by postcode or name (`match.ts:14`).
 2. **Map and switch on.** In Settings the manager picks a site per location and turns it on (guard trigger above), then adds routes
-   from sites to reviews groups. **Check Google again** (`connect.ts:152-161`) re-lists locations after a verification change.
+   from sites to reviews groups. **Check Google again** (`connect.ts:152-160`) re-lists locations after a verification change.
 3. **Link a reviews group.** The manager gets a 6-digit code (`issue_group_link_code('telegram_reviews')`, needs `manage_reviews`), adds the bot
    to the group and sends `/link <code>` (`tg-reviews-bot.ts:117`). 5 wrong codes per chat per hour lock it (`MAX_LINK_FAILURES`, `tg-reviews-bot.ts:19`).
    The bot warns the group and managers when "Add members" is on (`checkReviewGroupPermissions`, `tg-reviews-bot.ts:100`).
@@ -68,7 +68,7 @@ Telegram reviews groups reuse `channel_groups` (`channel = 'telegram_reviews'`) 
    insert, new version (guest edited stars/comment), patch (reply changed), or nothing.
 5. **Draft.** `makeDraft` (`actions.ts:38`) asks Claude (`DRAFT_MODEL`, `draft.ts:8`) for a reply, the language and safety flags. A reply
    mentioning illness, allergy, a foreign object or hygiene is replaced by a short cautious apology that asks the guest to make contact
-   (`cautiousReply`, `draft.ts:84`). At most 6 AI drafts per review (`MAX_AI_DRAFTS`).
+   (`cautiousReply`, `draft.ts:84`). At most 6 AI drafts per review version (`MAX_AI_DRAFTS`).
 6. **Deliver.** `deliverReview` (`actions.ts:84-104`) posts a card to every group routed from the review's site and then clears `notify`
    (`markDelivered`). At most 50 cards per connection per run (`CARDS_PER_RUN`).
 7. **Publish.** Tap Publish, then Confirm within 60 s (`CONFIRM_WINDOW_SEC`, `card.ts:32`). `publishReview` (`publish.ts:13-58`) checks the
@@ -96,7 +96,7 @@ Telegram reviews groups reuse `channel_groups` (`channel = 'telegram_reviews'`) 
   revokes at Google only when the business has no live connection (`connect.ts:96-99`). Storage order on reconnect: store new token, mark the
   old connection revoked, insert the new one, delete the old token, upsert locations (`connect.ts:113-136`). If the insert fails the old
   connection stays revoked and the user reconnects; if only the locations fail, the connection is kept and "Check Google again" recovers them.
-- **"Check Google again" fails with 502** if Voice of Merchant errors for any location (`connect.ts:158`); nothing is partly saved. Retry.
+- **"Check Google again" fails with 502** if Voice of Merchant errors for any location (`connect.ts:157`); nothing is partly saved. Retry.
 - **Timeouts.** Every Google call times out after 20 s (`GOOGLE_TIMEOUT_MS`, `google.ts:16`); drafting after 30 s (`DRAFT_TIMEOUT_MS`, `draft.ts:17`).
   A missing access token in Google's reply is a `server` error, not "disconnected". A drafting failure shows "Couldn't draft" on the card.
 
