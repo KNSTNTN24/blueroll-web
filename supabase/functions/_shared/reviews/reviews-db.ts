@@ -74,6 +74,9 @@ export function makeReviewDeps(admin: Any, google: Google): ReviewDeps {
       .neq('status', 'deleted').order('id').range(from, to))).map(asReview),
     pending: async (b, limit) => ((await one(admin.from('reviews').select(REVIEW_COLS).eq('business_id', b).eq('notify', true)
       .in('status', OPEN).not('site_id', 'is', null).order('update_time', { ascending: true }).limit(limit))) ?? []).map(asReview),
+    claimDelivery: async (id, v) => !!(await one(admin.from('reviews').update({ notify: false })
+      .eq('id', id).eq('version', v).eq('notify', true).select('id')))?.length,
+    setNotify: async (id, v, value) => { await one(admin.from('reviews').update({ notify: value }).eq('id', id).eq('version', v)) },
     markDelivered: async (id, v) => { await one(admin.from('reviews').update({ delivered_version: v, notify: false }).eq('id', id).eq('version', v)) },
     openReviewsWithCards: async (b) => ((await one(admin.from('reviews').select(`${REVIEW_COLS}, review_cards!inner(message_id)`)
       .eq('business_id', b).in('status', OPEN))) ?? []).map(({ review_cards: _c, ...r }: Any) => asReview(r)),

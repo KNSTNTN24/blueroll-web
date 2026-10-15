@@ -74,6 +74,9 @@ export function fakeReviewDeps(init: Partial<FakeState> = {}) {
     liveReviewsAt: async (lid) => s.reviews.filter((r) => r.location_id === lid && r.status !== 'deleted').map((r) => ({ ...r })),
     pending: async (b, limit) => s.reviews.filter((r) => r.business_id === b && r.notify && ['new', 'drafted'].includes(r.status) && r.site_id)
       .sort((a, c) => Date.parse(a.update_time) - Date.parse(c.update_time)).slice(0, limit).map((r) => ({ ...r })),
+    // Synchronous check-and-set (no await between read and write), like claimPublishing: the overlap test depends on it.
+    claimDelivery: async (id, v) => { const r = rv(id); if (!r || r.version !== v || !r.notify) return false; r.notify = false; return true },
+    setNotify: async (id, v, value) => { const r = rv(id); if (r && r.version === v) r.notify = value },
     markDelivered: async (id, v) => { const r = rv(id)!; if (r.version !== v) return; r.delivered_version = v; r.notify = false },
     openReviewsWithCards: async (b) => s.reviews.filter((r) => r.business_id === b && ['new', 'drafted'].includes(r.status) && s.cards.some((c) => c.review_id === r.id)),
     openReviewsForSites: async (b, sites, limit) => s.reviews.filter((r) => r.business_id === b && r.site_id && sites.includes(r.site_id) && ['new', 'drafted'].includes(r.status))

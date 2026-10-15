@@ -34,6 +34,10 @@ export interface ReviewDeps {
   liveReviewsAt(locationId: string): Promise<Review[]>
   /** notify && status in (new, drafted) && site_id not null — oldest update first (delivered_version is advisory). */
   pending(b: string, limit: number): Promise<Review[]>
+  /** Atomic: notify true → false while the review is at that version. Only the caller that flipped it delivers. */
+  claimDelivery(id: string, version: number): Promise<boolean>
+  /** notify = value, only while the review is still at that version (re-arms a claimed delivery that did not go out). */
+  setNotify(id: string, version: number, value: boolean): Promise<void>
   /** delivered_version = version, notify = false — only while the review is still at that version. */
   markDelivered(id: string, version: number): Promise<void>
   /** new/drafted reviews of the business that have at least one card. */

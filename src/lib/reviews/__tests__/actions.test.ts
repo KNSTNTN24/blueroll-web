@@ -68,6 +68,42 @@ describe('deliverReview', () => {
   })
 })
 
+describe('deliverReview is claim-based (I3)', () => {
+  it('two overlapping deliveries of the same review → one set of cards', async () => {
+    const r = mkReview()
+    const { ctx, s, calls } = fakeCtx({ reviews: [r] })
+    const out = await Promise.all([deliverReview(ctx, { ...r }), deliverReview(ctx, { ...r })])
+    expect(out.sort()).toEqual([0, 1])
+    expect(calls.filter((c) => c.method === 'sendMessage')).toHaveLength(1)
+    expect(s.cards).toHaveLength(1)
+    expect(s.reviews[0]).toMatchObject({ notify: false, delivered_version: 1 })
+  })
+  it('a review already claimed (notify off) is skipped', async () => {
+    const r = mkReview({ notify: false })
+    const { ctx, calls } = fakeCtx({ reviews: [r] })
+    expect(await deliverReview(ctx, r)).toBe(0)
+    expect(calls).toEqual([])
+  })
+  it('an error after the claim re-arms notify for the next run', async () => {
+    const r = mkReview()
+    const { ctx, s } = fakeCtx({ reviews: [r] })
+    ctx.d.routedGroups = async () => { throw new Error('db down') }
+    await expect(deliverReview(ctx, r)).rejects.toThrow('db down')
+    expect(s.reviews[0]).toMatchObject({ notify: true, delivered_version: 0 })
+  })
+  it('the real claim is one conditional UPDATE; re-arm only for the same version', async () => {
+    const { ctx, s } = fakeCtx({ reviews: [mkReview({ version: 2 })] })
+    const id = s.reviews[0].id
+    expect(await ctx.d.claimDelivery(id, 1)).toBe(false)
+    expect(await ctx.d.claimDelivery(id, 2)).toBe(true)
+    expect(await ctx.d.claimDelivery(id, 2)).toBe(false)
+    await ctx.d.setNotify(id, 1, true)
+    expect(s.reviews[0].notify).toBe(false)
+    await ctx.d.setNotify(id, 2, true)
+    expect(s.reviews[0].notify).toBe(true)
+  })
+})
+
 describe('deliverReview with Telegram failures', () => {
   const bad = (method: string) => (method === 'sendMessage' ? { ok: false, status: 502, description: 'Bad Gateway' } : {})
   it('every group failing transiently leaves the review pending for the next run', async () => {
@@ -76,7 +112,7 @@ describe('deliverReview with Telegram failures', () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
     expect(await deliverReview(ctx, r)).toBe(0)
     spy.mockRestore()
-    expect(s.reviews[0].delivered_version).toBe(0)
+    expect(s.reviews[0]).toMatchObject({ delivered_version: 0, notify: true })
     expect((await ctx.d.pending('b1', 50)).map((x) => x.id)).toEqual([r.id])
   })
   it('one group failing and one succeeding counts as delivered', async () => {

@@ -36,6 +36,18 @@ describe('makeReviewDeps', () => {
     await makeReviewDeps(admin, google(async () => 'at')).markDelivered('r1', 2)
     expect(queries[0].ops.join(' ')).toMatch(/update\(\{"delivered_version":2,"notify":false\}\).*eq\("id","r1"\).*eq\("version",2\)/)
   })
+  it('claimDelivery is one conditional UPDATE (id + version + notify on) returning the id', async () => {
+    const { admin, queries } = recorder(() => ({ data: [{ id: 'r1' }], error: null }))
+    expect(await makeReviewDeps(admin, google(async () => 'at')).claimDelivery('r1', 2)).toBe(true)
+    expect(queries[0].ops.join(' ')).toMatch(/update\(\{"notify":false\}\).*eq\("id","r1"\).*eq\("version",2\).*eq\("notify",true\).*select\("id"\)/)
+    const none = recorder(() => ({ data: [], error: null }))
+    expect(await makeReviewDeps(none.admin, google(async () => 'at')).claimDelivery('r1', 2)).toBe(false)
+  })
+  it('setNotify is conditional on the version', async () => {
+    const { admin, queries } = recorder(() => ({ data: null, error: null }))
+    await makeReviewDeps(admin, google(async () => 'at')).setNotify('r1', 2, true)
+    expect(queries[0].ops.join(' ')).toMatch(/update\(\{"notify":true\}\).*eq\("id","r1"\).*eq\("version",2\)/)
+  })
   it('routedGroups only returns linked reviews groups of the same business', async () => {
     const { admin, queries } = recorder(() => ({ data: [
       { group: { id: 'g1', business_id: 'b1', chat_id: '-100', channel: 'telegram_reviews', unlinked_at: null } },

@@ -80,26 +80,35 @@ export async function sendCard(ctx: Ctx, r: Review, group: RouteGroup): Promise<
   return 'sent'
 }
 
-/** Draft if needed, send to every group routed to the review's site, then mark this version delivered (even with no draft or no groups). */
+/**
+ * Claim this version (notify → false; overlapping syncs deliver it once), draft if needed, send to every group routed
+ * to the review's site, then mark it delivered (even with no draft or no groups). If every group failed transiently,
+ * or something threw, notify is re-armed so the next run retries.
+ */
 export async function deliverReview(ctx: Ctx, r: Review): Promise<number> {
-  let review = r
-  if (!(await latestDraft(ctx, r))) {
-    await makeDraft(ctx, r)
-    review = (await ctx.d.review(r.id)) ?? r
-  }
-  let sent = 0, retry = 0, groups = 0
-  if (review.site_id) {
-    for (const g of await ctx.d.routedGroups(review.business_id, review.site_id)) {
-      groups++
-      const out = await sendCard(ctx, review, g)
-      if (out === 'sent') sent++
-      else if (out === 'retry') retry++
+  if (!(await ctx.d.claimDelivery(r.id, r.version))) return 0
+  try {
+    let review = r
+    if (!(await latestDraft(ctx, r))) {
+      await makeDraft(ctx, r)
+      review = (await ctx.d.review(r.id)) ?? r
     }
+    let sent = 0, retry = 0, groups = 0
+    if (review.site_id) {
+      for (const g of await ctx.d.routedGroups(review.business_id, review.site_id)) {
+        groups++
+        const out = await sendCard(ctx, review, g)
+        if (out === 'sent') sent++
+        else if (out === 'retry') retry++
+      }
+    }
+    if (groups > 0 && retry === groups) await ctx.d.setNotify(r.id, r.version, true)
+    else await ctx.d.markDelivered(r.id, r.version)
+    return sent
+  } catch (e) {
+    await ctx.d.setNotify(r.id, r.version, true).catch(() => {})
+    throw e
   }
-  // Leave notify on (retry next run) only when every group failed transiently.
-  if (groups > 0 && retry === groups) return sent
-  await ctx.d.markDelivered(review.id, review.version)
-  return sent
 }
 
 /** Re-render the review on every card (or just `only`). Cards Telegram no longer has are forgotten. */
