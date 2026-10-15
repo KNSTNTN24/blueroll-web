@@ -10,7 +10,7 @@ import { createChannelOnlyMember, defaultStaffRole, rollbackMember } from './mem
 import { firstName } from './team-text.ts'
 
 // deno-lint-ignore no-explicit-any
-type Any = any
+type Any = any // eslint-disable-line @typescript-eslint/no-explicit-any -- loose Supabase/Telegram payloads (see deno-lint-ignore above)
 
 // Channel-neutral model (spec 2026-10-11 §9). 'telegram_reviews' = @BluerollReviewsBot groups (spec 2026-10-15).
 export type GroupChannel = 'telegram' | 'whatsapp' | 'telegram_reviews'

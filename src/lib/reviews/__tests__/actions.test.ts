@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- loose Telegram/PostgREST payloads in test doubles */
 import { describe, it, expect, vi } from 'vitest'
 import { makeDraft, deliverReview, doPublish, doSkip, doEdit, doAnother, retireCards, ACTION_TEXT } from '../../../../supabase/functions/_shared/reviews/actions'
 import { CARD_TEXT } from '../../../../supabase/functions/_shared/reviews/card'

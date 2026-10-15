@@ -106,7 +106,7 @@ export function fakeReviewDeps(init: Partial<FakeState> = {}) {
     groupSites: async (gid) => s.routes.filter((r) => r.group_id === gid).map((r) => r.site_id),
     reviewGroups: async (b) => s.groups.filter((g) => live(g) && g.business_id === b),
     deleteRoutes: async (gid) => { s.routes = s.routes.filter((r) => r.group_id !== gid) },
-    cards: async (rid) => s.cards.filter((c) => c.review_id === rid).map(({ group_id: _g, ...c }) => c),
+    cards: async (rid) => s.cards.filter((c) => c.review_id === rid).map(({ review_id, chat_id, message_id }) => ({ review_id, chat_id, message_id })),
     saveCard: async (c) => { s.cards.push({ ...c }) },
     dropCard: async (c) => { s.cards = s.cards.filter((x) => !(x.chat_id === c.chat_id && x.message_id === c.message_id)) },
     migrateCards: async (o, n) => { for (const c of s.cards) if (c.chat_id === o) c.chat_id = n },

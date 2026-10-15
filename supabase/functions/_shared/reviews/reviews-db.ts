@@ -8,7 +8,7 @@ import type { ConnectDeps, PrevLocation } from './connect.ts'
 import { DEFAULT_SETTINGS, type Connection, type Review } from './types.ts'
 
 // deno-lint-ignore no-explicit-any
-type Any = any
+type Any = any // eslint-disable-line @typescript-eslint/no-explicit-any -- loose Supabase/Telegram payloads (see deno-lint-ignore above)
 
 const CONN_COLS = 'id, business_id, google_email, vault_secret_id, status, connected_at, last_sync_at'
 const LOC_COLS = 'id, connection_id, business_id, gbp_account, gbp_location, title, address, postcode, maps_uri, can_reply, site_id, enabled, enabled_at, last_review_update_time, last_full_pass_at'
@@ -23,6 +23,8 @@ async function one(q: Any): Promise<Any> { const { data, error } = await q; if (
 // profiles_with_capability returns setof uuid; PostgREST may send bare ids or { profiles_with_capability: id } rows.
 const capabilityIds = (rows: Any): string[] => ((rows ?? []) as Any[])
   .map((x: Any) => (typeof x === 'string' ? x : String(Object.values(x ?? {})[0] ?? ''))).filter(Boolean)
+/** The row without an embedded resource used only for filtering. */
+const without = (row: Any, key: string): Any => { const copy = { ...row }; delete copy[key]; return copy }
 const asReview = (r: Any): Review => ({ ...r, flags: r.flags ?? [] })
 
 export function makeReviewDeps(admin: Any, google: Google): ReviewDeps {
@@ -62,7 +64,7 @@ export function makeReviewDeps(admin: Any, google: Google): ReviewDeps {
     // A removed site keeps its location rows; sync skips them (inner join also drops rows with no site, which sync skips anyway).
     enabledLocations: async (cid) => ((await one(admin.from('google_locations').select(`${LOC_COLS}, site:sites!inner(removed_at)`)
       .eq('connection_id', cid).eq('enabled', true).is('site.removed_at', null))) ?? [])
-      .filter((l: Any) => !l.site?.removed_at).map(({ site: _s, ...l }: Any) => l),
+      .filter((l: Any) => !l.site?.removed_at).map((l: Any) => without(l, 'site')),
     saveCursor: async (id, p) => { await one(admin.from('google_locations').update(p).eq('id', id)) },
 
     review: async (id) => { const r = await one(admin.from('reviews').select(REVIEW_COLS).eq('id', id).maybeSingle()); return r ? asReview(r) : null },
@@ -82,7 +84,7 @@ export function makeReviewDeps(admin: Any, google: Google): ReviewDeps {
     setNotify: async (id, v, value) => { await one(admin.from('reviews').update({ notify: value }).eq('id', id).eq('version', v)) },
     markDelivered: async (id, v) => { await one(admin.from('reviews').update({ delivered_version: v, notify: false }).eq('id', id).eq('version', v)) },
     openReviewsWithCards: async (b) => ((await one(admin.from('reviews').select(`${REVIEW_COLS}, review_cards!inner(message_id)`)
-      .eq('business_id', b).in('status', OPEN))) ?? []).map(({ review_cards: _c, ...r }: Any) => asReview(r)),
+      .eq('business_id', b).in('status', OPEN))) ?? []).map((r: Any) => asReview(without(r, 'review_cards'))),
     openReviewsForSites: async (b, siteIds, limit) => ((await one(admin.from('reviews').select(REVIEW_COLS).eq('business_id', b)
       .in('site_id', siteIds).in('status', OPEN).order('update_time', { ascending: false }).limit(limit))) ?? []).map(asReview),
     claimPublishing: async (id, v, actor) => !!(await one(admin.from('reviews')
@@ -165,7 +167,7 @@ export function makeReviewDeps(admin: Any, google: Google): ReviewDeps {
     },
 
     deletedBusinessConnections: async () => ((await one(admin.from('google_connections').select(`${CONN_COLS}, business:businesses!inner(deleted_at)`)
-      .neq('status', 'revoked').not('business.deleted_at', 'is', null))) ?? []).map(({ business: _b, ...c }: Any) => c),
+      .neq('status', 'revoked').not('business.deleted_at', 'is', null))) ?? []).map((c: Any) => without(c, 'business')),
     readToken,
     deleteToken: async (id) => { await one(admin.rpc('reviews_delete_token', { p_id: id })) },
     markRevoked: async (id, now) => {

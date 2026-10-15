@@ -47,7 +47,7 @@ export type RvEvent =
   | { kind: 'migrated'; chatId: string; newChatId: string; id: string }
 
 // deno-lint-ignore no-explicit-any
-type Any = any
+type Any = any // eslint-disable-line @typescript-eslint/no-explicit-any -- loose Supabase/Telegram payloads (see deno-lint-ignore above)
 const COMMANDS: Record<string, 'link' | 'pending' | 'help'> = { link: 'link', pending: 'pending', help: 'help', start: 'help' }
 const isGroup = (t: unknown) => t === 'group' || t === 'supergroup'
 const isChatId = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v !== 0

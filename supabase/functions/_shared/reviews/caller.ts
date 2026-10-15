@@ -5,7 +5,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import type { Caller } from "./connect.ts";
 
 // deno-lint-ignore no-explicit-any
-export async function reviewsCaller(admin: any, supabaseUrl: string, anonKey: string, jwt: string): Promise<Caller | null> {
+export async function reviewsCaller(admin: any, supabaseUrl: string, anonKey: string, jwt: string): Promise<Caller | null> { // eslint-disable-line @typescript-eslint/no-explicit-any
   if (!jwt) return null;
   const { data: u } = await admin.auth.getUser(jwt);
   if (!u?.user) return null;

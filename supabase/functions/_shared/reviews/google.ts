@@ -16,7 +16,7 @@ const V4 = 'https://mybusiness.googleapis.com/v4'
 export const GOOGLE_TIMEOUT_MS = 20_000
 
 // deno-lint-ignore no-explicit-any
-type Any = any
+type Any = any // eslint-disable-line @typescript-eslint/no-explicit-any -- loose Supabase/Telegram payloads (see deno-lint-ignore above)
 
 export type GoogleErrorKind = 'invalid_grant' | 'unauthorized' | 'not_found' | 'rate_limited' | 'bad_request' | 'server'
 export class GoogleError extends Error {
