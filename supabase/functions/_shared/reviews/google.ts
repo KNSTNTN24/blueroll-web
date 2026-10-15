@@ -12,6 +12,9 @@ const INFO = 'https://mybusinessbusinessinformation.googleapis.com/v1'
 const VERIFY = 'https://mybusinessverifications.googleapis.com/v1'
 const V4 = 'https://mybusiness.googleapis.com/v4'
 
+/** Per-request timeout for every Google call (a hung connection must not hang a cron or a webhook). */
+export const GOOGLE_TIMEOUT_MS = 20_000
+
 // deno-lint-ignore no-explicit-any
 type Any = any
 
@@ -82,9 +85,14 @@ export function parseLocation(l: Any): GLocation | null {
 
 export function makeGoogle(cfg: GoogleCfg): Google {
   const f = cfg.fetchFn ?? fetch
+  /** A token response without a usable access token is a server fault, not an empty bearer (would 401 later). */
+  const accessTokenOf = (j: Any): string => {
+    if (typeof j?.access_token !== 'string' || !j.access_token) throw new GoogleError('server', 200, 'no access token')
+    return j.access_token
+  }
   const call = async (url: string, init: RequestInit = {}): Promise<Any> => {
     let r: Response
-    try { r = await f(url, init) } catch { throw new GoogleError('server', 0, 'network') }
+    try { r = await f(url, { ...init, signal: AbortSignal.timeout(GOOGLE_TIMEOUT_MS) }) } catch { throw new GoogleError('server', 0, 'network') }
     const body = await r.json().catch(() => ({}))
     if (!r.ok) {
       const msg = body?.error_description ?? body?.error?.message ?? body?.error ?? `HTTP ${r.status}`
@@ -110,14 +118,14 @@ export function makeGoogle(cfg: GoogleCfg): Google {
         redirect_uri: cfg.redirectUri, grant_type: 'authorization_code',
       }))
       return {
-        accessToken: String(j.access_token ?? ''),
+        accessToken: accessTokenOf(j),
         refreshToken: typeof j.refresh_token === 'string' && j.refresh_token ? j.refresh_token : null,
         scopes: String(j.scope ?? '').split(' ').filter(Boolean),
       }
     },
-    refresh: async (rt) => String((await call(TOKEN, form({
+    refresh: async (rt) => accessTokenOf(await call(TOKEN, form({
       refresh_token: rt, client_id: cfg.clientId, client_secret: cfg.clientSecret, grant_type: 'refresh_token',
-    }))).access_token ?? ''),
+    }))),
     revoke: async (token) => { try { await call(REVOKE, form({ token })) } catch { /* already revoked or expired */ } },
     email: async (at) => String((await call(USERINFO, bearer(at))).email ?? ''),
     accounts: async (at) => {

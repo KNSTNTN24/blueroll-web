@@ -50,6 +50,19 @@ describe('tokens', () => {
     const { f } = fakeFetch([[/revoke/, 400, { error: 'invalid_token' }]])
     await expect(makeGoogle(cfg(f)).revoke('rt')).resolves.toBeUndefined()
   })
+  it('refresh with a 200 but no access_token → GoogleError server (not an empty bearer)', async () => {
+    const { f } = fakeFetch([[/token/, 200, {}]])
+    const err = await makeGoogle(cfg(f)).refresh('rt').catch((e) => e)
+    expect(err).toBeInstanceOf(GoogleError)
+    expect(err.kind).toBe('server')
+    expect(isAuthError(err)).toBe(false)
+  })
+  it('exchangeCode with a 200 but no access_token → GoogleError server', async () => {
+    const { f } = fakeFetch([[/token/, 200, { scope: GOOGLE_SCOPE_MANAGE }]])
+    const err = await makeGoogle(cfg(f)).exchangeCode('c', 'v').catch((e) => e)
+    expect(err).toBeInstanceOf(GoogleError)
+    expect(err.kind).toBe('server')
+  })
 })
 
 describe('Business Profile', () => {
@@ -98,6 +111,15 @@ describe('Business Profile', () => {
     const err = await makeGoogle(cfg(f)).email('secret-at').catch((e) => e)
     expect(err.kind).toBe('server')
     expect(err.message).not.toContain('secret-at')
+  })
+  it('every request carries an abort signal (timeout), and a timeout is a network server error', async () => {
+    const ok = fakeFetch([[/userinfo/, 200, { email: 'a@b.c' }]])
+    await makeGoogle(cfg(ok.f)).email('at')
+    expect(ok.calls[0].init?.signal).toBeInstanceOf(AbortSignal)
+    const aborting = (async () => { throw new DOMException('timed out', 'TimeoutError') }) as unknown as typeof fetch
+    const err = await makeGoogle(cfg(aborting)).email('at').catch((e) => e)
+    expect(err.kind).toBe('server')
+    expect(err.message).toBe('network')
   })
 })
 
