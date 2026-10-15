@@ -37,13 +37,15 @@ export interface FakeState {
   groups: (RouteGroup & { unlinked: boolean })[]; routes: { site_id: string; group_id: string }[]; prompts: EditPrompt[]
   audits: AuditRow[]; notes: { user_id: string; title: string; message: string; link: string }[]; logs: string[]
   entitled: boolean; managers: string[]; secrets: Map<string, string>; states: OAuthState[]
+  /** Site ids with removed_at set (the sites themselves are not modelled). */
+  removedSites: string[]
 }
 
 export function fakeReviewDeps(init: Partial<FakeState> = {}) {
   const s: FakeState = {
     conns: [{ ...CONN }], locs: [{ ...LOC }], reviews: [], drafts: [], cards: [], groups: [{ id: 'gr1', business_id: 'b1', chat_id: '-100', unlinked: false }],
     routes: [{ site_id: 's1', group_id: 'gr1' }], prompts: [], audits: [], notes: [], logs: [], entitled: true, managers: ['m1'],
-    secrets: new Map([['sec1', 'rt1']]), states: [], ...init,
+    secrets: new Map([['sec1', 'rt1']]), states: [], removedSites: [], ...init,
   }
   // publishing_at lives beside the shared Review type (the real column is not part of it).
   const publishingAt = new Map<string, string>()
@@ -65,7 +67,7 @@ export function fakeReviewDeps(init: Partial<FakeState> = {}) {
     connectionFailed: async (c) => { const row = s.conns.find((x) => x.id === c.id)!; if (row.status !== 'active') return false; row.status = 'error'; return true },
     touchConnection: async (id, now) => { s.conns.find((c) => c.id === id)!.last_sync_at = now.toISOString() },
     location: async (id) => s.locs.find((l) => l.id === id) ?? null,
-    enabledLocations: async (cid) => s.locs.filter((l) => l.connection_id === cid && l.enabled),
+    enabledLocations: async (cid) => s.locs.filter((l) => l.connection_id === cid && l.enabled && !!l.site_id && !s.removedSites.includes(l.site_id)),
     saveCursor: async (id, p) => { Object.assign(s.locs.find((l) => l.id === id)!, p) },
     review: async (id) => { const r = rv(id); return r ? { ...r } : null },
     reviewsByGoogleId: async (b, ids) => new Map(s.reviews.filter((r) => r.business_id === b && ids.includes(r.google_review_id)).map((r) => [r.google_review_id, { ...r }])),
@@ -100,7 +102,7 @@ export function fakeReviewDeps(init: Partial<FakeState> = {}) {
     insertDraft: async (x) => {
       if (s.drafts.some((y) => y.review_id === x.review_id && y.review_version === x.review_version && y.draft_version === x.draft_version)) throw Object.assign(new Error('duplicate key value violates unique constraint'), { code: '23505' })
       const row: Draft = { id: uuid(), review_id: x.review_id, review_version: x.review_version, draft_version: x.draft_version, text: x.text, source: x.source, author_name: x.actor?.name ?? null, created_at: NOW.toISOString() }; s.drafts.push(row); return row },
-    routedGroups: async (b, site) => s.groups.filter((g) => live(g) && g.business_id === b && s.routes.some((r) => r.site_id === site && r.group_id === g.id)),
+    routedGroups: async (b, site) => (s.removedSites.includes(site) ? [] : s.groups.filter((g) => live(g) && g.business_id === b && s.routes.some((r) => r.site_id === site && r.group_id === g.id))),
     groupSites: async (gid) => s.routes.filter((r) => r.group_id === gid).map((r) => r.site_id),
     reviewGroups: async (b) => s.groups.filter((g) => live(g) && g.business_id === b),
     deleteRoutes: async (gid) => { s.routes = s.routes.filter((r) => r.group_id !== gid) },

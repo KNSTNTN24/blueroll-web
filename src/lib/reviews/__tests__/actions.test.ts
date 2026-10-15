@@ -68,6 +68,16 @@ describe('deliverReview', () => {
   })
 })
 
+describe('removed sites (M2)', () => {
+  it('no card goes to a removed site; the review still counts as delivered', async () => {
+    const r = mkReview()
+    const { ctx, s, calls } = fakeCtx({ reviews: [r], removedSites: ['s1'] })
+    expect(await deliverReview(ctx, r)).toBe(0)
+    expect(calls.filter((c) => c.method === 'sendMessage')).toEqual([])
+    expect(s.reviews[0].delivered_version).toBe(1)
+  })
+})
+
 describe('deliverReview is claim-based (I3)', () => {
   it('two overlapping deliveries of the same review → one set of cards', async () => {
     const r = mkReview()

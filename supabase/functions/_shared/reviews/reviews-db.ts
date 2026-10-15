@@ -59,7 +59,10 @@ export function makeReviewDeps(admin: Any, google: Google): ReviewDeps {
     },
     touchConnection: async (id, now) => { await one(admin.from('google_connections').update({ last_sync_at: now.toISOString() }).eq('id', id)) },
     location: async (id) => (await one(admin.from('google_locations').select(LOC_COLS).eq('id', id).maybeSingle())) ?? null,
-    enabledLocations: async (cid) => (await one(admin.from('google_locations').select(LOC_COLS).eq('connection_id', cid).eq('enabled', true))) ?? [],
+    // A removed site keeps its location rows; sync skips them (inner join also drops rows with no site, which sync skips anyway).
+    enabledLocations: async (cid) => ((await one(admin.from('google_locations').select(`${LOC_COLS}, site:sites!inner(removed_at)`)
+      .eq('connection_id', cid).eq('enabled', true).is('site.removed_at', null))) ?? [])
+      .filter((l: Any) => !l.site?.removed_at).map(({ site: _s, ...l }: Any) => l),
     saveCursor: async (id, p) => { await one(admin.from('google_locations').update(p).eq('id', id)) },
 
     review: async (id) => { const r = await one(admin.from('reviews').select(REVIEW_COLS).eq('id', id).maybeSingle()); return r ? asReview(r) : null },
@@ -123,9 +126,10 @@ export function makeReviewDeps(admin: Any, google: Google): ReviewDeps {
     }).select(DRAFT_COLS).single()),
 
     routedGroups: async (b, siteId) => ((await one(admin.from('review_routes')
-      .select('group:channel_groups!inner(id, business_id, chat_id, channel, unlinked_at)')
-      .eq('site_id', siteId).eq('business_id', b).eq('group.channel', 'telegram_reviews').is('group.unlinked_at', null))) ?? [])
-      .map((r: Any) => r.group).filter((g: Any) => g && g.business_id === b && g.channel === 'telegram_reviews' && !g.unlinked_at)
+      .select('site:sites!inner(removed_at), group:channel_groups!inner(id, business_id, chat_id, channel, unlinked_at)')
+      .eq('site_id', siteId).eq('business_id', b).eq('group.channel', 'telegram_reviews').is('group.unlinked_at', null)
+      .is('site.removed_at', null))) ?? [])
+      .filter((r: Any) => !r.site?.removed_at).map((r: Any) => r.group).filter((g: Any) => g && g.business_id === b && g.channel === 'telegram_reviews' && !g.unlinked_at)
       .map((g: Any) => ({ id: g.id, business_id: g.business_id, chat_id: g.chat_id })),
     groupSites: async (gid) => ((await one(admin.from('review_routes').select('site_id').eq('group_id', gid))) ?? []).map((r: Any) => r.site_id as string),
     reviewGroups: async (b) => (await one(admin.from('channel_groups').select('id, business_id, chat_id').eq('business_id', b)

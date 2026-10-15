@@ -59,6 +59,28 @@ describe('makeReviewDeps', () => {
     expect(ops).toContain('is("group.unlinked_at",null)')
     expect(ops).toContain('eq("business_id","b1")')
   })
+  it('routedGroups ignores removed sites (M2)', async () => {
+    const { admin, queries } = recorder(() => ({ data: [
+      { site: { removed_at: null }, group: { id: 'g1', business_id: 'b1', chat_id: '-100', channel: 'telegram_reviews', unlinked_at: null } },
+      { site: { removed_at: '2026-10-01T00:00:00Z' }, group: { id: 'g2', business_id: 'b1', chat_id: '-200', channel: 'telegram_reviews', unlinked_at: null } },
+    ], error: null }))
+    expect(await makeReviewDeps(admin, google(async () => 'at')).routedGroups('b1', 's1')).toEqual([{ id: 'g1', business_id: 'b1', chat_id: '-100' }])
+    const ops = queries[0].ops.join(' ')
+    expect(ops).toContain('site:sites!inner(removed_at)')
+    expect(ops).toContain('is("site.removed_at",null)')
+  })
+  it('enabledLocations skips locations whose site was removed (M2)', async () => {
+    const { admin, queries } = recorder(() => ({ data: [
+      { id: 'l1', site_id: 's1', enabled: true, site: { removed_at: null } },
+      { id: 'l2', site_id: 's2', enabled: true, site: { removed_at: '2026-10-01T00:00:00Z' } },
+    ], error: null }))
+    expect(await makeReviewDeps(admin, google(async () => 'at')).enabledLocations('c1')).toEqual([{ id: 'l1', site_id: 's1', enabled: true }])
+    const ops = queries[0].ops.join(' ')
+    expect(ops).toContain('site:sites!inner(removed_at)')
+    expect(ops).toContain('eq("connection_id","c1")')
+    expect(ops).toContain('eq("enabled",true)')
+    expect(ops).toContain('is("site.removed_at",null)')
+  })
   it('connectionFailed flips only an active connection', async () => {
     const { admin, queries } = recorder(() => ({ data: [], error: null }))
     expect(await makeReviewDeps(admin, google(async () => 'at')).connectionFailed(CONN, 'revoked')).toBe(false)
