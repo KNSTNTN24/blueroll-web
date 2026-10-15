@@ -76,6 +76,8 @@ async function syncLocation(ctx: Ctx, conn: Connection, loc: Location, at: strin
   let maxSeen = cursor
   let page: string | undefined
   let complete = false
+  let atCursor = false
+  let failed = false
   for (let n = 0; n < maxPages; n++) {
     let res
     try { res = await ctx.google.reviews(at, loc.gbp_account, loc.gbp_location, page) }
@@ -91,12 +93,15 @@ async function syncLocation(ctx: Ctx, conn: Connection, loc: Location, at: strin
       if (!maxSeen || after(g.updateTime, maxSeen)) maxSeen = g.updateTime
       if (!full && cursor && !after(g.updateTime, cursor)) { reachedCursor = true; break }
       try { await apply(ctx, known.get(g.reviewId) ?? null, g, loc, conn) }
-      catch (e) { console.error('review sync item failed', loc.gbp_location, errMsg(e)) }
+      catch (e) { failed = true; console.error('review sync item failed', loc.gbp_location, errMsg(e)) }
     }
-    if (reachedCursor) break
+    if (reachedCursor) { atCursor = true; break }
     if (!res.next) { complete = true; break }
     page = res.next
   }
+  // Page cap hit before reaching the cursor: the cursor still advances (else a very busy location would re-read the
+  // same pages forever); the daily full pass reconciles the gap.
+  if (cursor && !atCursor && !complete) console.error('reviews page cap hit', loc.gbp_location)
   if (full && complete) {
     for (const r of await d.liveReviewsAt(loc.id)) {
       if (seen.has(r.google_review_id) || r.status === 'publishing') continue
@@ -105,7 +110,7 @@ async function syncLocation(ctx: Ctx, conn: Connection, loc: Location, at: strin
       await refreshCards(ctx, r.id)
     }
   }
-  await d.saveCursor(loc.id, { last_review_update_time: maxSeen, ...(full ? { last_full_pass_at: now.toISOString() } : {}) })
+  await d.saveCursor(loc.id, { last_review_update_time: failed ? cursor : maxSeen, ...(full ? { last_full_pass_at: now.toISOString() } : {}) })
 }
 
 async function authFailed(ctx: Ctx, conn: Connection, e: unknown) {
@@ -150,14 +155,16 @@ export async function runSync(ctx: Ctx, onlyBusiness?: string): Promise<{ connec
 /** Deleted businesses: revoke at Google and drop the Vault secret (spec §12 "Business deletion"); then table cleanup. */
 export async function housekeeping(ctx: Ctx): Promise<void> {
   const { d } = ctx
-  for (const c of await d.deletedBusinessConnections()) {
-    if (c.vault_secret_id) {
-      const t = await d.readToken(c.vault_secret_id)
-      if (t) await ctx.google.revoke(t)
-      await d.deleteToken(c.vault_secret_id)
-    }
-    await d.markRevoked(c.id, d.now())
-  }
   await d.releaseStalePublishing(new Date(d.now().getTime() - STALE_PUBLISHING_MS))
+  for (const c of await d.deletedBusinessConnections()) {
+    try {
+      if (c.vault_secret_id) {
+        const t = await d.readToken(c.vault_secret_id)
+        if (t) await ctx.google.revoke(t)
+        await d.deleteToken(c.vault_secret_id)
+      }
+      await d.markRevoked(c.id, d.now())
+    } catch (e) { console.error('reviews revoke failed', c.business_id, errMsg(e)) }
+  }
   await d.cleanup(d.now())
 }

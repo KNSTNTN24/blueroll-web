@@ -142,6 +142,39 @@ describe('syncConnection', () => {
       expect(s.reviews.find((r) => r.id === a.id)!.delivered_version).toBe(0)
       expect(spy).toHaveBeenCalledWith('review delivery failed', a.id, 'model down')
     })
+    it('a failed import keeps the cursor so the next run retries it', async () => {
+      const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const locs = [{ ...LOC, last_review_update_time: '2026-10-15T13:00:00Z', last_full_pass_at: NOW.toISOString() }]
+      const { ctx, s } = fakeCtx({ locs }, { google: { pages: { '-': page([gReview({ reviewId: 'bad', updateTime: '2026-10-15T13:20:00Z' }), gReview({ reviewId: 'good', updateTime: '2026-10-15T13:10:00Z' })]) } } })
+      const insert = ctx.d.insertReview
+      ctx.d.insertReview = async (r) => { if (r.google_review_id === 'bad') throw new Error('db down'); return insert(r) }
+      await syncConnection(ctx, CONN)
+      expect(s.locs[0].last_review_update_time).toBe('2026-10-15T13:00:00Z')
+      expect(s.reviews.map((r) => r.google_review_id)).toEqual(['good'])
+      ctx.d.insertReview = insert
+      await syncConnection(ctx, CONN)
+      expect(s.reviews.map((r) => r.google_review_id).sort()).toEqual(['bad', 'good'])
+      expect(s.locs[0].last_review_update_time).toBe('2026-10-15T13:20:00Z')
+      expect(spy).toHaveBeenCalled()
+    })
+    it('an incremental run that hits the page cap logs it and still advances', async () => {
+      const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const pages: Record<string, ReturnType<typeof page>> = {}
+      for (let i = 0; i < 22; i++) pages[i === 0 ? '-' : `p${i}`] = page([gReview({ reviewId: `r${i}`, updateTime: '2026-10-15T13:10:00Z' })], `p${i + 1}`)
+      const { ctx, s } = fakeCtx({ locs: [{ ...LOC, last_review_update_time: '2026-10-15T13:00:00Z', last_full_pass_at: NOW.toISOString() }] }, { google: { pages } })
+      await syncConnection(ctx, CONN)
+      expect(spy).toHaveBeenCalledWith('reviews page cap hit', 'locations/9')
+      expect(s.locs[0].last_review_update_time).toBe('2026-10-15T13:10:00Z')
+    })
+    it('housekeeping: one failing revoke does not stop the others', async () => {
+      const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const { ctx, s } = fakeCtx({ conns: [{ ...CONN, id: 'c1', status: 'revoked' }, { ...CONN, id: 'c2', business_id: 'b2', vault_secret_id: 'sec2', status: 'revoked' }], secrets: new Map([['sec1', 'rt1'], ['sec2', 'rt2']]) })
+      ctx.d.deletedBusinessConnections = async () => s.conns
+      ctx.google.revoke = async (t) => { if (t === 'rt1') throw new Error('google down') }
+      await housekeeping(ctx)
+      expect(s.secrets.has('sec2')).toBe(false)
+      expect(spy).toHaveBeenCalledWith('reviews revoke failed', 'b1', 'google down')
+    })
     it('housekeeping releases stale publishing claims only', async () => {
       const old = mkReview({ status: 'publishing' })
       const recent = mkReview({ status: 'publishing' })
