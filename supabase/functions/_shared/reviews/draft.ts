@@ -13,6 +13,8 @@ export const FLAGS = [...SAFETY_FLAGS, 'discrimination', 'legal_threat', 'staff_
 export const MAX_AI_DRAFTS = 6
 /** Google allows 4 096; keep a margin. */
 export const MAX_REPLY_CHARS = 4000
+/** A hung model call must not hang the review cron or a bot handler. */
+export const DRAFT_TIMEOUT_MS = 30_000
 
 export const isSafety = (flags: string[]) => flags.some((f) => (SAFETY_FLAGS as readonly string[]).includes(f))
 export const firstNameOf = (display: string) => (display ?? '').trim().split(/\s+/)[0] ?? ''
@@ -94,12 +96,20 @@ export function makeDrafter(cfg: { apiKey: string; fetchFn?: typeof fetch }): Dr
         method: 'POST',
         headers: { 'x-api-key': cfg.apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
         body: JSON.stringify(buildDraftRequest(i)),
+        signal: AbortSignal.timeout(DRAFT_TIMEOUT_MS),
       })
-      if (!r.ok) return null
-      const p = parseDraft(await r.json())
-      if (!p) return null
+      if (!r.ok) {
+        console.error('review draft failed', r.status)
+        return null
+      }
+      const p = parseDraft(await r.json().catch(() => null))
+      if (!p) {
+        console.error('review draft failed', 'parse')
+        return null
+      }
       return isSafety(p.flags) ? { ...p, reply: cautiousReply(i.reviewer, i.settings) } : p
-    } catch {
+    } catch (e) {
+      console.error('review draft failed', (e as { name?: string })?.name || 'network')
       return null
     }
   }

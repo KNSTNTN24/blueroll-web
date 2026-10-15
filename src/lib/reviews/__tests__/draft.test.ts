@@ -1,8 +1,13 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
-  buildDraftRequest, parseDraft, cautiousReply, makeDrafter, isSafety, DRAFT_MODEL, MAX_REPLY_CHARS, type DraftInput,
+  buildDraftRequest, parseDraft, cautiousReply, makeDrafter, isSafety, DRAFT_MODEL, DRAFT_TIMEOUT_MS, MAX_REPLY_CHARS, type DraftInput,
 } from '../../../../supabase/functions/_shared/reviews/draft'
 import { DEFAULT_SETTINGS } from '../../../../supabase/functions/_shared/reviews/types'
+
+// Failure logs go to console.error; silence them and check them in the diagnostics tests. Restored after each test.
+let errSpy: ReturnType<typeof vi.spyOn>
+beforeEach(() => { errSpy = vi.spyOn(console, 'error').mockImplementation(() => {}) })
+afterEach(() => { vi.restoreAllMocks() })
 
 const input = (o: Partial<DraftInput> = {}): DraftInput => ({
   businessName: 'Casa-Mia', siteName: 'Wharf Side', stars: 2, comment: 'Waited 40 minutes, pasta was cold',
@@ -74,5 +79,46 @@ describe('makeDrafter', () => {
   it('API error or network failure → null', async () => {
     expect(await makeDrafter({ apiKey: 'k', fetchFn: (async () => new Response('{}', { status: 529 })) as unknown as typeof fetch })(input())).toBeNull()
     expect(await makeDrafter({ apiKey: 'k', fetchFn: (async () => { throw new Error('x') }) as unknown as typeof fetch })(input())).toBeNull()
+  })
+})
+
+describe('makeDrafter diagnostics', () => {
+  const KEY = 'sk-ant-test-KEY-123'
+  const loggedText = () => errSpy.mock.calls.flat().map(String).join(' | ')
+
+  it('HTTP error logs the status only, never the key', async () => {
+    const d = makeDrafter({ apiKey: KEY, fetchFn: (async () => new Response('{}', { status: 529 })) as unknown as typeof fetch })
+    expect(await d(input())).toBeNull()
+    expect(errSpy).toHaveBeenCalledWith('review draft failed', 529)
+    expect(loggedText()).not.toContain(KEY)
+  })
+  it('unparseable tool output logs parse, never the key or review text', async () => {
+    const d = makeDrafter({ apiKey: KEY, fetchFn: (async () => new Response(JSON.stringify({ content: [] }), { status: 200 })) as unknown as typeof fetch })
+    expect(await d(input())).toBeNull()
+    expect(errSpy).toHaveBeenCalledWith('review draft failed', 'parse')
+    expect(loggedText()).not.toContain(KEY)
+    expect(loggedText()).not.toContain('Waited 40 minutes')
+  })
+  it('thrown error logs its name, never the key', async () => {
+    const d = makeDrafter({ apiKey: KEY, fetchFn: (async () => { throw new TypeError(`fetch failed ${KEY}`) }) as unknown as typeof fetch })
+    expect(await d(input())).toBeNull()
+    expect(errSpy).toHaveBeenCalledWith('review draft failed', 'TypeError')
+    expect(loggedText()).not.toContain(KEY)
+  })
+  it('the request carries an abort signal with the draft timeout', async () => {
+    let signal: AbortSignal | undefined
+    const fetchFn = (async (_url: string, init: RequestInit) => {
+      signal = init.signal ?? undefined
+      return new Response(JSON.stringify(toolResp({ language: 'en', flags: [], reply: 'Hi Sarah' })), { status: 200 })
+    }) as unknown as typeof fetch
+    await makeDrafter({ apiKey: KEY, fetchFn })(input())
+    expect(signal).toBeInstanceOf(AbortSignal)
+    expect(DRAFT_TIMEOUT_MS).toBe(30_000)
+  })
+  it('a non-safety flag keeps the AI reply unchanged', async () => {
+    const fetchFn = (async () => new Response(JSON.stringify(toolResp({ language: 'en', flags: ['legal_threat'], reply: 'Hi Sarah, we are looking into this.' })), { status: 200 })) as unknown as typeof fetch
+    const r = await makeDrafter({ apiKey: KEY, fetchFn })(input())
+    expect(r).toEqual({ language: 'en', flags: ['legal_threat'], reply: 'Hi Sarah, we are looking into this.' })
+    expect(errSpy).not.toHaveBeenCalled()
   })
 })
