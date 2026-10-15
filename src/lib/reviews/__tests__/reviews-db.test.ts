@@ -104,6 +104,27 @@ describe('makeReviewDeps', () => {
 })
 
 describe('makeConnectDeps', () => {
+  it('stillAllowed: active member of the business, holds manage_reviews, business entitled', async () => {
+    const run = async (o: { profile?: unknown; caps?: unknown; entitled?: boolean }) => {
+      const r = recorder((q) => {
+        if (q.table === 'profiles') return { data: o.profile ?? null, error: null }
+        if (q.table === 'rpc:profiles_with_capability') return { data: o.caps ?? [], error: null }
+        if (q.table === 'rpc:is_business_entitled') return { data: o.entitled ?? false, error: null }
+        return { data: null, error: null }
+      })
+      return { ok: await makeConnectDeps(r.admin, async () => {}).stillAllowed('p1', 'b1'), queries: r.queries }
+    }
+    const all = await run({ profile: { id: 'p1' }, caps: ['p1'], entitled: true })
+    expect(all.ok).toBe(true)
+    const prof = all.queries.find((q) => q.table === 'profiles')!.ops.join(' ')
+    expect(prof).toContain('eq("id","p1")')
+    expect(prof).toContain('eq("business_id","b1")')
+    expect(prof).toContain('is("removed_at",null)')
+    expect(all.queries.find((q) => q.table === 'rpc:profiles_with_capability')!.ops[0]).toBe('{"b":"b1","cap":"manage_reviews"}')
+    expect((await run({ caps: ['p1'], entitled: true })).ok).toBe(false)
+    expect((await run({ profile: { id: 'p1' }, caps: [{ profiles_with_capability: 'p2' }], entitled: true })).ok).toBe(false)
+    expect((await run({ profile: { id: 'p1' }, caps: [{ profiles_with_capability: 'p1' }], entitled: false })).ok).toBe(false)
+  })
   it('takeState is one conditional UPDATE (unused, unexpired)', async () => {
     const { admin, queries } = recorder(() => ({ data: [{ state: 'S', business_id: 'b1', profile_id: 'p1', code_verifier: 'V', expires_at: 'x' }], error: null }))
     const st = await makeConnectDeps(admin, async () => {}).takeState('S', new Date('2026-10-15T12:00:00Z'))

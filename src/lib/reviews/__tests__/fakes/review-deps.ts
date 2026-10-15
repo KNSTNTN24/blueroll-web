@@ -131,6 +131,7 @@ export function fakeConnectDeps(s: FakeState): ConnectDeps {
       const i = s.states.findIndex((x) => x.state === st && Date.parse(x.expires_at) > now.getTime())
       return i < 0 ? null : s.states.splice(i, 1)[0]
     },
+    stillAllowed: async (p) => s.entitled && s.managers.includes(p),
     liveConnection: async (b) => s.conns.find((c) => c.business_id === b && c.status !== 'revoked') ?? null,
     storeToken: async (t) => { const id = `sec-new-${++n}`; s.secrets.set(id, t); return id },
     readToken: async (id) => s.secrets.get(id) ?? null,

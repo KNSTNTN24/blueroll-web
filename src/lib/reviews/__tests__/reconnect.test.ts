@@ -15,7 +15,7 @@ describe('reconnect', () => {
     const drafts = [{ id: 'd1', review_id: r.id, review_version: 1, draft_version: 1, text: 'Hi Sarah, sorry', source: 'ai' as const, author_name: null, created_at: '' }]
     const loc = { ...LOC, last_review_update_time: '2026-10-14T00:00:00Z', last_full_pass_at: '2026-10-14T00:00:00Z' }
     const { ctx, s, gcalls } = fakeCtx({ reviews: [r], drafts, locs: [loc], conns: [{ ...CONN, status: 'error' }] })
-    s.states.push({ state: 'S', business_id: 'b1', profile_id: 'p1', code_verifier: 'V', expires_at: '2026-10-15T14:00:00Z' })
+    s.states.push({ state: 'S', business_id: 'b1', profile_id: 'm1', code_verifier: 'V', expires_at: '2026-10-15T14:00:00Z' })
     const g: Google = {
       ...ctx.google,
       exchangeCode: async () => ({ accessToken: 'at', refreshToken: 'rt2', scopes: [GOOGLE_SCOPE_MANAGE] }),

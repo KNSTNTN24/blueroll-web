@@ -10,10 +10,10 @@ const NOW = new Date('2026-10-15T12:00:00Z')
 const ME = { profile_id: 'p1', business_id: 'b1', name: 'Anna S.' }
 
 type PrevIn = Pick<PrevLocation, 'site_id' | 'enabled'> & Partial<PrevLocation>
-function fakeDeps(o: { states?: OAuthState[]; conns?: Connection[]; prevMap?: [string, PrevIn][] } = {}) {
+function fakeDeps(o: { states?: OAuthState[]; conns?: Connection[]; prevMap?: [string, PrevIn][]; allowed?: boolean } = {}) {
   const s = {
     states: o.states ?? [], conns: o.conns ?? [] as Connection[], secrets: new Map<string, string>([['sec-old', 'rt-old']]),
-    locations: [] as LocationUpsert[], disconnected: [] as string[], repointed: [] as string[],
+    locations: [] as LocationUpsert[], disconnected: [] as string[], repointed: [] as string[], allowedChecks: [] as string[],
   }
   const d: ConnectDeps = {
     now: () => NOW,
@@ -22,6 +22,7 @@ function fakeDeps(o: { states?: OAuthState[]; conns?: Connection[]; prevMap?: [s
       const i = s.states.findIndex((x) => x.state === st && Date.parse(x.expires_at) > now.getTime())
       return i < 0 ? null : s.states.splice(i, 1)[0]
     },
+    stillAllowed: async (p, b) => { s.allowedChecks.push(`${p} ${b}`); return o.allowed ?? true },
     liveConnection: async (b) => s.conns.find((c) => c.business_id === b && c.status !== 'revoked') ?? null,
     storeToken: async (t) => { const id = `sec-${s.secrets.size}`; s.secrets.set(id, t); return id },
     readToken: async (id) => s.secrets.get(id) ?? null,
@@ -275,5 +276,21 @@ describe('reconnect carries location state (C2, I2)', () => {
     await handleConnect(d, g, ME, { action: 'refresh' })
     expect(s.locations[0]).toMatchObject({ enabled_at: '2026-03-01T00:00:00Z', last_review_update_time: '2026-09-30T08:00:00Z' })
     expect(s.repointed).toEqual(['b1 c0'])
+  })
+})
+
+describe('finish re-checks the person who started it (I1)', () => {
+  it('no longer a manager, removed, or business not entitled → denied before any code exchange; state burnt', async () => {
+    const { d, s } = fakeDeps({ states: [stateX()], allowed: false }); const { g, calls } = fakeGoogle()
+    expect((await handleConnect(d, g, null, fin)).body).toEqual({ error: 'denied' })
+    expect(s.allowedChecks).toEqual(['p1 b1'])
+    expect(calls).toEqual([])
+    expect(s.states).toEqual([])
+    expect(s.conns).toEqual([])
+  })
+  it('still allowed → connects', async () => {
+    const { d, s } = fakeDeps({ states: [stateX()] }); const { g } = fakeGoogle()
+    expect((await handleConnect(d, g, null, fin)).body).toEqual({ result: 'connected' })
+    expect(s.allowedChecks).toEqual(['p1 b1'])
   })
 })

@@ -2,6 +2,7 @@
 // routes, reply style) go through RLS (manage_reviews); everything else goes through edge functions.
 import { supabase } from '@/lib/supabase'
 import { routeDiff, type WebReview } from './format'
+import { stateCookie, stateFromAuthUrl } from './oauth-state'
 
 export interface GoogleConnection { id: string; google_email: string; status: 'active' | 'error' | 'revoked'; last_error: string | null; connected_at: string; last_sync_at: string | null }
 export interface GoogleLocationRow { id: string; title: string; address: string; postcode: string; can_reply: boolean; site_id: string | null; enabled: boolean }
@@ -89,7 +90,12 @@ export async function saveReplyStyle(businessId: string, s: ReplyStyle): Promise
   if (error) throw error
 }
 
-export const startGoogleConnect = async () => (await callFn<{ url: string }>('google-connect', { action: 'start' })).url
+/** Returns Google's consent URL; first binds its state to this browser (checked by /api/google/callback). */
+export async function startGoogleConnect(): Promise<string> {
+  const { url } = await callFn<{ url: string }>('google-connect', { action: 'start' })
+  document.cookie = stateCookie(stateFromAuthUrl(url))
+  return url
+}
 export const disconnectGoogle = () => callFn('google-connect', { action: 'disconnect' })
 export const refreshLocations = () => callFn('google-connect', { action: 'refresh' })
 export const syncNow = () => callFn<{ connections: number; delivered: number }>('google-connect', { action: 'sync_now' })

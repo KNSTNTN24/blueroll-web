@@ -20,6 +20,9 @@ const TOKEN_TTL_MS = 50 * 60_000   // Google access tokens live 60 min; a warm f
 
 // Rethrows the ORIGINAL error object: callers rely on its Postgres `code` (insertDraft's unique violation is '23505').
 async function one(q: Any): Promise<Any> { const { data, error } = await q; if (error) throw error; return data }
+// profiles_with_capability returns setof uuid; PostgREST may send bare ids or { profiles_with_capability: id } rows.
+const capabilityIds = (rows: Any): string[] => ((rows ?? []) as Any[])
+  .map((x: Any) => (typeof x === 'string' ? x : String(Object.values(x ?? {})[0] ?? ''))).filter(Boolean)
 const asReview = (r: Any): Review => ({ ...r, flags: r.flags ?? [] })
 
 export function makeReviewDeps(admin: Any, google: Google): ReviewDeps {
@@ -135,8 +138,7 @@ export function makeReviewDeps(admin: Any, google: Google): ReviewDeps {
       .eq('chat_id', c).eq('prompt_message_id', m).maybeSingle())) ?? null,
     dropEditPrompt: async (c, m) => { await one(admin.from('review_edit_prompts').delete().eq('chat_id', c).eq('prompt_message_id', m)) },
 
-    reviewManagerIds: async (b) => ((await one(admin.rpc('profiles_with_capability', { b, cap: 'manage_reviews' }))) ?? [])
-      .map((x: Any) => (typeof x === 'string' ? x : String(Object.values(x ?? {})[0] ?? ''))).filter(Boolean),
+    reviewManagerIds: async (b) => capabilityIds(await one(admin.rpc('profiles_with_capability', { b, cap: 'manage_reviews' }))),
     notify: async (rows) => {
       if (!rows.length) return
       await one(admin.from('notifications').insert(rows.map((r) => ({ ...r, type: 'team' }))))
@@ -180,6 +182,12 @@ export function makeConnectDeps(admin: Any, onDisconnected: (b: string) => Promi
       const rows = await one(admin.from('google_oauth_states').update({ used_at: nowIso }).eq('state', state)
         .is('used_at', null).gt('expires_at', nowIso).select('state, business_id, profile_id, code_verifier, expires_at'))
       return rows?.[0] ?? null
+    },
+    stillAllowed: async (p, b) => {
+      const me = await one(admin.from('profiles').select('id').eq('id', p).eq('business_id', b).is('removed_at', null).maybeSingle())
+      if (!me) return false
+      if (!capabilityIds(await one(admin.rpc('profiles_with_capability', { b, cap: 'manage_reviews' }))).includes(p)) return false
+      return !!(await one(admin.rpc('is_business_entitled', { p_business_id: b })))
     },
     liveConnection: async (b) => (await one(admin.from('google_connections').select(CONN_COLS).eq('business_id', b).neq('status', 'revoked').maybeSingle())) ?? null,
     storeToken: async (token, name) => String(await one(admin.rpc('reviews_store_token', { p_token: token, p_name: name }))),

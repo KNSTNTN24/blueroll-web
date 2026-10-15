@@ -14,6 +14,8 @@ export interface ConnectDeps {
   now(): Date
   saveState(s: OAuthState): Promise<void>
   takeState(state: string, now: Date): Promise<OAuthState | null>
+  /** The person who started the flow is still an active member of b holding manage_reviews, and b is entitled. */
+  stillAllowed(profileId: string, businessId: string): Promise<boolean>
   liveConnection(b: string): Promise<Connection | null>
   storeToken(token: string, name: string): Promise<string>
   readToken(secretId: string): Promise<string | null>
@@ -96,6 +98,8 @@ async function finish(d: ConnectDeps, google: Google, body: Record<string, unkno
   const st = typeof body.state === 'string' ? await d.takeState(body.state, now) : null
   if (body.error) return fail('denied')
   if (!st) return fail('expired')
+  // Up to 10 minutes may have passed since start: re-check the person and the subscription before using the code.
+  if (!(await d.stillAllowed(st.profile_id, st.business_id))) return fail('denied')
   if (typeof body.code !== 'string' || !body.code) return fail('denied')
 
   let tokens
