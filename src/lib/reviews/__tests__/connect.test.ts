@@ -294,3 +294,24 @@ describe('finish re-checks the person who started it (I1)', () => {
     expect(s.allowedChecks).toEqual(['p1 b1'])
   })
 })
+
+describe('disconnect robustness (M3)', () => {
+  it('Google revoke failing still deletes our token, marks revoked and refreshes cards', async () => {
+    const old = liveConn()
+    const { d, s } = fakeDeps({ conns: [old] }); const { g } = fakeGoogle()
+    g.revoke = async () => { throw new GoogleError('server', 503, 'down') }
+    expect((await handleConnect(d, g, ME, { action: 'disconnect' })).body).toEqual({ ok: true })
+    expect(s.secrets.has('sec-old')).toBe(false)
+    expect(old.status).toBe('revoked')
+    expect(s.disconnected).toEqual(['b1'])
+  })
+  it('Vault delete failing still marks revoked and refreshes cards (then the error surfaces)', async () => {
+    const old = liveConn()
+    const { d, s } = fakeDeps({ conns: [old] }); const { g, calls } = fakeGoogle()
+    d.deleteToken = async () => { throw new Error('vault down') }
+    await expect(handleConnect(d, g, ME, { action: 'disconnect' })).rejects.toThrow('vault down')
+    expect(calls).toContain('revoke rt-old')
+    expect(old.status).toBe('revoked')
+    expect(s.disconnected).toEqual(['b1'])
+  })
+})

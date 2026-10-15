@@ -152,13 +152,20 @@ async function finish(d: ConnectDeps, google: Google, body: Record<string, unkno
 async function disconnect(d: ConnectDeps, google: Google, me: Caller): Promise<ApiRes> {
   const conn = await d.liveConnection(me.business_id)
   if (!conn) return res(200, { ok: true })
-  if (conn.vault_secret_id) {
-    const token = await d.readToken(conn.vault_secret_id)
-    if (token) await google.revoke(token)
-    await d.deleteToken(conn.vault_secret_id)
+  // Whatever fails on the way, the connection ends up revoked and the cards lose their buttons. A Google outage does
+  // not block disconnecting; a Vault failure still surfaces (after the cleanup) so the manager sees an error.
+  try {
+    if (conn.vault_secret_id) {
+      try {
+        const token = await d.readToken(conn.vault_secret_id)
+        if (token) await google.revoke(token)
+      } catch (e) { logGoogle(e) }
+      await d.deleteToken(conn.vault_secret_id)
+    }
+  } finally {
+    await d.markRevoked(conn.id, d.now())
+    await d.onDisconnected(me.business_id)
   }
-  await d.markRevoked(conn.id, d.now())
-  await d.onDisconnected(me.business_id)
   return res(200, { ok: true })
 }
 
