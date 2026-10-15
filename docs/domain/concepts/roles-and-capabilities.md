@@ -32,13 +32,13 @@ See *Gotchas* 1.
 | **Tier** | One of five built-in levels: `owner`, `manager`, `chef`, `kitchen_staff`, `front_of_house`. The coarse "kind" of a role. | `roles.base_tier` (DB `CHECK`); mirrored as text in `profiles.role` and `invites.role`; TS `USER_ROLES`, `ROLE_LABELS` `src/lib/constants.ts:16-22` |
 | **Role** | A named set of capabilities a business gives to members, built on a tier. Each business has 5 **preset** roles (`is_system = true`) and may add **custom** roles. Names are unique per business. | table `roles` (`supabase/migrations/20260714130000_rbac_schema.sql:12-21`) |
 | **Preset role** | Owner, Manager, Chef, Kitchen Staff, Front of House — seeded for every business. Can be renamed and have capabilities edited; cannot be deleted. | trigger `trg_seed_business_roles` → `seed_business_roles()` on `businesses` insert (`20260714130200_rbac_functions.sql:28-44`); delete blocked by `guard_role_delete()` |
-| **Capability** | One permission. 14 exist (below). Unknown names are rejected. | `capability_catalog`; trigger `validate_role_capabilities`; TS `CAPS` `src/lib/permissions.ts:10-18` |
+| **Capability** | One permission. 15 exist (below). Unknown names are rejected. | `capability_catalog`; trigger `validate_role_capabilities`; TS `CAPS` `src/lib/permissions.ts:10-18` |
 | **Override** | Per-person exception: `granted = true` adds a capability on top of the role, `false` removes it. No row = inherit. | `member_capability_overrides` (`20260714160000_member_capability_overrides.sql:3-12`) |
 | **Site membership** | Which sites a member works at. Many-to-many. `profiles.site_id` is kept pointing at one of them ("primary site"). | `member_sites`; trigger `keep_primary_site` (`20260714140000_member_sites.sql:3-45`) |
 | **Group admin** | Sees every site of the business (estate-wide scope). Not an admin *grant* — it is about scope — but the DB treats group admins like owners in two guards (Gotcha 4). | `profiles.is_group_admin`; `am_i_group_admin()` (`20260712100100_multisite_rls_helpers.sql:4-7`) |
 | **Legacy role text** | `profiles.role` — the tier as text. "Legacy" in name only: it is still what most screens, edge functions and several SQL helpers gate on (#55) — do not drop it. Two-way synced with `profiles.role_id`. | trigger `trg_sync_profile_role` → `sync_profile_role_text()` (`20260716173000_profile_role_two_way_sync.sql:14-54`) |
 
-## The 14 capabilities and the presets
+## The 15 capabilities and the presets
 
 | Capability | UI label (`CAP_LABEL`) | Owner | Manager | Chef | Kitchen Staff | Front of House | Enforced in DB? |
 |---|---|:-:|:-:|:-:|:-:|:-:|---|
@@ -52,6 +52,7 @@ See *Gotchas* 1.
 | `manage_documents` | Add/edit documents | ✓ | ✓ | | | | RLS on documents (see [Document](../entities/document.md)) |
 | `manage_suppliers` | Manage suppliers | ✓ | ✓ | | | | RLS on suppliers |
 | `manage_team` | Manage team & invites | ✓ | ✓ | | | | RLS on invites, profiles (update), training_records |
+| `manage_reviews` | Manage Google reviews | ✓ | ✓ | | | | RLS on the reviews tables (`can_manage_reviews`) and `issue_group_link_code('telegram_reviews')`; see [Google reviews](google-reviews.md) |
 | `view_documents` | View documents | ✓ | | | | | RLS on documents — **much wider than the label**, Gotcha 3 |
 | `manage_sites` | Manage sites | ✓ | | | | | RLS `sites_write` |
 | `manage_roles` | Manage roles | ✓ | | | | | RLS on overrides (and `roles` in the repo, not live — Gotcha 6) |
@@ -138,6 +139,7 @@ must match (comment at `permissions.ts:62-69`). Live data, 2026-10-13: 434 roles
 
 - 2026-08-02 `rbac_member_access_guard` — only owner/group admin may edit site memberships or grant group admin.
 - 2026-07-17 `guard_owner_role_assignment`; 2026-07-16 two-way role text sync.
+- 2026-10-15 `manage_reviews` added (15th capability; Owner and Manager presets, backfilled by migration `20261015120000_google_reviews.sql`; branch `claude/restaurant-reviews-bot-iquz2t`, not yet in production).
 - 2026-07-14 RBAC: `roles`, presets, `has_capability`, overrides, `member_sites`, RLS swap from tier to capabilities.
 - 2026-07-07/12 multisite foundation: `sites`, `is_group_admin`, site-scoped RLS.
 - No dedicated RBAC spec; rationale lives in the migration header comments. Paywall vs tier: `docs/ENTITLEMENT_MATRIX.md`.
