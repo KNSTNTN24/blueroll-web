@@ -62,6 +62,8 @@ alter table public.channel_group_link_codes add constraint channel_group_link_co
 drop policy if exists "review managers read review groups" on public.channel_groups;
 create policy "review managers read review groups" on public.channel_groups for select
   using (channel = 'telegram_reviews' and public.can_manage_reviews(business_id));
+-- Relies on the existing live trigger trg_guard_channel_groups_update (migrations 20261011130000 / 20261012140000),
+-- which limits client updates to `alerts` and setting unlinked_at once, for every channel including telegram_reviews.
 drop policy if exists "review managers update review groups" on public.channel_groups;
 create policy "review managers update review groups" on public.channel_groups for update
   using (channel = 'telegram_reviews' and public.can_manage_reviews(business_id))
@@ -227,8 +229,8 @@ create policy "review managers read routes" on public.review_routes for select u
 drop policy if exists "review managers add routes" on public.review_routes;
 create policy "review managers add routes" on public.review_routes for insert with check (
   public.can_manage_reviews(business_id)
-  and exists (select 1 from public.sites s where s.id = site_id and s.business_id = review_routes.business_id and s.removed_at is null)
-  and exists (select 1 from public.channel_groups g where g.id = group_id and g.business_id = review_routes.business_id
+  and exists (select 1 from public.sites s where s.id = review_routes.site_id and s.business_id = review_routes.business_id and s.removed_at is null)
+  and exists (select 1 from public.channel_groups g where g.id = review_routes.group_id and g.business_id = review_routes.business_id
                 and g.channel = 'telegram_reviews' and g.unlinked_at is null));
 drop policy if exists "review managers remove routes" on public.review_routes;
 create policy "review managers remove routes" on public.review_routes for delete using (public.can_manage_reviews(business_id));

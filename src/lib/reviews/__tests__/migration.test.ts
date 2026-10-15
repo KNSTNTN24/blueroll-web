@@ -26,7 +26,14 @@ describe('google reviews migration', () => {
     expect(sql).toMatch(/check \(channel in \('telegram','whatsapp','telegram_reviews'\)\)/)
     expect(sql).toMatch(/p_channel = 'telegram_reviews' and public\.can_manage_reviews\(v_biz\)/)
   })
-  it('has entitlement write gates on every client-writable table', () => {
-    for (const t of ['google_locations', 'review_routes', 'review_settings']) expect(sql).toContain(`on public.${t} as restrictive`)
+  it('has entitlement write gates on every client-writable table, per operation', () => {
+    expect(sql).toContain('create policy entitlement_write_gate_upd on public.google_locations as restrictive for update')
+    expect(sql).toContain('create policy entitlement_write_gate_ins on public.review_routes as restrictive for insert')
+    expect(sql).toContain('create policy entitlement_write_gate_ins on public.review_settings as restrictive for insert')
+    expect(sql).toContain('create policy entitlement_write_gate_upd on public.review_settings as restrictive for update')
+  })
+  it('documents that channel_groups client updates rely on the live guard trigger', () => {
+    expect(sql).toMatch(/-- Relies on the existing live trigger trg_guard_channel_groups_update/)
+    expect(sql).toMatch(/drop policy if exists "review managers update review groups" on public\.channel_groups;/)
   })
 })
