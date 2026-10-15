@@ -135,7 +135,7 @@ Telegram reviews groups reuse `channel_groups` (`channel = 'telegram_reviews'`) 
    ("Add members" on, `tg-reviews-bot.ts:32,100`). Treat the group as a staff-only space.
 5. **Old cards of an edited review are retired, not updated.** When the guest edits their review (new `version`), the old cards lose their buttons
    (`retireCards`, `sync.ts:63`) and a fresh card is sent.
-6. **Deleted-on-Google is detected late.** Only the daily full pass (≤ 20 pages, `sync.ts:106-111`) or a 404 at publish (`publish.ts:34`) marks a review `deleted`.
+6. **Deleted-on-Google is detected late.** Only the daily full pass (≤ 20 pages, `sync.ts:105-111`) or a 404 at publish (`publish.ts:35`) marks a review `deleted`.
 7. **WhatsApp is v1.1.** `review_edit_prompts` is Telegram-only; there is no WhatsApp reviews channel yet.
 8. **Incident pre-fill is v2.** "Log as complaint" on a food-safety review only opens `/incidents?site=…&review=…` (`reviews/page.tsx:92`); nothing on the incidents page reads the `site` or `review` parameters yet.
 9. **Open item: OAuth state is not bound to the browser session.** The callback route has no server-side session (the Supabase session lives in
