@@ -44,6 +44,8 @@ export function fakeReviewDeps(init: Partial<FakeState> = {}) {
     routes: [{ site_id: 's1', group_id: 'gr1' }], prompts: [], audits: [], notes: [], logs: [], entitled: true, managers: ['m1'],
     secrets: new Map([['sec1', 'rt1']]), ...init,
   }
+  // publishing_at lives beside the shared Review type (the real column is not part of it).
+  const publishingAt = new Map<string, string>()
   const rv = (id: string) => s.reviews.find((r) => r.id === id) ?? null
   const live = (g: RouteGroup & { unlinked: boolean }) => !g.unlinked
   const d: ReviewDeps = {
@@ -76,9 +78,17 @@ export function fakeReviewDeps(init: Partial<FakeState> = {}) {
     openReviewsForSites: async (b, sites, limit) => s.reviews.filter((r) => r.business_id === b && r.site_id && sites.includes(r.site_id) && ['new', 'drafted'].includes(r.status))
       .sort((a, c) => Date.parse(c.update_time) - Date.parse(a.update_time)).slice(0, limit),
     // Must stay a synchronous check-and-set (no await between read and write): the race test depends on it.
-    claimPublishing: async (id, v) => { const r = rv(id); if (!r || r.version !== v || !['new', 'drafted', 'skipped'].includes(r.status)) return false; r.status = 'publishing'; return true },
-    releasePublishing: async (id) => { const r = rv(id)!; if (r.status === 'publishing') r.status = 'drafted' },
-    markPublished: async (id, p) => { const r = rv(id)!; if (r.status !== 'publishing') return; Object.assign(r, { status: 'published', published_text: p.text, published_at: p.at, published_by_name: p.actor.name, google_reply: p.text, google_reply_time: p.at }) },
+    claimPublishing: async (id, v) => { const r = rv(id); if (!r || r.version !== v || !['new', 'drafted', 'skipped'].includes(r.status)) return false; r.status = 'publishing'; publishingAt.set(id, NOW.toISOString()); return true },
+    releasePublishing: async (id) => { const r = rv(id)!; publishingAt.delete(id); if (r.status === 'publishing') r.status = 'drafted' },
+    releaseStalePublishing: async (olderThan) => {
+      let n = 0
+      for (const r of s.reviews) {
+        const at = publishingAt.get(r.id)
+        if (r.status === 'publishing' && at && Date.parse(at) < olderThan.getTime()) { r.status = 'drafted'; publishingAt.delete(r.id); n++ }
+      }
+      return n
+    },
+    markPublished: async (id, p) => { const r = rv(id)!; if (r.status !== 'publishing') return; publishingAt.delete(id); Object.assign(r, { status: 'published', published_text: p.text, published_at: p.at, published_by_name: p.actor.name, google_reply: p.text, google_reply_time: p.at }) },
     markSkipped: async (id, a, at) => { const r = rv(id); if (!r || !['new', 'drafted'].includes(r.status)) return false; Object.assign(r, { status: 'skipped', skipped_by_name: a.name, skipped_at: at }); return true },
     setDrafted: async (id, p) => { const r = rv(id)!; if (['new', 'skipped'].includes(r.status)) r.status = 'drafted'; if (p.language !== undefined) r.language = p.language; if (p.flags) r.flags = p.flags },
     drafts: async (rid, v) => s.drafts.filter((x) => x.review_id === rid && x.review_version === v).sort((a, b) => a.draft_version - b.draft_version),
@@ -107,7 +117,7 @@ export function fakeReviewDeps(init: Partial<FakeState> = {}) {
     markRevoked: async (id) => { s.conns.find((c) => c.id === id)!.status = 'revoked' },
     cleanup: async () => {},
   }
-  return { d, s }
+  return { d, s, publishingAt }
 }
 
 export function fakeGoogle(o: { pages?: Record<string, { reviews: GReview[]; next: string | null }>; putFails?: GoogleError } = {}) {
@@ -129,10 +139,10 @@ export function fakeDrafter(replies: (string | null)[] = ['Hi Sarah, thank you f
 }
 
 export function fakeCtx(init: Partial<FakeState> = {}, o: { google?: Parameters<typeof fakeGoogle>[0]; replies?: (string | null)[]; flags?: string[]; tg?: Parameters<typeof fakeTgApi>[0] } = {}) {
-  const { d, s } = fakeReviewDeps(init)
+  const { d, s, publishingAt } = fakeReviewDeps(init)
   const { g, calls: gcalls } = fakeGoogle(o.google)
   const { draft, inputs } = fakeDrafter(o.replies, o.flags)
   const { api, calls } = fakeTgApi(o.tg)
   const ctx: Ctx = { d, google: g, tg: api, draft, appUrl: 'https://app.blueroll.app' }
-  return { ctx, s, gcalls, inputs, calls }
+  return { ctx, s, gcalls, inputs, calls, publishingAt }
 }

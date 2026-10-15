@@ -44,6 +44,8 @@ export interface ReviewDeps {
   claimPublishing(id: string, version: number, actor: Actor): Promise<boolean>
   /** publishing → drafted. */
   releasePublishing(id: string): Promise<void>
+  /** Status 'publishing' with publishing_at older than olderThan → 'drafted'; returns how many. */
+  releaseStalePublishing(olderThan: Date): Promise<number>
   /** publishing → published; also stores google_reply = text so the next sync sees no change. */
   markPublished(id: string, p: { text: string; at: string; actor: Actor }): Promise<void>
   /** new|drafted → skipped. Returns whether it applied. */
