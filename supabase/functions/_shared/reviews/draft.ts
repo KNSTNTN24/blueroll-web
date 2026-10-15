@@ -1,7 +1,9 @@
 // supabase/functions/_shared/reviews/draft.ts
 // Spec §7: one Claude call per review version → { language, flags, reply }. Pure request/parse + a thin fetch wrapper.
 // Food-safety flags replace the AI text with the cautious template (spec §7, success criteria).
-import { cleanUserText, toolInput } from '../assistant-core.ts'
+// Structured outputs (output_config.format), not a forced tool: this model rejects tool_choice 'tool'/'any' with a 400.
+// Adaptive thinking is the model default and shares max_tokens; thinking blocks are ignored when parsing.
+import { cleanUserText } from '../assistant-core.ts'
 import type { ReviewSettings } from './types.ts'
 
 /** The one place the drafting model is named (spec §2 "Drafts"). */
@@ -51,28 +53,42 @@ export function buildDraftRequest(i: DraftInput) {
   if (i.differentFrom) parts.push(`Write it with different wording from:\n<<<\n${cleanUserText(i.differentFrom)}\n>>>`)
   return {
     model: DRAFT_MODEL,
-    max_tokens: 800,
+    max_tokens: 2000,
     system,
-    tools: [{
-      name: 'record_reply',
-      description: 'Record the reply to the review',
-      input_schema: {
-        type: 'object',
-        properties: {
-          language: { type: 'string', description: 'ISO 639-1 code of the review language' },
-          flags: { type: 'array', items: { type: 'string', enum: [...FLAGS] } },
-          reply: { type: 'string' },
+    output_config: {
+      effort: 'low',
+      format: {
+        type: 'json_schema',
+        schema: {
+          type: 'object',
+          properties: {
+            language: { type: 'string' },
+            flags: { type: 'array', items: { type: 'string', enum: [...FLAGS] } },
+            reply: { type: 'string' },
+          },
+          required: ['language', 'flags', 'reply'],
+          additionalProperties: false,
         },
-        required: ['language', 'flags', 'reply'],
       },
-    }],
-    tool_choice: { type: 'tool', name: 'record_reply' },
+    },
     messages: [{ role: 'user', content: parts.join('\n\n') }],
   }
 }
 
+/** The JSON object in the first text block (thinking blocks skipped), or null. */
+function outputJson(resp: unknown): Record<string, unknown> | null {
+  const content = (resp as { content?: unknown } | null)?.content
+  if (!Array.isArray(content)) return null
+  const block = content.find((b) => (b as { type?: unknown })?.type === 'text') as { text?: unknown } | undefined
+  if (typeof block?.text !== 'string') return null
+  try {
+    const v = JSON.parse(block.text)
+    return typeof v === 'object' && v !== null && !Array.isArray(v) ? v as Record<string, unknown> : null
+  } catch { return null }
+}
+
 export function parseDraft(resp: unknown): DraftResult | null {
-  const inp = toolInput(resp, 'record_reply')
+  const inp = outputJson(resp)
   if (!inp) return null
   const reply = typeof inp.reply === 'string' ? inp.reply.trim() : ''
   if (!reply) return null
@@ -102,7 +118,13 @@ export function makeDrafter(cfg: { apiKey: string; fetchFn?: typeof fetch }): Dr
         console.error('review draft failed', r.status)
         return null
       }
-      const p = parseDraft(await r.json().catch(() => null))
+      const body = await r.json().catch(() => null)
+      const stop = (body as { stop_reason?: unknown } | null)?.stop_reason
+      if (stop === 'refusal' || stop === 'max_tokens') {
+        console.error('review draft failed', stop)
+        return null
+      }
+      const p = parseDraft(body)
       if (!p) {
         console.error('review draft failed', 'parse')
         return null

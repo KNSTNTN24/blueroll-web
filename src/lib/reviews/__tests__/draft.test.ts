@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
-  buildDraftRequest, parseDraft, cautiousReply, makeDrafter, isSafety, DRAFT_MODEL, DRAFT_TIMEOUT_MS, MAX_REPLY_CHARS, type DraftInput,
+  buildDraftRequest, parseDraft, cautiousReply, makeDrafter, isSafety, DRAFT_MODEL, FLAGS, DRAFT_TIMEOUT_MS, MAX_REPLY_CHARS, type DraftInput,
 } from '../../../../supabase/functions/_shared/reviews/draft'
 import { DEFAULT_SETTINGS } from '../../../../supabase/functions/_shared/reviews/types'
 
@@ -13,13 +13,28 @@ const input = (o: Partial<DraftInput> = {}): DraftInput => ({
   businessName: 'Casa-Mia', siteName: 'Wharf Side', stars: 2, comment: 'Waited 40 minutes, pasta was cold',
   reviewer: 'Sarah Kim', settings: { ...DEFAULT_SETTINGS, sign_off: '— The Casa-Mia team' }, previousReply: null, differentFrom: null, ...o,
 })
-const toolResp = (inp: unknown) => ({ content: [{ type: 'tool_use', name: 'record_reply', input: inp }] })
+// Structured-output response: adaptive thinking may come first; the JSON is the first text block.
+const toolResp = (inp: unknown, stop_reason = 'end_turn') => ({
+  stop_reason, content: [{ type: 'thinking', thinking: '{"reply":"not this"}', signature: 'x' }, { type: 'text', text: JSON.stringify(inp) }],
+})
 
 describe('buildDraftRequest', () => {
-  it('uses the model constant, forces the tool, and puts the rules in the system prompt', () => {
+  it('uses the model constant, structured outputs (no forced tool), and puts the rules in the system prompt', () => {
     const r = buildDraftRequest(input())
     expect(r.model).toBe(DRAFT_MODEL)
-    expect(r.tool_choice).toEqual({ type: 'tool', name: 'record_reply' })
+    expect(r).not.toHaveProperty('tools')
+    expect(r).not.toHaveProperty('tool_choice')
+    expect(r).not.toHaveProperty('thinking')
+    expect(r.max_tokens).toBe(2000)
+    expect(r.output_config.effort).toBe('low')
+    expect(r.output_config.format).toEqual({
+      type: 'json_schema',
+      schema: {
+        type: 'object',
+        properties: { language: { type: 'string' }, flags: { type: 'array', items: { type: 'string', enum: [...FLAGS] } }, reply: { type: 'string' } },
+        required: ['language', 'flags', 'reply'], additionalProperties: false,
+      },
+    })
     expect(r.system).toContain("reply in the review's language")
     expect(r.system).toContain('at most 120 words')
     expect(r.system).toContain('never promise refunds')
@@ -44,9 +59,15 @@ describe('parseDraft', () => {
     expect(parseDraft(toolResp({ language: 'IT', flags: ['allergy', 'nonsense', 'allergy'], reply: '  Ciao Sarah  ' })))
       .toEqual({ language: 'it', flags: ['allergy'], reply: 'Ciao Sarah' })
   })
-  it('empty reply or no tool call → null', () => {
+  it('empty reply, no text block or invalid JSON → null', () => {
     expect(parseDraft(toolResp({ language: 'en', flags: [], reply: '' }))).toBeNull()
+    expect(parseDraft({ content: [{ type: 'thinking', thinking: 'x' }] })).toBeNull()
     expect(parseDraft({ content: [{ type: 'text', text: 'hi' }] })).toBeNull()
+    expect(parseDraft({ content: [{ type: 'text', text: '["a"]' }] })).toBeNull()
+    expect(parseDraft(null)).toBeNull()
+  })
+  it('ignores thinking blocks and reads the first text block', () => {
+    expect(parseDraft(toolResp({ language: 'en', flags: [], reply: 'Hi Sarah' }))).toEqual({ language: 'en', flags: [], reply: 'Hi Sarah' })
   })
   it('caps the reply length', () => expect(parseDraft(toolResp({ language: 'en', flags: [], reply: 'x'.repeat(5000) }))!.reply).toHaveLength(MAX_REPLY_CHARS))
 })
@@ -98,6 +119,32 @@ describe('makeDrafter diagnostics', () => {
     expect(errSpy).toHaveBeenCalledWith('review draft failed', 'parse')
     expect(loggedText()).not.toContain(KEY)
     expect(loggedText()).not.toContain('Waited 40 minutes')
+  })
+  it('refusal or max_tokens stop → null, logged with the stop reason', async () => {
+    for (const stop of ['refusal', 'max_tokens']) {
+      errSpy.mockClear()
+      const fetchFn = (async () => new Response(JSON.stringify(toolResp({ language: 'en', flags: [], reply: 'Hi Sarah' }, stop)), { status: 200 })) as unknown as typeof fetch
+      expect(await makeDrafter({ apiKey: KEY, fetchFn })(input())).toBeNull()
+      expect(errSpy).toHaveBeenCalledWith('review draft failed', stop)
+    }
+  })
+  it('invalid JSON in the text block → null, logged as parse', async () => {
+    const body = { stop_reason: 'end_turn', content: [{ type: 'text', text: '{"language": "en", "reply": ' }] }
+    const fetchFn = (async () => new Response(JSON.stringify(body), { status: 200 })) as unknown as typeof fetch
+    expect(await makeDrafter({ apiKey: KEY, fetchFn })(input())).toBeNull()
+    expect(errSpy).toHaveBeenCalledWith('review draft failed', 'parse')
+  })
+  it('the request body has no tools and asks for low effort JSON output', async () => {
+    let body: Record<string, unknown> = {}
+    const fetchFn = (async (_u: string, init: RequestInit) => {
+      body = JSON.parse(String(init.body))
+      return new Response(JSON.stringify(toolResp({ language: 'en', flags: [], reply: 'Hi Sarah' })), { status: 200 })
+    }) as unknown as typeof fetch
+    await makeDrafter({ apiKey: KEY, fetchFn })(input())
+    expect(body.tools).toBeUndefined()
+    expect(body.tool_choice).toBeUndefined()
+    expect(body.thinking).toBeUndefined()
+    expect(body.output_config).toMatchObject({ effort: 'low', format: { type: 'json_schema' } })
   })
   it('thrown error logs its name, never the key', async () => {
     const d = makeDrafter({ apiKey: KEY, fetchFn: (async () => { throw new TypeError(`fetch failed ${KEY}`) }) as unknown as typeof fetch })
