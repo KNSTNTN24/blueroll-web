@@ -3,6 +3,7 @@ import type { ReviewDeps, Ctx } from '../../../../../supabase/functions/_shared/
 import type { Google, GReview } from '../../../../../supabase/functions/_shared/reviews/google'
 import { GoogleError } from '../../../../../supabase/functions/_shared/reviews/google'
 import type { DraftFn, DraftInput } from '../../../../../supabase/functions/_shared/reviews/draft'
+import type { ConnectDeps, OAuthState, PrevLocation } from '../../../../../supabase/functions/_shared/reviews/connect'
 import {
   DEFAULT_SETTINGS, type Actor, type AuditRow, type Connection, type Draft, type EditPrompt, type Location, type Review,
   type ReviewCard, type RouteGroup, type SiteLite,
@@ -35,14 +36,14 @@ export interface FakeState {
   conns: Connection[]; locs: Location[]; reviews: Review[]; drafts: Draft[]; cards: (ReviewCard & { group_id: string })[]
   groups: (RouteGroup & { unlinked: boolean })[]; routes: { site_id: string; group_id: string }[]; prompts: EditPrompt[]
   audits: AuditRow[]; notes: { user_id: string; title: string; message: string; link: string }[]; logs: string[]
-  entitled: boolean; managers: string[]; secrets: Map<string, string>
+  entitled: boolean; managers: string[]; secrets: Map<string, string>; states: OAuthState[]
 }
 
 export function fakeReviewDeps(init: Partial<FakeState> = {}) {
   const s: FakeState = {
     conns: [{ ...CONN }], locs: [{ ...LOC }], reviews: [], drafts: [], cards: [], groups: [{ id: 'gr1', business_id: 'b1', chat_id: '-100', unlinked: false }],
     routes: [{ site_id: 's1', group_id: 'gr1' }], prompts: [], audits: [], notes: [], logs: [], entitled: true, managers: ['m1'],
-    secrets: new Map([['sec1', 'rt1']]), ...init,
+    secrets: new Map([['sec1', 'rt1']]), states: [], ...init,
   }
   // publishing_at lives beside the shared Review type (the real column is not part of it).
   const publishingAt = new Map<string, string>()
@@ -118,6 +119,53 @@ export function fakeReviewDeps(init: Partial<FakeState> = {}) {
     cleanup: async () => {},
   }
   return { d, s, publishingAt }
+}
+
+/** ConnectDeps over the same state as fakeReviewDeps (mirrors makeConnectDeps), for reconnect tests. */
+export function fakeConnectDeps(s: FakeState): ConnectDeps {
+  let n = 0
+  return {
+    now: () => NOW,
+    saveState: async (st) => { s.states.push({ ...st }) },
+    takeState: async (st, now) => {
+      const i = s.states.findIndex((x) => x.state === st && Date.parse(x.expires_at) > now.getTime())
+      return i < 0 ? null : s.states.splice(i, 1)[0]
+    },
+    liveConnection: async (b) => s.conns.find((c) => c.business_id === b && c.status !== 'revoked') ?? null,
+    storeToken: async (t) => { const id = `sec-new-${++n}`; s.secrets.set(id, t); return id },
+    readToken: async (id) => s.secrets.get(id) ?? null,
+    deleteToken: async (id) => { s.secrets.delete(id) },
+    insertConnection: async (c) => {
+      const row: Connection = { id: `c-new-${++n}`, business_id: c.business_id, google_email: c.google_email, vault_secret_id: c.vault_secret_id, status: 'active', connected_at: c.now.toISOString(), last_sync_at: null }
+      s.conns.push(row); return { ...row }
+    },
+    markRevoked: async (id) => { const c = s.conns.find((x) => x.id === id)!; c.status = 'revoked'; c.vault_secret_id = null },
+    // s.locs is in creation order: the last row per Google location is the newest.
+    previousMapping: async (b) => {
+      const m = new Map<string, PrevLocation>()
+      for (const l of s.locs.filter((x) => x.business_id === b)) {
+        m.set(l.gbp_location, { site_id: l.site_id, enabled: l.enabled, enabled_at: l.enabled_at, last_review_update_time: l.last_review_update_time, last_full_pass_at: l.last_full_pass_at })
+      }
+      return m
+    },
+    upsertLocations: async (rows) => {
+      for (const r of rows) {
+        const ex = s.locs.find((l) => l.connection_id === r.connection_id && l.gbp_location === r.gbp_location)
+        if (!ex) { s.locs.push({ ...r, id: `l-new-${++n}` }); continue }
+        Object.assign(ex, { gbp_account: r.gbp_account, title: r.title, address: r.address, postcode: r.postcode, maps_uri: r.maps_uri, can_reply: r.can_reply, ...(r.can_reply ? {} : { enabled: false }) })
+      }
+    },
+    repointReviews: async (b, cid) => {
+      for (const l of s.locs.filter((x) => x.connection_id === cid)) {
+        const older = s.locs.filter((x) => x.business_id === b && x.gbp_location === l.gbp_location && x.id !== l.id).map((x) => x.id)
+        for (const r of s.reviews) {
+          if (r.business_id === b && r.location_id && older.includes(r.location_id)) { r.location_id = l.id; if (l.site_id) r.site_id = l.site_id }
+        }
+      }
+    },
+    sites: async () => [SITE],
+    onDisconnected: async () => {},
+  }
 }
 
 export function fakeGoogle(o: { pages?: Record<string, { reviews: GReview[]; next: string | null }>; putFails?: GoogleError } = {}) {

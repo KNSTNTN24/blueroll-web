@@ -4,7 +4,7 @@
 import { pageAll } from '../channels/db.ts'
 import { GoogleError, type Google } from './google.ts'
 import type { ReviewDeps } from './deps.ts'
-import type { ConnectDeps } from './connect.ts'
+import type { ConnectDeps, PrevLocation } from './connect.ts'
 import { DEFAULT_SETTINGS, type Connection, type Review } from './types.ts'
 
 // deno-lint-ignore no-explicit-any
@@ -193,10 +193,17 @@ export function makeConnectDeps(admin: Any, onDisconnected: (b: string) => Promi
       await one(admin.from('google_connections').update({ status: 'revoked', revoked_at: now.toISOString(), vault_secret_id: null }).eq('id', id))
     },
     previousMapping: async (b) => {
-      const rows = (await one(admin.from('google_locations').select('gbp_location, site_id, enabled').eq('business_id', b)
+      const rows = (await one(admin.from('google_locations')
+        .select('gbp_location, site_id, enabled, enabled_at, last_review_update_time, last_full_pass_at').eq('business_id', b)
         .order('created_at', { ascending: false }))) ?? []
-      const m = new Map<string, { site_id: string | null; enabled: boolean }>()
-      for (const r of rows as Any[]) if (!m.has(r.gbp_location)) m.set(r.gbp_location, { site_id: r.site_id, enabled: !!r.enabled })
+      const m = new Map<string, PrevLocation>()
+      for (const r of rows as Any[]) {
+        if (m.has(r.gbp_location)) continue
+        m.set(r.gbp_location, {
+          site_id: r.site_id, enabled: !!r.enabled, enabled_at: r.enabled_at ?? null,
+          last_review_update_time: r.last_review_update_time ?? null, last_full_pass_at: r.last_full_pass_at ?? null,
+        })
+      }
       return m
     },
     upsertLocations: async (rows) => {
@@ -207,6 +214,16 @@ export function makeConnectDeps(admin: Any, onDisconnected: (b: string) => Promi
           gbp_account: r.gbp_account, title: r.title, address: r.address, postcode: r.postcode, maps_uri: r.maps_uri, can_reply: r.can_reply,
           ...(r.can_reply ? {} : { enabled: false }),
         }).eq('id', ex.id))
+      }
+    },
+    // No UPDATE … FROM over PostgREST: one select of the older rows and one conditional update per location.
+    repointReviews: async (b, cid) => {
+      for (const l of ((await one(admin.from('google_locations').select('id, gbp_location, site_id').eq('connection_id', cid))) ?? []) as Any[]) {
+        const older = ((await one(admin.from('google_locations').select('id').eq('business_id', b).eq('gbp_location', l.gbp_location)
+          .neq('id', l.id))) ?? []).map((x: Any) => x.id as string)
+        if (!older.length) continue
+        await one(admin.from('reviews').update({ location_id: l.id, ...(l.site_id ? { site_id: l.site_id } : {}) })
+          .eq('business_id', b).in('location_id', older))
       }
     },
     sites: async (b) => ((await one(admin.from('sites').select('id, name, timezone, postcode, status').eq('business_id', b).is('removed_at', null))) ?? [])

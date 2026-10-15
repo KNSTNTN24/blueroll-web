@@ -112,12 +112,42 @@ describe('makeConnectDeps', () => {
     expect(ops).toContain('is("used_at",null)')
     expect(ops).toContain('gt("expires_at","2026-10-15T12:00:00.000Z")')
   })
-  it('previousMapping keeps the newest row per Google location', async () => {
-    const { admin } = recorder(() => ({ data: [
-      { gbp_location: 'locations/9', site_id: 's-new', enabled: true },
-      { gbp_location: 'locations/9', site_id: 's-old', enabled: false },
+  it('previousMapping keeps the newest row per Google location, with its start and cursors', async () => {
+    const { admin, queries } = recorder(() => ({ data: [
+      { gbp_location: 'locations/9', site_id: 's-new', enabled: true, enabled_at: '2026-03-01T00:00:00Z', last_review_update_time: '2026-09-30T08:00:00Z', last_full_pass_at: '2026-09-30T00:00:00Z' },
+      { gbp_location: 'locations/9', site_id: 's-old', enabled: false, enabled_at: null, last_review_update_time: null, last_full_pass_at: null },
     ], error: null }))
     const m = await makeConnectDeps(admin, async () => {}).previousMapping('b1')
-    expect(m.get('locations/9')).toEqual({ site_id: 's-new', enabled: true })
+    expect(m.get('locations/9')).toEqual({ site_id: 's-new', enabled: true, enabled_at: '2026-03-01T00:00:00Z', last_review_update_time: '2026-09-30T08:00:00Z', last_full_pass_at: '2026-09-30T00:00:00Z' })
+    expect(queries[0].ops.join(' ')).toContain('enabled_at, last_review_update_time, last_full_pass_at')
+  })
+  it('upsertLocations inserts a new row with its carried start and cursors', async () => {
+    const { admin, queries } = recorder((q) => ({ data: q.ops.some((o) => o.startsWith('maybeSingle')) ? null : [], error: null }))
+    await makeConnectDeps(admin, async () => {}).upsertLocations([{
+      connection_id: 'c2', business_id: 'b1', gbp_account: 'accounts/1', gbp_location: 'locations/9', title: 'T', address: '', postcode: '',
+      maps_uri: null, can_reply: true, site_id: 's1', enabled: true, enabled_at: '2026-03-01T00:00:00Z', last_review_update_time: '2026-09-30T08:00:00Z', last_full_pass_at: null,
+    }])
+    const ins = queries.find((q) => q.ops.some((o) => o.startsWith('insert(')))!
+    expect(ins.ops.join(' ')).toContain('"enabled_at":"2026-03-01T00:00:00Z","last_review_update_time":"2026-09-30T08:00:00Z"')
+  })
+  it('repointReviews moves reviews of older rows of the same Google location to the new row (and its site)', async () => {
+    const { admin, queries } = recorder((q) => {
+      const ops = q.ops.join(' ')
+      if (q.table === 'google_locations' && ops.includes('eq("connection_id","c2")')) return { data: [{ id: 'l2', gbp_location: 'locations/9', site_id: 's1' }, { id: 'l3', gbp_location: 'locations/7', site_id: null }], error: null }
+      if (q.table === 'google_locations' && ops.includes('eq("gbp_location","locations/9")')) return { data: [{ id: 'l1' }, { id: 'l0' }], error: null }
+      if (q.table === 'google_locations' && ops.includes('eq("gbp_location","locations/7")')) return { data: [{ id: 'l5' }], error: null }
+      return { data: [], error: null }
+    })
+    await makeConnectDeps(admin, async () => {}).repointReviews('b1', 'c2')
+    const upd = queries.filter((q) => q.table === 'reviews').map((q) => q.ops.join(' '))
+    expect(upd).toHaveLength(2)
+    expect(upd[0]).toContain('update({"location_id":"l2","site_id":"s1"})')
+    expect(upd[0]).toContain('eq("business_id","b1")')
+    expect(upd[0]).toContain('in("location_id",["l1","l0"])')
+    expect(upd[1]).toContain('update({"location_id":"l3"})')
+    expect(upd[1]).toContain('in("location_id",["l5"])')
+    const olderQ = queries.filter((q) => q.table === 'google_locations' && q.ops.join(' ').includes('gbp_location","locations/9'))[0].ops.join(' ')
+    expect(olderQ).toContain('eq("business_id","b1")')
+    expect(olderQ).toContain('neq("id","l2")')
   })
 })

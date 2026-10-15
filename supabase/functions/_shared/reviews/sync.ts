@@ -24,8 +24,9 @@ const after = (a: string, b: string) => Date.parse(a) > Date.parse(b)
 const errMsg = (e: unknown) => String((e as Error)?.message ?? e).slice(0, 200)
 
 export function reconcile(existing: Review | null, g: GReview, loc: Location, conn: Connection): Change {
-  // Spec §2 "History on connect"; Review Focus 2: a location switched on later counts from its own start.
-  const since = loc.enabled_at && after(loc.enabled_at, conn.connected_at) ? loc.enabled_at : conn.connected_at
+  // Spec §2 "History on connect"; Review Focus 2: a location counts from its own start. That start wins even when it is
+  // earlier than connected_at: a reconnect carries enabled_at, so reviews from while it was disconnected still notify.
+  const since = loc.enabled_at ?? conn.connected_at
   const fresh = after(g.updateTime, since)
   const where = { location_id: loc.id, site_id: loc.site_id ?? existing?.site_id ?? null }
   if (!existing) {

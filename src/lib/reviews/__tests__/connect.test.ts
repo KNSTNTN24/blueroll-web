@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { handleConnect, pkceChallenge, randomToken, type ConnectDeps, type OAuthState, type LocationUpsert } from '../../../../supabase/functions/_shared/reviews/connect'
+import { handleConnect, pkceChallenge, randomToken, type ConnectDeps, type OAuthState, type LocationUpsert, type PrevLocation } from '../../../../supabase/functions/_shared/reviews/connect'
 import { GoogleError, GOOGLE_SCOPE_MANAGE, type Google, type GLocation } from '../../../../supabase/functions/_shared/reviews/google'
 import type { Connection } from '../../../../supabase/functions/_shared/reviews/types'
 
@@ -9,10 +9,11 @@ afterEach(() => { vi.restoreAllMocks() })
 const NOW = new Date('2026-10-15T12:00:00Z')
 const ME = { profile_id: 'p1', business_id: 'b1', name: 'Anna S.' }
 
-function fakeDeps(o: { states?: OAuthState[]; conns?: Connection[]; prevMap?: [string, { site_id: string | null; enabled: boolean }][] } = {}) {
+type PrevIn = Pick<PrevLocation, 'site_id' | 'enabled'> & Partial<PrevLocation>
+function fakeDeps(o: { states?: OAuthState[]; conns?: Connection[]; prevMap?: [string, PrevIn][] } = {}) {
   const s = {
     states: o.states ?? [], conns: o.conns ?? [] as Connection[], secrets: new Map<string, string>([['sec-old', 'rt-old']]),
-    locations: [] as LocationUpsert[], disconnected: [] as string[],
+    locations: [] as LocationUpsert[], disconnected: [] as string[], repointed: [] as string[],
   }
   const d: ConnectDeps = {
     now: () => NOW,
@@ -27,27 +28,28 @@ function fakeDeps(o: { states?: OAuthState[]; conns?: Connection[]; prevMap?: [s
     deleteToken: async (id) => { s.secrets.delete(id) },
     insertConnection: async (c) => { const row: Connection = { id: `c${s.conns.length + 1}`, business_id: c.business_id, google_email: c.google_email, vault_secret_id: c.vault_secret_id, status: 'active', connected_at: c.now.toISOString(), last_sync_at: null }; s.conns.push(row); return row },
     markRevoked: async (id) => { const c = s.conns.find((x) => x.id === id)!; c.status = 'revoked' },
-    previousMapping: async () => new Map(o.prevMap ?? []),
+    previousMapping: async () => new Map((o.prevMap ?? []).map(([k, v]) => [k, { enabled_at: null, last_review_update_time: null, last_full_pass_at: null, ...v }])),
     upsertLocations: async (rows) => { s.locations.push(...rows) },
+    repointReviews: async (b, cid) => { s.repointed.push(`${b} ${cid}`) },
     sites: async () => [{ id: 'site1', name: 'Wharf Side', postcode: 'N1 7GR', timezone: 'Europe/London' }],
     onDisconnected: async (b) => { s.disconnected.push(b) },
   }
   return { d, s }
 }
 
-function fakeGoogle(o: { scopes?: string[]; refresh?: string | null; accounts?: string[]; locs?: Record<string, GLocation[]>; vom?: Record<string, boolean | 'err'>; exchangeFails?: boolean } = {}) {
+function fakeGoogle(o: { scopes?: readonly string[]; refresh?: string | null; accounts?: readonly string[]; locs?: Record<string, GLocation[]>; vom?: Record<string, boolean | 'err'>; exchangeFails?: boolean } = {}) {
   const calls: string[] = []
   const g: Google = {
     authUrl: (st, ch) => `https://accounts.google.com/auth?state=${st}&code_challenge=${ch}`,
     exchangeCode: async (code, ver) => {
       calls.push(`exchange ${code} ${ver}`)
       if (o.exchangeFails) throw new GoogleError('bad_request', 400, 'invalid_grant')
-      return { accessToken: 'at', refreshToken: o.refresh === undefined ? 'rt-new' : o.refresh, scopes: o.scopes ?? [GOOGLE_SCOPE_MANAGE, 'openid', 'email'] }
+      return { accessToken: 'at', refreshToken: o.refresh === undefined ? 'rt-new' : o.refresh, scopes: [...(o.scopes ?? [GOOGLE_SCOPE_MANAGE, 'openid', 'email'])] }
     },
     refresh: async (rt) => { calls.push(`refresh ${rt}`); return 'at2' },
     revoke: async (t) => { calls.push(`revoke ${t}`) },
     email: async () => 'owner@casamia.co.uk',
-    accounts: async () => o.accounts ?? ['accounts/1'],
+    accounts: async () => [...(o.accounts ?? ['accounts/1'])],
     locations: async (_at, a) => (o.locs ?? { 'accounts/1': [{ name: 'locations/9', title: 'Casa-Mia Wharf Side', address: '1 Wharf Rd, N1 7GR', postcode: 'N1 7GR', mapsUri: 'https://maps/9' }] })[a] ?? [],
     canReply: async (_at, l) => { const v = (o.vom ?? {})[l] ?? true; if (v === 'err') throw new GoogleError('not_found', 404, 'x'); return v },
     reviews: async () => ({ reviews: [], next: null }),
@@ -244,5 +246,34 @@ describe('fix round 1', () => {
   it('finish with error and an unknown state → denied', async () => {
     const { d } = fakeDeps(); const { g } = fakeGoogle()
     expect((await handleConnect(d, g, null, { action: 'finish', state: 'nope', error: 'access_denied' })).body).toEqual({ error: 'denied' })
+  })
+})
+
+describe('reconnect carries location state (C2, I2)', () => {
+  const PREV: PrevIn = { site_id: 'site1', enabled: true, enabled_at: '2026-03-01T00:00:00Z', last_review_update_time: '2026-09-30T08:00:00Z', last_full_pass_at: '2026-09-30T00:00:00Z' }
+  it('finish carries site, enabled, enabled_at and both cursors from the previous row, then re-points reviews', async () => {
+    const { d, s } = fakeDeps({ states: [stateX()], conns: [liveConn()], prevMap: [['locations/9', PREV]] }); const { g } = fakeGoogle()
+    expect((await handleConnect(d, g, null, fin)).body).toEqual({ result: 'connected' })
+    expect(s.locations[0]).toMatchObject({
+      connection_id: 'c2', site_id: 'site1', enabled: true, enabled_at: '2026-03-01T00:00:00Z',
+      last_review_update_time: '2026-09-30T08:00:00Z', last_full_pass_at: '2026-09-30T00:00:00Z',
+    })
+    expect(s.repointed).toEqual(['b1 c2'])
+  })
+  it('an enabled location without a previous enabled_at gets now', async () => {
+    const { d, s } = fakeDeps({ states: [stateX()], prevMap: [['locations/9', { site_id: 'site1', enabled: true }]] }); const { g } = fakeGoogle()
+    await handleConnect(d, g, null, fin)
+    expect(s.locations[0]).toMatchObject({ enabled: true, enabled_at: NOW.toISOString() })
+  })
+  it('a location with no previous row stays off with empty state', async () => {
+    const { d, s } = fakeDeps({ states: [stateX()] }); const { g } = fakeGoogle()
+    await handleConnect(d, g, null, fin)
+    expect(s.locations[0]).toMatchObject({ enabled: false, enabled_at: null, last_review_update_time: null, last_full_pass_at: null })
+  })
+  it('refresh also re-points (no-op when nothing is left behind) and keeps the carried state', async () => {
+    const { d, s } = fakeDeps({ conns: [liveConn()], prevMap: [['locations/9', PREV]] }); const { g } = fakeGoogle()
+    await handleConnect(d, g, ME, { action: 'refresh' })
+    expect(s.locations[0]).toMatchObject({ enabled_at: '2026-03-01T00:00:00Z', last_review_update_time: '2026-09-30T08:00:00Z' })
+    expect(s.repointed).toEqual(['b1 c0'])
   })
 })

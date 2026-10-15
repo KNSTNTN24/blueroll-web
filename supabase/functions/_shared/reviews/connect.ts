@@ -7,7 +7,9 @@ import { suggestSite } from './match.ts'
 import type { Connection, Location, SiteLite } from './types.ts'
 
 export interface OAuthState { state: string; business_id: string; profile_id: string; code_verifier: string; expires_at: string }
-export type LocationUpsert = Omit<Location, 'id' | 'enabled_at' | 'last_review_update_time' | 'last_full_pass_at'>
+export type LocationUpsert = Omit<Location, 'id'>
+/** The newest earlier row of a Google location in this business: carried over on reconnect so sync continues. */
+export type PrevLocation = Pick<Location, 'site_id' | 'enabled' | 'enabled_at' | 'last_review_update_time' | 'last_full_pass_at'>
 export interface ConnectDeps {
   now(): Date
   saveState(s: OAuthState): Promise<void>
@@ -18,8 +20,10 @@ export interface ConnectDeps {
   deleteToken(secretId: string): Promise<void>
   insertConnection(c: { business_id: string; google_email: string; vault_secret_id: string; scopes: string[]; connected_by: string; now: Date }): Promise<Connection>
   markRevoked(id: string, now: Date): Promise<void>
-  previousMapping(b: string): Promise<Map<string, { site_id: string | null; enabled: boolean }>>
+  previousMapping(b: string): Promise<Map<string, PrevLocation>>
   upsertLocations(rows: LocationUpsert[]): Promise<void>
+  /** Reviews still on older rows of a Google location (same business) move to this connection's row for it (and its site, when set). */
+  repointReviews(businessId: string, connectionId: string): Promise<void>
   sites(b: string): Promise<SiteLite[]>
   onDisconnected(b: string): Promise<void>
 }
@@ -62,15 +66,19 @@ async function listLocations(google: Google, at: string, opts: { strictVom?: boo
   return { accounts: accounts.length, locations: [...seen.values()] }
 }
 
+// A reconnect carries enabled_at and the cursors, so reviews that arrived while disconnected are still delivered
+// (reconcile counts from enabled_at). Inserts skip the DB trigger that stamps enabled_at, so set it here when missing.
 function toRows(connectionId: string, businessId: string, found: FoundLocation[], sites: SiteLite[],
-  prev: Map<string, { site_id: string | null; enabled: boolean }>): LocationUpsert[] {
+  prev: Map<string, PrevLocation>, now: Date): LocationUpsert[] {
   return found.map((l) => {
     const m = prev.get(l.name)
     const site_id = m ? m.site_id : suggestSite({ postcode: l.postcode, title: l.title }, sites)
+    const enabled = !!m?.enabled && l.canReply && !!site_id
     return {
       connection_id: connectionId, business_id: businessId, gbp_account: l.account, gbp_location: l.name,
       title: l.title, address: l.address, postcode: l.postcode, maps_uri: l.mapsUri, can_reply: l.canReply,
-      site_id, enabled: !!m?.enabled && l.canReply && !!site_id,
+      site_id, enabled, enabled_at: m?.enabled_at ?? (enabled ? now.toISOString() : null),
+      last_review_update_time: m?.last_review_update_time ?? null, last_full_pass_at: m?.last_full_pass_at ?? null,
     }
   })
 }
@@ -127,7 +135,8 @@ async function finish(d: ConnectDeps, google: Google, body: Record<string, unkno
   }
   if (live?.vault_secret_id) await d.deleteToken(live.vault_secret_id)
   try {
-    await d.upsertLocations(toRows(conn.id, st.business_id, found.locations, await d.sites(st.business_id), prevMap))
+    await d.upsertLocations(toRows(conn.id, st.business_id, found.locations, await d.sites(st.business_id), prevMap, now))
+    await d.repointReviews(st.business_id, conn.id)
   } catch (e) {
     // The connection is kept; "Check Google again" (refresh) recovers the locations.
     console.error('google connect locations failed', errText(e))
@@ -155,8 +164,10 @@ async function refresh(d: ConnectDeps, google: Google, me: Caller): Promise<ApiR
   if (!conn || !token) return res(409, { error: 'not_connected' })
   let found
   try { found = await listLocations(google, await google.refresh(token), { strictVom: true }) } catch (e) { logGoogle(e); return res(502, { error: 'google' }) }
-  const rows = toRows(conn.id, me.business_id, found.locations, await d.sites(me.business_id), await d.previousMapping(me.business_id))
+  const rows = toRows(conn.id, me.business_id, found.locations, await d.sites(me.business_id), await d.previousMapping(me.business_id), d.now())
   await d.upsertLocations(rows)
+  // Normally a no-op; recovers the re-point when finish failed after inserting the connection.
+  await d.repointReviews(me.business_id, conn.id)
   return res(200, { ok: true, locations: rows.length })
 }
 

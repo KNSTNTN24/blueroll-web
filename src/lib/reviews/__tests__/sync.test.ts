@@ -15,6 +15,16 @@ describe('reconcile', () => {
     expect(reconcile(null, gReview({ updateTime: '2026-10-15T13:10:00Z' }), loc, CONN)).toMatchObject({ row: { notify: false } })
     expect(reconcile(null, gReview({ updateTime: '2026-10-15T13:25:00Z' }), loc, CONN)).toMatchObject({ row: { notify: true } })
   })
+  it('a location-level start earlier than connected_at wins (reconnect: the outage gap is still notified)', () => {
+    const loc = { ...LOC, enabled_at: '2026-09-20T00:00:00Z' }
+    expect(reconcile(null, gReview({ updateTime: '2026-09-25T00:00:00Z' }), loc, CONN)).toMatchObject({ row: { notify: true } })
+    expect(reconcile(null, gReview({ updateTime: '2026-09-10T00:00:00Z' }), loc, CONN)).toMatchObject({ row: { notify: false } })
+  })
+  it('no enabled_at → connected_at is the start', () => {
+    const loc = { ...LOC, enabled_at: null }
+    expect(reconcile(null, gReview({ updateTime: '2026-09-25T00:00:00Z' }), loc, CONN)).toMatchObject({ row: { notify: false } })
+    expect(reconcile(null, gReview({ updateTime: '2026-10-02T00:00:00Z' }), loc, CONN)).toMatchObject({ row: { notify: true } })
+  })
   it('already answered on Google → answered_elsewhere, never notified', () => {
     expect(reconcile(null, gReview({ reply: 'Thanks!' }), LOC, CONN)).toMatchObject({ row: { status: 'answered_elsewhere', notify: false, google_reply: 'Thanks!' } })
   })
