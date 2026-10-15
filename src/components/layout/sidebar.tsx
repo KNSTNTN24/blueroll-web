@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 import {
   LayoutDashboard, ClipboardCheck, ChefHat, UtensilsCrossed,
   ShieldAlert, BarChart3, Users, AlertTriangle, Truck, Factory,
-  FileText, ShieldCheck, Settings, ChevronsLeft, ChevronsRight,
+  FileText, ShieldCheck, Settings, ChevronsLeft, ChevronsRight, Star,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useAuth } from '@/hooks/use-auth'
@@ -31,6 +31,7 @@ const nav: NavGroup[] = [
   { section: 'Operations', items: [
     { label: 'Team', href: '/team', icon: Users },
     { label: 'Incidents', href: '/incidents', icon: AlertTriangle },
+    { label: 'Reviews', href: '/reviews', icon: Star },
     { label: 'Deliveries', href: '/deliveries', icon: Truck },
     { label: 'Suppliers', href: '/suppliers', icon: Factory },
     { label: 'Documents', href: '/documents', icon: FileText },
