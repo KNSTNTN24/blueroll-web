@@ -32,7 +32,7 @@ export interface ReviewDeps {
   patchReview(id: string, patch: Partial<Review>): Promise<void>
   /** Reviews at a location that are not 'deleted'. */
   liveReviewsAt(locationId: string): Promise<Review[]>
-  /** notify && status in (new, drafted) && site_id not null — oldest update first. */
+  /** notify && status in (new, drafted) && site_id not null — oldest update first (delivered_version is advisory). */
   pending(b: string, limit: number): Promise<Review[]>
   /** delivered_version = version, notify = false — only while the review is still at that version. */
   markDelivered(id: string, version: number): Promise<void>
@@ -53,6 +53,9 @@ export interface ReviewDeps {
 
   /** Drafts of one review version, ascending draft_version. */
   drafts(reviewId: string, reviewVersion: number): Promise<Draft[]>
+  /** Highest draft_version over all versions of the review, 0 if none (draft numbers are monotonic across review versions). */
+  lastDraftVersion(reviewId: string): Promise<number>
+  /** Throws an Error with code '23505' when (review_id, review_version, draft_version) already exists (unique constraint). */
   insertDraft(d: { review_id: string; review_version: number; draft_version: number; text: string; source: 'ai' | 'edited'; actor: Actor | null }): Promise<Draft>
 
   /** Linked telegram_reviews groups of business b routed to the site. */

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { publishReview } from '../../../../supabase/functions/_shared/reviews/publish'
 import { GoogleError } from '../../../../supabase/functions/_shared/reviews/google'
 import { fakeCtx, mkReview, ANNA } from './fakes/review-deps'
@@ -67,5 +67,40 @@ describe('publishReview', () => {
     expect((await publishReview(ctx.d, ctx.google, { reviewId: r.id, draftVersion: 1, actor: ANNA })).outcome).toBe('failed')
     expect(s.reviews[0].status).toBe('drafted')
     expect(s.audits.map((a) => a.action)).toEqual(['publish_failed'])
+  })
+  it('a card from an older review version cannot publish the newer draft (draft numbers are monotonic)', async () => {
+    const { r, drafts } = withDraft()
+    const { ctx, s, gcalls } = fakeCtx({ reviews: [r], drafts })
+    s.reviews[0].version = 2
+    await ctx.d.insertDraft({ review_id: r.id, review_version: 2, draft_version: (await ctx.d.lastDraftVersion(r.id)) + 1, text: 'New reply', source: 'ai', actor: null })
+    expect(s.drafts.at(-1)?.draft_version).toBe(2)
+    expect((await publishReview(ctx.d, ctx.google, { reviewId: r.id, draftVersion: 1, actor: ANNA })).outcome).toBe('stale')
+    expect(gcalls).toEqual([])
+  })
+  it('a non-Google error before the PUT releases the claim', async () => {
+    const { r, drafts } = withDraft()
+    const { ctx, s } = fakeCtx({ reviews: [r], drafts })
+    ctx.d.accessToken = async () => { throw new Error('vault down') }
+    expect((await publishReview(ctx.d, ctx.google, { reviewId: r.id, draftVersion: 1, actor: ANNA })).outcome).toBe('failed')
+    expect(s.reviews[0].status).toBe('drafted')
+  })
+  it('markPublished failing once is retried; the reply is on Google so it is still published', async () => {
+    const { r, drafts } = withDraft()
+    const { ctx, s } = fakeCtx({ reviews: [r], drafts })
+    const real = ctx.d.markPublished
+    let n = 0
+    ctx.d.markPublished = async (id, p) => { if (n++ === 0) throw new Error('db blip'); return real(id, p) }
+    expect((await publishReview(ctx.d, ctx.google, { reviewId: r.id, draftVersion: 1, actor: ANNA })).outcome).toBe('published')
+    expect(s.reviews[0].status).toBe('published')
+  })
+  it('markPublished failing twice is logged, never released, still published', async () => {
+    const { r, drafts } = withDraft()
+    const { ctx, s } = fakeCtx({ reviews: [r], drafts })
+    ctx.d.markPublished = async () => { throw new Error('db down') }
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    expect((await publishReview(ctx.d, ctx.google, { reviewId: r.id, draftVersion: 1, actor: ANNA })).outcome).toBe('published')
+    expect(spy).toHaveBeenCalledWith('publish record failed', r.id, 'db down')
+    spy.mockRestore()
+    expect(s.reviews[0].status).toBe('publishing')
   })
 })

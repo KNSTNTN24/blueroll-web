@@ -69,7 +69,7 @@ export function fakeReviewDeps(init: Partial<FakeState> = {}) {
     insertReview: async (n) => { const r: Review = { ...n, id: uuid(), delivered_version: 0, language: null, flags: [], published_text: null, published_at: null, published_by_name: null, skipped_at: null, skipped_by_name: null }; s.reviews.push(r); return { ...r } },
     patchReview: async (id, p) => { Object.assign(rv(id)!, p) },
     liveReviewsAt: async (lid) => s.reviews.filter((r) => r.location_id === lid && r.status !== 'deleted').map((r) => ({ ...r })),
-    pending: async (b, limit) => s.reviews.filter((r) => r.business_id === b && r.notify && r.delivered_version < r.version && ['new', 'drafted'].includes(r.status) && r.site_id)
+    pending: async (b, limit) => s.reviews.filter((r) => r.business_id === b && r.notify && ['new', 'drafted'].includes(r.status) && r.site_id)
       .sort((a, c) => Date.parse(a.update_time) - Date.parse(c.update_time)).slice(0, limit).map((r) => ({ ...r })),
     markDelivered: async (id, v) => { const r = rv(id)!; if (r.version !== v) return; r.delivered_version = v; r.notify = false },
     openReviewsWithCards: async (b) => s.reviews.filter((r) => r.business_id === b && ['new', 'drafted'].includes(r.status) && s.cards.some((c) => c.review_id === r.id)),
@@ -78,11 +78,14 @@ export function fakeReviewDeps(init: Partial<FakeState> = {}) {
     // Must stay a synchronous check-and-set (no await between read and write): the race test depends on it.
     claimPublishing: async (id, v) => { const r = rv(id); if (!r || r.version !== v || !['new', 'drafted', 'skipped'].includes(r.status)) return false; r.status = 'publishing'; return true },
     releasePublishing: async (id) => { const r = rv(id)!; if (r.status === 'publishing') r.status = 'drafted' },
-    markPublished: async (id, p) => { Object.assign(rv(id)!, { status: 'published', published_text: p.text, published_at: p.at, published_by_name: p.actor.name, google_reply: p.text, google_reply_time: p.at }) },
+    markPublished: async (id, p) => { const r = rv(id)!; if (r.status !== 'publishing') return; Object.assign(r, { status: 'published', published_text: p.text, published_at: p.at, published_by_name: p.actor.name, google_reply: p.text, google_reply_time: p.at }) },
     markSkipped: async (id, a, at) => { const r = rv(id); if (!r || !['new', 'drafted'].includes(r.status)) return false; Object.assign(r, { status: 'skipped', skipped_by_name: a.name, skipped_at: at }); return true },
     setDrafted: async (id, p) => { const r = rv(id)!; if (['new', 'skipped'].includes(r.status)) r.status = 'drafted'; if (p.language !== undefined) r.language = p.language; if (p.flags) r.flags = p.flags },
     drafts: async (rid, v) => s.drafts.filter((x) => x.review_id === rid && x.review_version === v).sort((a, b) => a.draft_version - b.draft_version),
-    insertDraft: async (x) => { const row: Draft = { id: uuid(), review_id: x.review_id, review_version: x.review_version, draft_version: x.draft_version, text: x.text, source: x.source, author_name: x.actor?.name ?? null, created_at: NOW.toISOString() }; s.drafts.push(row); return row },
+    lastDraftVersion: async (rid) => Math.max(0, ...s.drafts.filter((x) => x.review_id === rid).map((x) => x.draft_version)),
+    insertDraft: async (x) => {
+      if (s.drafts.some((y) => y.review_id === x.review_id && y.review_version === x.review_version && y.draft_version === x.draft_version)) throw Object.assign(new Error('duplicate key value violates unique constraint'), { code: '23505' })
+      const row: Draft = { id: uuid(), review_id: x.review_id, review_version: x.review_version, draft_version: x.draft_version, text: x.text, source: x.source, author_name: x.actor?.name ?? null, created_at: NOW.toISOString() }; s.drafts.push(row); return row },
     routedGroups: async (b, site) => s.groups.filter((g) => live(g) && g.business_id === b && s.routes.some((r) => r.site_id === site && r.group_id === g.id)),
     groupSites: async (gid) => s.routes.filter((r) => r.group_id === gid).map((r) => r.site_id),
     reviewGroups: async (b) => s.groups.filter((g) => live(g) && g.business_id === b),

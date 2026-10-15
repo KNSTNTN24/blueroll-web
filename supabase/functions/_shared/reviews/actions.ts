@@ -47,7 +47,9 @@ export async function makeDraft(ctx: Ctx, r: Review, o: { another?: boolean; act
     previousReply: r.version > 1 ? r.published_text : null, differentFrom: o.another ? last?.text ?? null : null,
   })
   if (!res) return null
-  const draft = await d.insertDraft({ review_id: r.id, review_version: r.version, draft_version: (last?.draft_version ?? 0) + 1, text: res.reply, source: 'ai', actor: o.actor ?? null })
+  let draft: Draft
+  try { draft = await d.insertDraft({ review_id: r.id, review_version: r.version, draft_version: (await d.lastDraftVersion(r.id)) + 1, text: res.reply, source: 'ai', actor: o.actor ?? null }) }
+  catch (e) { if ((e as { code?: string })?.code === '23505') return null; throw e }
   await d.setDrafted(r.id, { language: res.language, flags: res.flags })
   await d.audit({ review_id: r.id, business_id: r.business_id, action: o.another ? 'regenerated' : 'drafted', actor: o.actor ?? { channel: 'system', profile_id: null, external_id: null, name: 'Blueroll' }, details: { draft_version: draft.draft_version } })
   return draft
@@ -63,14 +65,19 @@ export async function renderFor(ctx: Ctx, r: Review, o: { confirmAt?: number | n
   })
 }
 
-export async function sendCard(ctx: Ctx, r: Review, group: RouteGroup): Promise<boolean> {
-  if (group.business_id !== r.business_id) return false   // Review Focus 3: never cross businesses
+export async function sendCard(ctx: Ctx, r: Review, group: RouteGroup): Promise<'sent' | 'retry' | 'skipped'> {
+  if (group.business_id !== r.business_id) return 'skipped'   // Review Focus 3: never cross businesses
   const res = await ctx.tg('sendMessage', cardSend(group.chat_id, await renderFor(ctx, r)))
   const mid = res.ok ? res.result?.message_id : null
-  if (mid == null) { if (tgOutcome(res) === 'retry') console.error('review card send failed', group.chat_id, res.status); return false }
+  if (mid == null) {
+    const out = tgOutcome(res)
+    if (out === 'gone' || out === 'kicked') return 'skipped'
+    console.error('review card send failed', group.chat_id, res.status)
+    return 'retry'
+  }
   await ctx.d.saveCard({ review_id: r.id, chat_id: group.chat_id, message_id: String(mid), group_id: group.id })
   await ctx.d.logOut({ business_id: r.business_id, site_id: r.site_id, kind: 'review_card', ref_id: r.id })
-  return true
+  return 'sent'
 }
 
 /** Draft if needed, send to every group routed to the review's site, then mark this version delivered (even with no draft or no groups). */
@@ -80,8 +87,17 @@ export async function deliverReview(ctx: Ctx, r: Review): Promise<number> {
     await makeDraft(ctx, r)
     review = (await ctx.d.review(r.id)) ?? r
   }
-  let sent = 0
-  if (review.site_id) for (const g of await ctx.d.routedGroups(review.business_id, review.site_id)) if (await sendCard(ctx, review, g)) sent++
+  let sent = 0, retry = 0, groups = 0
+  if (review.site_id) {
+    for (const g of await ctx.d.routedGroups(review.business_id, review.site_id)) {
+      groups++
+      const out = await sendCard(ctx, review, g)
+      if (out === 'sent') sent++
+      else if (out === 'retry') retry++
+    }
+  }
+  // Leave notify on (retry next run) only when every group failed transiently.
+  if (groups > 0 && retry === groups) return sent
   await ctx.d.markDelivered(review.id, review.version)
   return sent
 }
@@ -112,20 +128,22 @@ export async function refreshBusinessCards(ctx: Ctx, businessId: string): Promis
 
 /** Spec §5: invalid_grant → app notification to manage_reviews holders + one message to each reviews group. */
 export async function notifyConnectionError(ctx: Ctx, businessId: string): Promise<void> {
-  const ids = await ctx.d.reviewManagerIds(businessId)
-  await ctx.d.notify(ids.map((user_id) => ({
-    user_id, title: 'Google reviews disconnected', message: 'Google stopped accepting our access. Reconnect in Settings → Google reviews.', link: '/settings?tab=reviews',
-  })))
-  for (const g of await ctx.d.reviewGroups(businessId)) {
-    const r = await ctx.tg('sendMessage', tgText(g.chat_id, CARD_TEXT.disconnected))
-    if (!r.ok) console.error('review group notice failed', g.chat_id, r.status)
-  }
+  try {
+    const ids = await ctx.d.reviewManagerIds(businessId)
+    await ctx.d.notify(ids.map((user_id) => ({
+      user_id, title: 'Google reviews disconnected', message: 'Google stopped accepting our access. Reconnect in Settings → Google reviews.', link: '/settings?tab=reviews',
+    })))
+    for (const g of await ctx.d.reviewGroups(businessId)) {
+      const r = await ctx.tg('sendMessage', tgText(g.chat_id, CARD_TEXT.disconnected))
+      if (!r.ok) console.error('review group notice failed', g.chat_id, r.status)
+    }
+  } catch (e) { console.error('connection notice failed', businessId, errMsg(e)) }
 }
 
 export async function doPublish(ctx: Ctx, reviewId: string, draftVersion: number, actor: Actor): Promise<ActionResult> {
   let r
   try { r = await publishReview(ctx.d, ctx.google, { reviewId, draftVersion, actor }) }
-  catch (e) { console.error('publish failed', reviewId, errMsg(e)); await ctx.d.releasePublishing(reviewId); return done(false, 'failed', ACTION_TEXT.failed) }
+  catch (e) { console.error('publish failed', reviewId, errMsg(e)); return done(false, 'failed', ACTION_TEXT.failed) }
   switch (r.outcome) {
     case 'published': await refreshCards(ctx, reviewId); return done(true, r.outcome, ACTION_TEXT.published)
     case 'already': await refreshCards(ctx, reviewId); return done(false, r.outcome, ACTION_TEXT.already(r.by))
@@ -158,8 +176,9 @@ export async function doEdit(ctx: Ctx, reviewId: string, reviewVersion: number, 
   const t = text.trim()
   if (!t) return done(false, 'empty', ACTION_TEXT.empty)
   if (t.length > MAX_REPLY_CHARS) return done(false, 'too_long', ACTION_TEXT.tooLong)
-  const last = await latestDraft(ctx, r)
-  const draft = await ctx.d.insertDraft({ review_id: r.id, review_version: r.version, draft_version: (last?.draft_version ?? 0) + 1, text: t, source: 'edited', actor })
+  let draft: Draft
+  try { draft = await ctx.d.insertDraft({ review_id: r.id, review_version: r.version, draft_version: (await ctx.d.lastDraftVersion(r.id)) + 1, text: t, source: 'edited', actor }) }
+  catch (e) { if ((e as { code?: string })?.code === '23505') return done(false, 'stale', ACTION_TEXT.stale); throw e }
   await ctx.d.setDrafted(r.id, {})
   await ctx.d.audit({ review_id: r.id, business_id: r.business_id, action: 'edited', actor, details: { draft_version: draft.draft_version } })
   await refreshCards(ctx, r.id)

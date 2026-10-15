@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { makeDraft, deliverReview, doPublish, doSkip, doEdit, doAnother, retireCards, ACTION_TEXT } from '../../../../supabase/functions/_shared/reviews/actions'
 import { CARD_TEXT } from '../../../../supabase/functions/_shared/reviews/card'
 import { MAX_AI_DRAFTS } from '../../../../supabase/functions/_shared/reviews/draft'
@@ -68,6 +68,29 @@ describe('deliverReview', () => {
   })
 })
 
+describe('deliverReview with Telegram failures', () => {
+  const bad = (method: string) => (method === 'sendMessage' ? { ok: false, status: 502, description: 'Bad Gateway' } : {})
+  it('every group failing transiently leaves the review pending for the next run', async () => {
+    const r = mkReview()
+    const { ctx, s } = fakeCtx({ reviews: [r] }, { tg: bad })
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    expect(await deliverReview(ctx, r)).toBe(0)
+    spy.mockRestore()
+    expect(s.reviews[0].delivered_version).toBe(0)
+    expect((await ctx.d.pending('b1', 50)).map((x) => x.id)).toEqual([r.id])
+  })
+  it('one group failing and one succeeding counts as delivered', async () => {
+    const r = mkReview()
+    const groups = [{ id: 'gr1', business_id: 'b1', chat_id: '-100', unlinked: false }, { id: 'gr2', business_id: 'b1', chat_id: '-200', unlinked: false }]
+    const routes = groups.map((g) => ({ site_id: 's1', group_id: g.id }))
+    const { ctx, s } = fakeCtx({ reviews: [r], groups, routes }, { tg: (m, b: any) => (m === 'sendMessage' && b.chat_id === '-100' ? { ok: false, status: 502, description: 'Bad Gateway' } : {}) })
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    expect(await deliverReview(ctx, r)).toBe(1)
+    spy.mockRestore()
+    expect(s.reviews[0].delivered_version).toBe(1)
+  })
+})
+
 describe('doPublish / doSkip / doEdit / doAnother', () => {
   const setup = (o: Parameters<typeof fakeCtx>[1] = {}) => {
     const r = mkReview({ status: 'drafted' })
@@ -119,6 +142,54 @@ describe('doPublish / doSkip / doEdit / doAnother', () => {
     const { r, ctx, calls } = setup({ replies: ['Hello Sarah, second take'] })
     expect(await doAnother(ctx, r.id, ANNA)).toMatchObject({ ok: true })
     expect(edits(calls)[0]).toContain('Hello Sarah, second take')
+  })
+})
+
+describe('failure handling', () => {
+  const draftFor = (r: { id: string }) => ({ id: `d-${r.id}`, review_id: r.id, review_version: 1, draft_version: 1, text: 'Hi', source: 'ai' as const, author_name: null, created_at: '' })
+  it('an error before the claim does not touch a review someone else is publishing', async () => {
+    const r = mkReview({ status: 'publishing' })
+    const { ctx, s } = fakeCtx({ reviews: [r], drafts: [draftFor(r)] })
+    ctx.d.review = async () => { throw new Error('db down') }
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    expect(await doPublish(ctx, r.id, 1, ANNA)).toMatchObject({ ok: false, outcome: 'failed' })
+    expect(spy).toHaveBeenCalledWith('publish failed', r.id, 'db down')
+    spy.mockRestore()
+    expect(s.reviews[0].status).toBe('publishing')
+  })
+  it('two reviews on one revoked connection: exactly one notification and one group message', async () => {
+    const r1 = mkReview({ status: 'drafted' }), r2 = mkReview({ status: 'drafted' })
+    const { ctx, s, calls } = fakeCtx({ reviews: [r1, r2], drafts: [draftFor(r1), draftFor(r2)], secrets: new Map([['sec1', 'revoked']]) })
+    await doPublish(ctx, r1.id, 1, ANNA)
+    await doPublish(ctx, r2.id, 1, ANNA)
+    expect(s.notes).toHaveLength(1)
+    expect(calls.filter((c) => c.method === 'sendMessage')).toHaveLength(1)
+  })
+  it('a failing notice is logged, not thrown', async () => {
+    const r = mkReview({ status: 'drafted' })
+    const { ctx } = fakeCtx({ reviews: [r], drafts: [draftFor(r)], secrets: new Map([['sec1', 'revoked']]) })
+    ctx.d.notify = async () => { throw new Error('notify down') }
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    expect(await doPublish(ctx, r.id, 1, ANNA)).toMatchObject({ outcome: 'disconnected' })
+    expect(spy).toHaveBeenCalledWith('connection notice failed', 'b1', 'notify down')
+    spy.mockRestore()
+  })
+  it('doEdit racing a draft with the same number → stale', async () => {
+    const r = mkReview({ status: 'drafted' })
+    const { ctx } = fakeCtx({ reviews: [r], drafts: [draftFor(r)] })
+    ctx.d.lastDraftVersion = async () => 0   // another writer already took number 1
+    expect(await doEdit(ctx, r.id, 1, 'Mine', ANNA)).toMatchObject({ ok: false, outcome: 'stale', text: ACTION_TEXT.stale })
+  })
+  it('makeDraft racing a duplicate draft number → null', async () => {
+    const r = mkReview({ status: 'drafted' })
+    const { ctx } = fakeCtx({ reviews: [r], drafts: [draftFor(r)] })
+    ctx.d.lastDraftVersion = async () => 0
+    expect(await makeDraft(ctx, r)).toBeNull()
+  })
+  it('draft numbers keep counting across review versions', async () => {
+    const r = mkReview({ version: 2 })
+    const { ctx } = fakeCtx({ reviews: [r], drafts: [draftFor(r)] })
+    expect(await makeDraft(ctx, r)).toMatchObject({ draft_version: 2, review_version: 2 })
   })
 })
 

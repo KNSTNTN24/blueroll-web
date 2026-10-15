@@ -45,7 +45,14 @@ export async function publishReview(d: ReviewDeps, google: Google, a: { reviewId
     await d.audit({ ...base, action: 'publish_failed', details: { error: msg(e), draft_version: draft.draft_version } })
     return { outcome: 'failed', businessId: r.business_id }
   }
-  await d.markPublished(r.id, { text: draft.text, at: d.now().toISOString(), actor: a.actor })
-  await d.audit({ ...base, action: 'published', details: { draft_version: draft.draft_version } })
+  // The reply is on Google now: never release the claim from here on.
+  const record = { text: draft.text, at: d.now().toISOString(), actor: a.actor }
+  try { await d.markPublished(r.id, record) }
+  catch {
+    try { await d.markPublished(r.id, record) }
+    catch (e) { console.error('publish record failed', r.id, msg(e)) }
+  }
+  try { await d.audit({ ...base, action: 'published', details: { draft_version: draft.draft_version } }) }
+  catch (e) { console.error('publish audit failed', r.id, msg(e)) }
   return { outcome: 'published', by: a.actor.name, businessId: r.business_id, firstFailure: false }
 }
