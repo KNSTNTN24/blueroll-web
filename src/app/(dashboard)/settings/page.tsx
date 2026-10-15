@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth-store'
 import { toast } from 'sonner'
@@ -14,6 +14,8 @@ import { SitesSettings } from './sites-settings'
 import { MembersRoles } from './members-roles'
 import { NotificationsSettings } from './notifications-settings'
 import { MessagingSettings } from './whatsapp-settings'
+import { GoogleReviewsSettings } from './google-reviews'
+import { canManageReviews } from '@/lib/reviews/api'
 
 const CONTENT_WIDTH = 860
 const PRICE_PER_SITE = 24.99
@@ -32,8 +34,8 @@ const GREEN_BTN: React.CSSProperties = { border: 'none', background: '#1f9d63', 
 const focusRing = (e: React.FocusEvent<HTMLInputElement>) => { e.currentTarget.style.borderColor = '#1f9d63'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(31,157,99,.13)' }
 const blurRing = (e: React.FocusEvent<HTMLInputElement>) => { e.currentTarget.style.borderColor = '#e2e4e8'; e.currentTarget.style.boxShadow = 'none' }
 
-type Tab = 'Profile' | 'Sites' | 'Team' | 'Billing' | 'Notifications' | 'Messaging'
-const TAB_LABEL: Record<Tab, string> = { Profile: 'Profile', Sites: 'Sites', Team: 'Team', Billing: 'Billing & subscription', Notifications: 'Notifications', Messaging: 'Messaging' }
+type Tab = 'Profile' | 'Sites' | 'Team' | 'Billing' | 'Notifications' | 'Messaging' | 'Reviews'
+const TAB_LABEL: Record<Tab, string> = { Profile: 'Profile', Sites: 'Sites', Team: 'Team', Billing: 'Billing & subscription', Notifications: 'Notifications', Messaging: 'Messaging', Reviews: 'Google reviews' }
 
 export default function SettingsPage() {
   const routerNav = useRouter()
@@ -47,8 +49,11 @@ export default function SettingsPage() {
   // given full-estate access must NOT thereby gain team/role management.
   const showAdminTabs = profile?.role === 'owner' || profile?.role === 'manager'
 
-  const tabs: Tab[] = ['Profile', ...(showAdminTabs ? (["Sites", "Team"] as Tab[]) : []), 'Billing', 'Notifications', ...(showAdminTabs ? (['Messaging'] as Tab[]) : [])]
+  const { data: reviewsAdmin = false } = useQuery({ queryKey: ['can-manage-reviews', profile?.id], enabled: !!profile?.id, queryFn: canManageReviews })
+
+  const tabs: Tab[] = ['Profile', ...(showAdminTabs ? (["Sites", "Team"] as Tab[]) : []), 'Billing', 'Notifications', ...(showAdminTabs ? (['Messaging'] as Tab[]) : []), ...(reviewsAdmin ? (['Reviews'] as Tab[]) : [])]
   const [tab, setTab] = useState<Tab>('Profile')
+  useEffect(() => { if (new URLSearchParams(window.location.search).get('tab') === 'reviews') setTab('Reviews') }, [])
 
   // Profile personal fields
   const nameParts = (profile?.full_name ?? '').split(' ')
@@ -140,6 +145,7 @@ export default function SettingsPage() {
       {tab === 'Team' && <MembersRoles />}
       {tab === 'Notifications' && <NotificationsSettings />}
       {tab === 'Messaging' && showAdminTabs && <MessagingSettings />}
+      {tab === 'Reviews' && reviewsAdmin && <GoogleReviewsSettings />}
 
       {/* ── Profile ── */}
       {tab === 'Profile' && (
