@@ -14,6 +14,10 @@ import {
 import { REVIEW_LINK_STEPS, googleResultFromQuery, routeDiff } from '@/lib/reviews/format'
 
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e))
+/** First sync straight away (after connecting, or switching a restaurant on) instead of waiting for the 15-minute cron. */
+const syncInBackground = (after?: () => void) => {
+  syncNow().then(() => after?.()).catch((e) => toast.error(`Couldn't check Google yet — we'll try again within 15 minutes (${errText(e)})`))
+}
 const fmtTime = (iso: string | null) => (iso ? new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : 'not yet')
 
 /** Settings → Google reviews (manage_reviews): connect Google, map restaurants to sites, route to Telegram groups, reply style. */
@@ -32,7 +36,8 @@ export function GoogleReviewsSettings() {
     if (!r) return
     if (r.ok) toast.success(r.text); else toast.error(r.text)
     window.history.replaceState(null, '', '/settings?tab=reviews')
-  }, [])
+    if (r.ok) syncInBackground(() => qc.invalidateQueries({ queryKey: ['google-connection'] }))
+  }, [qc])
 
   if (!business) return null
   const refreshAll = () => { qc.invalidateQueries({ queryKey: connKey }); qc.invalidateQueries({ queryKey: ['google-locations'] }) }
@@ -104,7 +109,9 @@ export function GoogleReviewsSettings() {
 
 function LocationRow({ loc, sites, onChanged }: { loc: GoogleLocationRow; sites: { id: string; name: string }[]; onChanged: () => void }) {
   const save = async (patch: { site_id?: string | null; enabled?: boolean }) => {
-    try { await updateLocation(loc.id, patch); onChanged() } catch (e) { toast.error(errText(e)) }
+    try { await updateLocation(loc.id, patch) } catch (e) { toast.error(errText(e)); return }
+    onChanged()
+    if (patch.enabled && !loc.enabled) syncInBackground(onChanged)
   }
   const label = `sync-${loc.id}`
   return (
