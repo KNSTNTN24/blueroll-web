@@ -31,6 +31,12 @@ type ConnectError = (typeof CONNECT_ERRORS)[number]
 const STATE_TTL_MS = 10 * 60_000
 const res = (status: number, body: Record<string, unknown>): ApiRes => ({ status, body })
 const fail = (error: ConnectError) => res(200, { error })
+// Never log tokens: only the error kind/name and HTTP status.
+const logGoogle = (e: unknown) => {
+  const x = (e ?? {}) as { kind?: string; name?: string; status?: number }
+  console.error('google connect failed', x.kind ?? x.name, x.status ?? '')
+}
+const errText = (e: unknown) => (e instanceof Error ? `${e.name}: ${e.message}` : String(e)).slice(0, 200)
 const isObj = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x)
 
 const b64url = (b: Uint8Array) => btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
@@ -42,13 +48,14 @@ export async function pkceChallenge(verifier: string): Promise<string> {
 interface FoundLocation extends GLocation { account: string; canReply: boolean }
 
 /** Every location the grant can see, once each (a location can sit under a business group and a personal account). */
-async function listLocations(google: Google, at: string): Promise<{ accounts: number; locations: FoundLocation[] }> {
+async function listLocations(google: Google, at: string, opts: { strictVom?: boolean } = {}): Promise<{ accounts: number; locations: FoundLocation[] }> {
   const accounts = await google.accounts(at)
   const seen = new Map<string, FoundLocation>()
   for (const account of accounts) {
     for (const l of await google.locations(at, account)) {
       if (seen.has(l.name)) continue
-      const canReply = await google.canReply(at, l.name).catch(() => false)
+      // finish treats a failed Voice-of-Merchant check as "cannot reply"; refresh must not switch live locations off on a blip
+      const canReply = opts.strictVom ? await google.canReply(at, l.name) : await google.canReply(at, l.name).catch(() => false)
       seen.set(l.name, { ...l, account, canReply })
     }
   }
@@ -84,31 +91,48 @@ async function finish(d: ConnectDeps, google: Google, body: Record<string, unkno
   if (typeof body.code !== 'string' || !body.code) return fail('denied')
 
   let tokens
-  try { tokens = await google.exchangeCode(body.code, st.code_verifier) } catch { return fail('google') }
-  if (!tokens.scopes.includes(GOOGLE_SCOPE_MANAGE)) { await google.revoke(tokens.refreshToken ?? tokens.accessToken).catch(() => {}); return fail('missing_scope') }
-  if (!tokens.refreshToken) return fail('no_refresh_token')
+  try { tokens = await google.exchangeCode(body.code, st.code_verifier) } catch (e) { logGoogle(e); return fail('google') }
+
+  // Google's /revoke kills the whole grant. If the business already has a live connection, a retry from the same
+  // Google account shares that grant, so we only revoke when there is nothing live to break.
+  const live = await d.liveConnection(st.business_id)
+  const revokeNew = async (t: string) => { if (!live) await google.revoke(t) }
+  if (!tokens.scopes.includes(GOOGLE_SCOPE_MANAGE)) { await revokeNew(tokens.refreshToken ?? tokens.accessToken); return fail('missing_scope') }
+  if (!tokens.refreshToken) { await revokeNew(tokens.accessToken); return fail('no_refresh_token') }
   const rt = tokens.refreshToken
-  const abandon = async (e: ConnectError) => { await google.revoke(rt).catch(() => {}); return fail(e) }
+  const abandon = async (e: ConnectError) => { await revokeNew(rt); return fail(e) }
 
   let email: string, found
   try {
     email = await google.email(tokens.accessToken)
     found = await listLocations(google, tokens.accessToken)
-  } catch { return abandon('google') }
+  } catch (e) { logGoogle(e); return abandon('google') }
   if (!found.accounts) return abandon('no_accounts')
   if (!found.locations.length) return abandon('no_locations')
 
   const prevMap = await d.previousMapping(st.business_id)
-  const prev = await d.liveConnection(st.business_id)
-  if (prev) {
-    // Never revoke at Google here: /revoke kills the whole grant, i.e. the token we just received too
-    // when the same Google account reconnects. Only our copy goes.
-    await d.markRevoked(prev.id, now)
-    if (prev.vault_secret_id) await d.deleteToken(prev.vault_secret_id)
+  let secretId: string | null = null
+  let conn: Connection
+  try {
+    secretId = await d.storeToken(rt, `google_reviews_${st.business_id}_${now.getTime()}`)
+    // Never revoke at Google here (see above). Only our copy of the old token goes, and only after the new
+    // connection exists, so a failure cannot leave the business without one.
+    if (live) await d.markRevoked(live.id, now)
+    conn = await d.insertConnection({ business_id: st.business_id, google_email: email, vault_secret_id: secretId, scopes: tokens.scopes, connected_by: st.profile_id, now })
+  } catch (e) {
+    console.error('google connect persist failed', errText(e))
+    if (secretId) await d.deleteToken(secretId).catch(() => {})
+    await revokeNew(rt)
+    return fail('google')
   }
-  const secretId = await d.storeToken(rt, `google_reviews_${st.business_id}_${now.getTime()}`)
-  const conn = await d.insertConnection({ business_id: st.business_id, google_email: email, vault_secret_id: secretId, scopes: tokens.scopes, connected_by: st.profile_id, now })
-  await d.upsertLocations(toRows(conn.id, st.business_id, found.locations, await d.sites(st.business_id), prevMap))
+  if (live?.vault_secret_id) await d.deleteToken(live.vault_secret_id)
+  try {
+    await d.upsertLocations(toRows(conn.id, st.business_id, found.locations, await d.sites(st.business_id), prevMap))
+  } catch (e) {
+    // The connection is kept; "Check Google again" (refresh) recovers the locations.
+    console.error('google connect locations failed', errText(e))
+    return fail('google')
+  }
   return res(200, { result: 'connected' })
 }
 
@@ -130,7 +154,7 @@ async function refresh(d: ConnectDeps, google: Google, me: Caller): Promise<ApiR
   const token = conn?.status === 'active' && conn.vault_secret_id ? await d.readToken(conn.vault_secret_id) : null
   if (!conn || !token) return res(409, { error: 'not_connected' })
   let found
-  try { found = await listLocations(google, await google.refresh(token)) } catch { return res(502, { error: 'google' }) }
+  try { found = await listLocations(google, await google.refresh(token), { strictVom: true }) } catch (e) { logGoogle(e); return res(502, { error: 'google' }) }
   const rows = toRows(conn.id, me.business_id, found.locations, await d.sites(me.business_id), await d.previousMapping(me.business_id))
   await d.upsertLocations(rows)
   return res(200, { ok: true, locations: rows.length })

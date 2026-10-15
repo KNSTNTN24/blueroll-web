@@ -1,7 +1,10 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { handleConnect, pkceChallenge, randomToken, type ConnectDeps, type OAuthState, type LocationUpsert } from '../../../../supabase/functions/_shared/reviews/connect'
 import { GoogleError, GOOGLE_SCOPE_MANAGE, type Google, type GLocation } from '../../../../supabase/functions/_shared/reviews/google'
 import type { Connection } from '../../../../supabase/functions/_shared/reviews/types'
+
+beforeEach(() => { vi.spyOn(console, 'error').mockImplementation(() => {}) })
+afterEach(() => { vi.restoreAllMocks() })
 
 const NOW = new Date('2026-10-15T12:00:00Z')
 const ME = { profile_id: 'p1', business_id: 'b1', name: 'Anna S.' }
@@ -177,5 +180,69 @@ describe('refresh', () => {
   it('unknown action → 400', async () => {
     const { d } = fakeDeps(); const { g } = fakeGoogle()
     expect((await handleConnect(d, g, ME, { action: 'nope' })).status).toBe(400)
+  })
+})
+
+const liveConn = (o: Partial<Connection> = {}): Connection => ({ id: 'c0', business_id: 'b1', google_email: 'old@x', vault_secret_id: 'sec-old', status: 'active', connected_at: '2026-01-01T00:00:00Z', last_sync_at: null, ...o })
+const stateX = (): OAuthState => ({ state: 'S', business_id: 'b1', profile_id: 'p1', code_verifier: 'V', expires_at: '2026-10-15T12:05:00Z' })
+const fin = { action: 'finish', code: 'C', state: 'S' }
+
+describe('fix round 1', () => {
+  it('abandon paths do not revoke when a live connection exists, and store nothing', async () => {
+    for (const [opts, err] of [[{ scopes: ['openid'] }, 'missing_scope'], [{ locs: {} }, 'no_locations'], [{ accounts: [] }, 'no_accounts'], [{ refresh: null }, 'no_refresh_token']] as const) {
+      const { d, s } = fakeDeps({ states: [stateX()], conns: [liveConn()] }); const { g, calls } = fakeGoogle(opts)
+      expect((await handleConnect(d, g, null, fin)).body).toEqual({ error: err })
+      expect(calls.filter((c) => c.startsWith('revoke'))).toEqual([])
+      expect([...s.secrets.keys()]).toEqual(['sec-old'])
+    }
+  })
+  it('without a live connection missing_scope and no_locations store nothing in Vault', async () => {
+    for (const opts of [{ scopes: ['openid'] }, { locs: {} }]) {
+      const { d, s } = fakeDeps({ states: [stateX()] }); const { g } = fakeGoogle(opts)
+      await handleConnect(d, g, null, fin)
+      expect([...s.secrets.keys()]).toEqual(['sec-old'])
+    }
+  })
+  it('no_refresh_token revokes the access token when nothing is live', async () => {
+    const { d } = fakeDeps({ states: [stateX()] }); const { g, calls } = fakeGoogle({ refresh: null })
+    await handleConnect(d, g, null, fin)
+    expect(calls).toContain('revoke at')
+  })
+  it('insertConnection failure: google error, new secret deleted, previous secret kept, new token revoked only if nothing live', async () => {
+    for (const live of [true, false]) {
+      const old = liveConn()
+      const { d, s } = fakeDeps({ states: [stateX()], conns: live ? [old] : [] }); const { g, calls } = fakeGoogle()
+      d.insertConnection = async () => { throw new Error('db down') }
+      expect((await handleConnect(d, g, null, fin)).body).toEqual({ error: 'google' })
+      expect(s.secrets.has('sec-old')).toBe(true)
+      expect([...s.secrets.keys()]).toEqual(['sec-old'])
+      expect(calls.some((c) => c.startsWith('revoke'))).toBe(!live)
+    }
+  })
+  it('upsertLocations failure: google error, connection kept, previous secret already deleted', async () => {
+    const { d, s } = fakeDeps({ states: [stateX()], conns: [liveConn()] }); const { g } = fakeGoogle()
+    d.upsertLocations = async () => { throw new Error('db down') }
+    expect((await handleConnect(d, g, null, fin)).body).toEqual({ error: 'google' })
+    expect(s.conns.filter((c) => c.status === 'active')).toHaveLength(1)
+    expect(s.secrets.has('sec-old')).toBe(false)
+  })
+  it('refresh: a Voice-of-Merchant error returns 502 and upserts nothing', async () => {
+    const { d, s } = fakeDeps({ conns: [liveConn()] }); const { g } = fakeGoogle({ vom: { 'locations/9': 'err' } })
+    const r = await handleConnect(d, g, ME, { action: 'refresh' })
+    expect(r.status).toBe(502)
+    expect(s.locations).toEqual([])
+  })
+  it('refresh on an error-status connection → 409', async () => {
+    const { d } = fakeDeps({ conns: [liveConn({ status: 'error' })] }); const { g } = fakeGoogle()
+    expect((await handleConnect(d, g, ME, { action: 'refresh' })).status).toBe(409)
+  })
+  it('disconnect and refresh need a caller', async () => {
+    const { d } = fakeDeps(); const { g } = fakeGoogle()
+    expect((await handleConnect(d, g, null, { action: 'disconnect' })).status).toBe(401)
+    expect((await handleConnect(d, g, null, { action: 'refresh' })).status).toBe(401)
+  })
+  it('finish with error and an unknown state → denied', async () => {
+    const { d } = fakeDeps(); const { g } = fakeGoogle()
+    expect((await handleConnect(d, g, null, { action: 'finish', state: 'nope', error: 'access_denied' })).body).toEqual({ error: 'denied' })
   })
 })
