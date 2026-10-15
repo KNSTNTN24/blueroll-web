@@ -125,9 +125,12 @@ async function link(e: Command, g: GroupDeps, ctx: Ctx, now: Date) {
   catch (err) { await g.releaseGroupLinkCode(e.arg, usedAt); throw err }
   if (!ready) { await g.releaseGroupLinkCode(e.arg, usedAt); await say(ctx.tg, e.chatId, RV_TEXT.unavailable); return }
   const prev = await g.groupByChat(e.chatId)
+  // Fresh link (new business, or after an unlink): clear old routes before AND after linkGroup, so a crash in between can't leave them on a relinked group.
+  const fresh = !prev || prev.business_id !== code.business_id
+  if (fresh && prev) await ctx.d.deleteRoutes(prev.id)
   const group = await g.linkGroup({ business_id: code.business_id, chat_id: e.chatId, title: e.chatTitle, linked_by: code.issued_by, now })
   // Review Focus 3: a fresh link (new business, or after an unlink) never inherits routes.
-  if (!prev || prev.business_id !== code.business_id) await ctx.d.deleteRoutes(group.id)
+  if (fresh) await ctx.d.deleteRoutes(group.id)
   await say(ctx.tg, e.chatId, RV_TEXT.linked(await g.businessName(code.business_id)))
   await checkReviewGroupPermissions(g, ctx, group, now)
 }
@@ -205,7 +208,8 @@ async function onCallback(e: Callback, g: GroupDeps, ctx: Ctx, now: Date) {
         reply_parameters: { message_id: Number(e.messageId) }, reply_markup: { force_reply: true, selective: true },
       })
       const mid = sent.ok ? sent.result?.message_id : null
-      if (mid != null) {
+      if (mid == null) { await answer(ctx.tg, e.callbackId, RV_TEXT.telegramDown, true); return }
+      {
         await ctx.d.saveEditPrompt({
           chat_id: e.chatId, prompt_message_id: String(mid), card_message_id: e.messageId, review_id: r.id, review_version: r.version,
           user_id: e.userId, expires_at: new Date(now.getTime() + EDIT_TTL_MS).toISOString(),

@@ -13,12 +13,12 @@ const member = (status = 'member') => (m: string) => (m === 'getChatMember' ? { 
 const cb = (data: string, o: Partial<Extract<RvEvent, { kind: 'callback' }>> = {}): RvEvent => ({ kind: 'callback', callbackId: 'cq1', chatId: '-100', messageId: '7', userId: '42', userName: 'Anna S.', data, id: id(), ...o })
 const answers = (calls: { method: string; body: any }[]) => calls.filter((c) => c.method === 'answerCallbackQuery').map((c) => c.body.text ?? '')
 
-function setup(o: { status?: string; replies?: (string | null)[]; tgStatus?: string } = {}) {
+function setup(o: { status?: string; replies?: (string | null)[]; tgStatus?: string; tg?: (m: string) => any } = {}) {
   const r = mkReview({ status: (o.status ?? 'drafted') as any })
   const f = fakeCtx({
     reviews: [r], drafts: [{ id: 'd1', review_id: r.id, review_version: 1, draft_version: 1, text: 'Hi Sarah', source: 'ai', author_name: null, created_at: '' }],
     cards: [{ review_id: r.id, chat_id: '-100', message_id: '7', group_id: 'gr1' }],
-  }, { replies: o.replies, tg: member(o.tgStatus) })
+  }, { replies: o.replies, tg: o.tg ?? member(o.tgStatus) })
   const { d: g } = fakeGroupDeps({ ...RV_INIT,  groups: [{ ...GROUP_ROW }] })
   g.now = () => NOW   // the bot reads the clock from GroupDeps; keep it on the reviews fakes' NOW
   return { r, g, ...f }
@@ -185,6 +185,73 @@ describe('/pending, bot removed, migration, permissions', () => {
     expect(await checkReviewGroupPermissions(g, ctx, { id: 'gr1', business_id: 'b1', channel: 'telegram_reviews', chat_id: '-100', title: 'Managers', alerts: false }, NOW)).toBe('warned')
     expect(calls.filter((c) => c.method === 'sendMessage').map((c) => c.body.text)).toEqual([RV_TEXT.permissionWarning])
     expect(s.notes).toEqual([expect.objectContaining({ user_id: 'm1', title: 'Reviews group is open to new members' })])
+  })
+})
+
+describe('callback guards (fix round 1)', () => {
+  it('Telegram error on getChatMember → telegramDown alert, nothing changes', async () => {
+    const { r, g, ctx, s, calls } = setup({ tg: (m) => (m === 'getChatMember' ? { ok: false, status: 500, description: 'boom' } : undefined) })
+    await handleReviewsEvent(cb(`rv:s:${r.id}:1`), g, ctx)
+    expect(answers(calls)).toEqual([RV_TEXT.telegramDown])
+    expect(s.reviews[0].status).toBe('drafted')
+  })
+  it('kicked member → notMember', async () => {
+    const { r, g, ctx, s, calls } = setup({ tgStatus: 'kicked' })
+    await handleReviewsEvent(cb(`rv:s:${r.id}:1`), g, ctx)
+    expect(answers(calls)).toEqual([RV_TEXT.notMember])
+    expect(s.reviews[0].status).toBe('drafted')
+  })
+  it('the same update handled twice acts once', async () => {
+    const { r, g, ctx, s, calls } = setup()
+    const e = cb(`rv:s:${r.id}:1`)
+    await handleReviewsEvent(e, g, ctx)
+    await handleReviewsEvent(e, g, ctx)
+    expect(s.audits.filter((a) => a.action === 'skipped')).toHaveLength(1)
+    expect(calls.filter((c) => c.method === 'editMessageText')).toHaveLength(1)
+    expect(calls.filter((c) => c.method === 'answerCallbackQuery')).toHaveLength(1)
+  })
+  it('stale draft version is refused for Another and Edit', async () => {
+    const a = setup()
+    await handleReviewsEvent(cb(`rv:a:${a.r.id}:0`), a.g, a.ctx)
+    expect(answers(a.calls)).toEqual([ACTION_TEXT.stale])
+    expect(a.s.drafts).toHaveLength(1)
+    const e = setup()
+    await handleReviewsEvent(cb(`rv:e:${e.r.id}:0`), e.g, e.ctx)
+    expect(answers(e.calls)).toEqual([ACTION_TEXT.stale])
+    expect(e.s.prompts).toEqual([])
+  })
+  it('Yes within 60 s with a stale draft version → stale, review unchanged', async () => {
+    const { r, g, ctx, s, calls } = setup()
+    await handleReviewsEvent(cb(`rv:y:${r.id}:0:${Math.floor(NOW.getTime() / 1000)}`), g, ctx)
+    expect(answers(calls)).toEqual([ACTION_TEXT.stale])
+    expect(s.reviews[0].status).toBe('drafted')
+  })
+  it('Yes without a timestamp → confirmTimeout, nothing published', async () => {
+    const { r, g, ctx, s, calls } = setup()
+    await handleReviewsEvent(cb(`rv:y:${r.id}:1`), g, ctx)
+    expect(answers(calls)).toEqual([RV_TEXT.confirmTimeout])
+    expect(s.reviews[0].status).toBe('drafted')
+  })
+  it('force-reply prompt that fails to send → telegramDown alert, no prompt saved', async () => {
+    const { r, g, ctx, s, calls } = setup({ tg: (m) => (m === 'getChatMember' ? { result: { status: 'member' } } : m === 'sendMessage' ? { ok: false, status: 500, description: 'x', result: undefined } : undefined) })
+    await handleReviewsEvent(cb(`rv:e:${r.id}:1`), g, ctx)
+    expect(answers(calls)).toEqual([RV_TEXT.telegramDown])
+    expect(s.prompts).toEqual([])
+  })
+  const prompt = (r: { id: string }) => ({ chat_id: '-100', prompt_message_id: '50', card_message_id: '7', review_id: r.id, review_version: 1, user_id: '42', expires_at: '2026-10-15T14:00:00Z' })
+  const reply = (): RvEvent => ({ kind: 'reply', chatId: '-100', messageId: '21', replyTo: '50', userId: '42', userName: 'Anna', text: 'New text', id: id() })
+  it('edit reply for a review of another business is ignored', async () => {
+    const { r, g, ctx, s } = setup()
+    s.prompts.push(prompt(r)); s.reviews[0].business_id = 'OTHER'
+    await handleReviewsEvent(reply(), g, ctx)
+    expect(s.drafts).toHaveLength(1)
+  })
+  it('edit reply after the review moved to a new version → stale sent to the chat, no draft', async () => {
+    const { r, g, ctx, s, calls } = setup()
+    s.prompts.push(prompt(r)); s.reviews[0].version = 2
+    await handleReviewsEvent(reply(), g, ctx)
+    expect(s.drafts).toHaveLength(1)
+    expect(calls.at(-1)!.body.text).toBe(ACTION_TEXT.stale)
   })
 })
 
