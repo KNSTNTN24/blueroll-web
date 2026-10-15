@@ -48,10 +48,21 @@ incident pre-fill and the mobile view (v2).
 These conditions are implied by the spec but easy to miss. Each one is pinned by a test in the task that owns it.
 
 1. **Reconnecting must not revoke the new grant.** Google's `/revoke` cancels the *whole* grant for that user+client, so revoking the old refresh token while replacing a connection from the same Google account would kill the new token too. On replace we only delete our copy; we revoke at Google only on Disconnect. (Task 4: `finish replaces a previous connection without calling revoke`.)
-2. **A location switched on later must not flood the chat** with every review since the connection date. `notify` is based on `max(connected_at, enabled_at)`. (Task 6: `reconcile: review older than enabled_at is silent`.)
-3. **A Telegram group relinked to another business must not keep its old routes**, or business A's reviews would reach business B's managers. Routes are deleted on every fresh link and on bot removal, and delivery also checks `group.business_id = review.business_id`. (Task 8: `/link to another business drops old routes`; Task 9 db query filter.)
-4. **A review edited on Google while its old card is still open** must not leave buttons that publish a reply to the old text. Old cards are retired ("This review was edited — see the new card") and the callback carries the draft version, so old presses get "This reply changed". (Task 6: `new version retires old cards`; Task 8: `stale draft version`.)
+2. **A location switched on later must not flood the chat** with every review since the connection date. `notify` is based on `max(connected_at, enabled_at)`. (Task 7: `review older than enabled_at is silent`.)
+3. **A Telegram group relinked to another business must not keep its old routes**, or business A's reviews would reach business B's managers. Routes are deleted on every fresh link and on bot removal, and delivery also checks `group.business_id = review.business_id`. (Task 8: `/link to another business drops old routes`; Task 6: `deliverReview … same business`; Task 9: `routedGroups only returns … same business`.)
+4. **A review edited on Google while its old card is still open** must not leave buttons that publish a reply to the old text. Old cards are retired ("This review was edited — see the new card") and the callback carries the draft version, so old presses get "This reply changed". (Task 6: `retireCards`; Task 7: `new version retires old cards`; Task 8: `press for an old draft version`.)
 5. **A sync run that fails half-way must not resend cards.** Delivery is recorded per review version (`delivered_version`), not by status, so a review whose draft failed is not picked up again every 15 minutes. (Task 6: `pending review is delivered once even when drafting fails`.)
+
+## Deliberate deviations from the spec's §12 data list
+
+Each one is small and is called out where it is implemented. Record them in the domain page (Task 13).
+
+- `reviews.google_review_id` (unique per business) instead of a unique `google_review_name`: the review id stays the same across Google accounts, and the API path is rebuilt from the current location, so reconnecting through another account does not duplicate reviews.
+- `reviews.delivered_version`, `skipped_at`, `skipped_by_name`, `publishing_by/at`: needed for "deliver once per version" and for the "Skipped by Anna" card line.
+- `google_locations.enabled_at`, `last_full_pass_at`, `maps_uri`: needed for Review Focus 2, the daily deletion pass, and the "Open on Google" link (the v4 review has no URL of its own).
+- `review_settings.contact`: the "please contact us at …" in the cautious template (§7).
+- `review_edit_prompts` (Telegram force-reply) instead of the WhatsApp `review_edit_sessions`, which comes with v1.1.
+- `review_routes.business_id`: keeps the RLS checks to single-table lookups.
 
 ## File map
 
@@ -5004,7 +5015,6 @@ function ReviewCard({ review: r, siteName, canAct, onChanged }: { review: WebRev
     catch (e) { toast.error(e instanceof Error ? e.message : String(e)) } finally { setBusy(false) }
   }
   const publish = async () => {
-    if (!window.confirm('Publish this reply on Google?')) return
     if (edited) {
       setBusy(true)
       try { await reviewAction({ action: 'edit', review_id: r.id, review_version: r.version, text }) }
@@ -5014,6 +5024,7 @@ function ReviewCard({ review: r, siteName, canAct, onChanged }: { review: WebRev
       toast.message('Saved your edit — press Publish again to post it.')
       return
     }
+    if (!window.confirm('Publish this reply on Google?')) return
     if (draft) act({ action: 'publish', review_id: r.id, draft_version: draft.draft_version })
   }
   return (
