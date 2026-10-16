@@ -63,6 +63,8 @@ export interface TeamDeps extends CoreDb {
   removeMembershipsElsewhere(phone: string, businessId: string, now: Date): Promise<void>
   /** Every non-removed member row with this phone. */
   setUnreachable(phone: string, at: Date | null): Promise<void>
+  /** A failed delivery status from the webhook (no phone stored: join to channel_messages_log by wa_message_id). */
+  logDeliveryError(e: { wa_message_id: string; error_code: number | null; error_title: string | null }): Promise<void>
   /** Active WhatsApp identity of this number (any business). */
   identityByPhone(phone: string): Promise<WaIdentity | null>
   /** consent_source 'team_invite'. */
@@ -184,6 +186,7 @@ export function makeTeamDeps(admin: Any): TeamDeps {
       q = at ? q.is('unreachable_at', null) : q.not('unreachable_at', 'is', null)
       await one(q)
     },
+    logDeliveryError: async (e) => { await one(admin.from('channel_delivery_errors').insert(e)) },
 
     identityByPhone: async (phone) => (await one(admin.from('channel_identities').select('id, business_id, profile_id, last_inbound_at')
       .eq('channel', 'whatsapp').eq('external_id', phone).is('revoked_at', null).maybeSingle())) ?? null,

@@ -49,6 +49,7 @@ export interface FakeTeamState {
   responses: any[]
   notifications: any[]
   logs: ChannelLog[]
+  deliveryErrors: { wa_message_id: string; error_code: number | null; error_title: string | null }[]
 }
 
 /** Defaults: team Kitchen at Ashfield Row; Anna an active, linked member; Ben a person without a number; Kostya the owner, linked. */
@@ -62,7 +63,7 @@ export function fakeTeamDeps(init: Partial<FakeTeamState> = {}, over: Partial<Te
     ],
     people: [person(ANNA), person(BEN), person(BOSS, 'owner')], managers: [BOSS.profile_id], memberSites: {}, groupAdmins: [], completions: [],
     events: new Set(), takes: new Map(), ready: { b: true }, businessNames: { b: 'Fern & Fig' },
-    created: [], completionRows: [], responses: [], notifications: [], logs: [], ...init,
+    created: [], completionRows: [], responses: [], notifications: [], logs: [], deliveryErrors: [], ...init,
   }
   let n = 0
   // A team is live while not deleted and its site is still listed (a site missing from s.sites = soft-removed).
@@ -119,6 +120,7 @@ export function fakeTeamDeps(init: Partial<FakeTeamState> = {}, over: Partial<Te
       }
     },
     setUnreachable: async (phone, at) => { for (const m of s.members) if (m.phone === phone && m.status !== 'removed') m.unreachable_at = at ? at.toISOString() : null },
+    logDeliveryError: async (e) => { s.deliveryErrors.push(e) },
     identityByPhone: async (phone) => { const i = activeIdentity(phone); return i ? { id: i.id, business_id: i.business_id, profile_id: i.profile_id, last_inbound_at: i.last_inbound_at } : null },
     linkIdentity: async (a) => {
       const cur = activeIdentity(a.phone)

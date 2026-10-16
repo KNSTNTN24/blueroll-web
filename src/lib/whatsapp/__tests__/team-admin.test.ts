@@ -16,7 +16,7 @@ describe('shared contact', () => {
   it('a manager with one team: no question, invite sent, "Invite sent to <name> ✓"', async () => {
     const f = fakeTeamBot()
     await handleInbound(share(BOSS.phone), f.d)
-    expect(f.sent.map((m) => [m.to, m.type === 'template' ? m.template.name : textOf(m)])).toEqual([[MARIA, 'team_invite'], [BOSS.phone, 'Invite sent to Maria Lopez ✓']])
+    expect(f.sent.map((m) => [m.to, m.type === 'template' ? m.template.name : textOf(m)])).toEqual([[MARIA, 'team_invite_v2'], [BOSS.phone, 'Invite sent to Maria Lopez ✓']])
     expect(f.s.members.find((m) => m.phone === MARIA)).toMatchObject({ status: 'invited', invited_by: 'm1' })
   })
   it('staff share → only managers; no teams → create one first', async () => {

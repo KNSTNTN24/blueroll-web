@@ -172,13 +172,15 @@ describe('parseStatuses', () => {
     const body = { entry: [{ changes: [{ value: { statuses: [
       { id: 'wamid.A', status: 'delivered', recipient_id: '447700900123' },
       { id: 'wamid.B', status: 'failed', recipient_id: '447700900456', errors: [{ code: 131026, title: 'Message undeliverable' }] },
+      { id: 'wamid.D', status: 'failed', recipient_id: '447700900789', errors: [{ code: 131049, title: 'Ecosystem engagement', error_data: { details: 'Marketing limit' } }] },
       { id: 'wamid.C', status: 'failed', recipient_id: 'not-a-number' },
     ] } }] }] }
     expect(parseStatuses(body)).toEqual([
-      { id: 'wamid.A', recipient: '447700900123', status: 'delivered', errorCode: null },
-      { id: 'wamid.B', recipient: '447700900456', status: 'failed', errorCode: 131026 },
+      { id: 'wamid.A', recipient: '447700900123', status: 'delivered', errorCode: null, errorTitle: null },
+      { id: 'wamid.B', recipient: '447700900456', status: 'failed', errorCode: 131026, errorTitle: 'Message undeliverable' },
+      { id: 'wamid.D', recipient: '447700900789', status: 'failed', errorCode: 131049, errorTitle: 'Ecosystem engagement: Marketing limit' },
     ])
-    expect(parseStatuses(status)).toEqual([{ id: 'wamid.X', recipient: '447700900123', status: 'delivered', errorCode: null }])
+    expect(parseStatuses(status)).toEqual([{ id: 'wamid.X', recipient: '447700900123', status: 'delivered', errorCode: null, errorTitle: null }])
     expect(parseStatuses(null)).toEqual([])
     expect(parseStatuses({ entry: [{ changes: [{ value: { statuses: 5 } }] }] })).toEqual([])
   })
