@@ -1,14 +1,14 @@
 # Database reference (generated)
 
-> Generated from the live Supabase project `rszrggreuarvodcqeqrj` on 2026-10-13. **Do not edit by hand** —
+> Generated from the live Supabase project `rszrggreuarvodcqeqrj` on 2026-10-16. **Do not edit by hand** —
 > run `SUPABASE_ACCESS_TOKEN=… npx tsx scripts/gen-db-reference.ts`. Structure only: no row data, function bodies or
 > cron commands. What things *mean* is in [`docs/domain/`](../domain/README.md).
 
-Tables: 60 · Functions: 68 · Cron jobs: 6 · Storage buckets: 2
+Tables: 71 · Functions: 74 · Cron jobs: 7 · Storage buckets: 2
 
 ## Tables
 
-[`ai_usage_log`](#ai_usage_log) · [`businesses`](#businesses) · [`capability_catalog`](#capability_catalog) · [`channel_flows`](#channel_flows) · [`channel_form_tokens`](#channel_form_tokens) · [`channel_group_checklists`](#channel_group_checklists) · [`channel_group_events`](#channel_group_events) · [`channel_group_link_codes`](#channel_group_link_codes) · [`channel_group_members`](#channel_group_members) · [`channel_group_reminders_sent`](#channel_group_reminders_sent) · [`channel_group_takes`](#channel_group_takes) · [`channel_groups`](#channel_groups) · [`channel_identities`](#channel_identities) · [`channel_link_codes`](#channel_link_codes) · [`channel_live_lists`](#channel_live_lists) · [`channel_messages_log`](#channel_messages_log) · [`channel_reminders_sent`](#channel_reminders_sent) · [`checklist_completions`](#checklist_completions) · [`checklist_drafts`](#checklist_drafts) · [`checklist_instances`](#checklist_instances) · [`checklist_responses`](#checklist_responses) · [`checklist_template_items`](#checklist_template_items) · [`checklist_templates`](#checklist_templates) · [`deliveries`](#deliveries) · [`delivery_photos`](#delivery_photos) · [`demo_force_exit`](#demo_force_exit) · [`diary_entries`](#diary_entries) · [`dinesafe_cache`](#dinesafe_cache) · [`dinesafe_refresh_meta`](#dinesafe_refresh_meta) · [`document_access`](#document_access) · [`documents`](#documents) · [`feedback_requests`](#feedback_requests) · [`four_weekly_reviews`](#four_weekly_reviews) · [`haccp_pack_data`](#haccp_pack_data) · [`haccp_plan_shares`](#haccp_plan_shares) · [`haccp_setup_sessions`](#haccp_setup_sessions) · [`haccp_signoffs`](#haccp_signoffs) · [`incidents`](#incidents) · [`ingredients`](#ingredients) · [`invites`](#invites) · [`member_capability_overrides`](#member_capability_overrides) · [`member_sites`](#member_sites) · [`menu_categories`](#menu_categories) · [`menu_items`](#menu_items) · [`notification_rules`](#notification_rules) · [`notifications`](#notifications) · [`profiles`](#profiles) · [`recipe_ingredients`](#recipe_ingredients) · [`recipe_sites`](#recipe_sites) · [`recipe_tags`](#recipe_tags) · [`recipes`](#recipes) · [`roles`](#roles) · [`sites`](#sites) · [`staff_checkins`](#staff_checkins) · [`suppliers`](#suppliers) · [`tags`](#tags) · [`template_email_log`](#template_email_log) · [`template_leads`](#template_leads) · [`training_records`](#training_records) · [`trial_grants`](#trial_grants)
+[`ai_usage_log`](#ai_usage_log) · [`businesses`](#businesses) · [`capability_catalog`](#capability_catalog) · [`channel_delivery_errors`](#channel_delivery_errors) · [`channel_flows`](#channel_flows) · [`channel_form_tokens`](#channel_form_tokens) · [`channel_group_checklists`](#channel_group_checklists) · [`channel_group_events`](#channel_group_events) · [`channel_group_link_codes`](#channel_group_link_codes) · [`channel_group_members`](#channel_group_members) · [`channel_group_reminders_sent`](#channel_group_reminders_sent) · [`channel_group_takes`](#channel_group_takes) · [`channel_groups`](#channel_groups) · [`channel_identities`](#channel_identities) · [`channel_link_codes`](#channel_link_codes) · [`channel_live_lists`](#channel_live_lists) · [`channel_messages_log`](#channel_messages_log) · [`channel_reminders_sent`](#channel_reminders_sent) · [`checklist_completions`](#checklist_completions) · [`checklist_drafts`](#checklist_drafts) · [`checklist_instances`](#checklist_instances) · [`checklist_responses`](#checklist_responses) · [`checklist_template_items`](#checklist_template_items) · [`checklist_templates`](#checklist_templates) · [`deliveries`](#deliveries) · [`delivery_photos`](#delivery_photos) · [`demo_force_exit`](#demo_force_exit) · [`diary_entries`](#diary_entries) · [`dinesafe_cache`](#dinesafe_cache) · [`dinesafe_refresh_meta`](#dinesafe_refresh_meta) · [`document_access`](#document_access) · [`documents`](#documents) · [`feedback_requests`](#feedback_requests) · [`four_weekly_reviews`](#four_weekly_reviews) · [`google_connections`](#google_connections) · [`google_locations`](#google_locations) · [`google_oauth_states`](#google_oauth_states) · [`haccp_pack_data`](#haccp_pack_data) · [`haccp_plan_shares`](#haccp_plan_shares) · [`haccp_setup_sessions`](#haccp_setup_sessions) · [`haccp_signoffs`](#haccp_signoffs) · [`incidents`](#incidents) · [`ingredients`](#ingredients) · [`invites`](#invites) · [`member_capability_overrides`](#member_capability_overrides) · [`member_sites`](#member_sites) · [`menu_categories`](#menu_categories) · [`menu_items`](#menu_items) · [`notification_rules`](#notification_rules) · [`notifications`](#notifications) · [`profiles`](#profiles) · [`recipe_ingredients`](#recipe_ingredients) · [`recipe_sites`](#recipe_sites) · [`recipe_tags`](#recipe_tags) · [`recipes`](#recipes) · [`review_audit`](#review_audit) · [`review_cards`](#review_cards) · [`review_drafts`](#review_drafts) · [`review_edit_prompts`](#review_edit_prompts) · [`review_routes`](#review_routes) · [`review_settings`](#review_settings) · [`reviews`](#reviews) · [`roles`](#roles) · [`sites`](#sites) · [`staff_checkins`](#staff_checkins) · [`suppliers`](#suppliers) · [`tags`](#tags) · [`template_email_log`](#template_email_log) · [`template_leads`](#template_leads) · [`training_records`](#training_records) · [`trial_grants`](#trial_grants)
 
 ### `ai_usage_log`
 
@@ -122,6 +122,31 @@ RLS: **disabled**
 **Indexes**
 
 - `capability_catalog_pkey`: CREATE UNIQUE INDEX capability_catalog_pkey ON public.capability_catalog USING btree (cap)
+
+**Policies**
+
+_No policies._
+
+### `channel_delivery_errors`
+
+RLS: enabled
+
+| Column | Type | Null | Default | Comment |
+|---|---|---|---|---|
+| `id` | bigint | no |  |  |
+| `wa_message_id` | text | no |  |  |
+| `error_code` | integer | yes |  |  |
+| `error_title` | text | yes |  |  |
+| `created_at` | timestamp with time zone | no | now() |  |
+
+**Constraints**
+
+- `channel_delivery_errors_pkey` (primary key): PRIMARY KEY (id)
+
+**Indexes**
+
+- `channel_delivery_errors_pkey`: CREATE UNIQUE INDEX channel_delivery_errors_pkey ON public.channel_delivery_errors USING btree (id)
+- `channel_delivery_errors_wamid_idx`: CREATE INDEX channel_delivery_errors_wamid_idx ON public.channel_delivery_errors USING btree (wa_message_id)
 
 **Policies**
 
@@ -273,7 +298,7 @@ RLS: enabled
 **Constraints**
 
 - `channel_group_link_codes_business_id_fkey` (foreign key): FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE
-- `channel_group_link_codes_channel_check` (check): CHECK ((channel = ANY (ARRAY['telegram'::text, 'whatsapp'::text])))
+- `channel_group_link_codes_channel_check` (check): CHECK ((channel = ANY (ARRAY['telegram'::text, 'whatsapp'::text, 'telegram_reviews'::text])))
 - `channel_group_link_codes_code_check` (check): CHECK ((code ~ '^[0-9]{6}$'::text))
 - `channel_group_link_codes_issued_by_fkey` (foreign key): FOREIGN KEY (issued_by) REFERENCES profiles(id) ON DELETE CASCADE
 - `channel_group_link_codes_pkey` (primary key): PRIMARY KEY (code)
@@ -287,6 +312,7 @@ RLS: enabled
 | Policy | Command | Kind | Roles | USING | WITH CHECK |
 |---|---|---|---|---|---|
 | `managers read group link codes` | SELECT | permissive | {public} | is_active_business_manager(business_id) |  |
+| `review managers read review link codes` | SELECT | permissive | {public} | ((channel = 'telegram_reviews'::text) AND can_manage_reviews(business_id)) |  |
 
 ### `channel_group_members`
 
@@ -414,8 +440,8 @@ RLS: enabled
 
 - `channel_groups_business_id_fkey` (foreign key): FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE
 - `channel_groups_channel_chat_id_key` (unique): UNIQUE (channel, chat_id)
-- `channel_groups_channel_check` (check): CHECK ((channel = ANY (ARRAY['telegram'::text, 'whatsapp'::text])))
-- `channel_groups_chat_check` (check): CHECK (((channel <> 'telegram'::text) OR (chat_id IS NOT NULL)))
+- `channel_groups_channel_check` (check): CHECK ((channel = ANY (ARRAY['telegram'::text, 'whatsapp'::text, 'telegram_reviews'::text])))
+- `channel_groups_chat_check` (check): CHECK (((channel <> ALL (ARRAY['telegram'::text, 'telegram_reviews'::text])) OR (chat_id IS NOT NULL)))
 - `channel_groups_linked_by_fkey` (foreign key): FOREIGN KEY (linked_by) REFERENCES profiles(id) ON DELETE SET NULL
 - `channel_groups_pkey` (primary key): PRIMARY KEY (id)
 - `channel_groups_site_check` (check): CHECK (((channel <> 'whatsapp'::text) OR (site_id IS NOT NULL)))
@@ -436,6 +462,8 @@ RLS: enabled
 | `managers create whatsapp teams` | INSERT | permissive | {public} |  | ((channel = 'whatsapp'::text) AND (chat_id IS NULL) AND is_active_business_manager(business_id) AND (EXISTS ( SELECT 1 FROM sites s WHERE ((s.id = channel_groups.site_id) AND (s.business_id = channel_groups.business_id) AND (s.removed_at IS NULL))))) |
 | `managers read telegram groups` | SELECT | permissive | {public} | is_active_business_manager(business_id) |  |
 | `managers update telegram groups` | UPDATE | permissive | {public} | is_active_business_manager(business_id) | is_active_business_manager(business_id) |
+| `review managers read review groups` | SELECT | permissive | {public} | ((channel = 'telegram_reviews'::text) AND can_manage_reviews(business_id)) |  |
+| `review managers update review groups` | UPDATE | permissive | {public} | ((channel = 'telegram_reviews'::text) AND can_manage_reviews(business_id)) | ((channel = 'telegram_reviews'::text) AND can_manage_reviews(business_id)) |
 
 **Triggers**
 
@@ -1246,6 +1274,120 @@ RLS: enabled
 | `entitlement_write_gate_upd` | UPDATE | restrictive | {authenticated} | is_business_entitled(business_id) | is_business_entitled(business_id) |
 | `Managers can manage reviews` | ALL | permissive | {public} | ((business_id = get_my_business_id()) AND has_capability('manage_checklists'::text)) |  |
 
+### `google_connections`
+
+RLS: enabled
+
+| Column | Type | Null | Default | Comment |
+|---|---|---|---|---|
+| `id` | uuid | no | gen_random_uuid() |  |
+| `business_id` | uuid | no |  |  |
+| `google_email` | text | no | ''::text |  |
+| `vault_secret_id` | uuid | yes |  |  |
+| `scopes` | text[] | no | '{}'::text[] |  |
+| `status` | text | no | 'active'::text |  |
+| `last_error` | text | yes |  |  |
+| `connected_by` | uuid | yes |  |  |
+| `connected_at` | timestamp with time zone | no | now() |  |
+| `last_sync_at` | timestamp with time zone | yes |  |  |
+| `revoked_at` | timestamp with time zone | yes |  |  |
+| `created_at` | timestamp with time zone | no | now() |  |
+
+**Constraints**
+
+- `google_connections_business_id_fkey` (foreign key): FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE
+- `google_connections_connected_by_fkey` (foreign key): FOREIGN KEY (connected_by) REFERENCES profiles(id) ON DELETE SET NULL
+- `google_connections_pkey` (primary key): PRIMARY KEY (id)
+- `google_connections_status_check` (check): CHECK ((status = ANY (ARRAY['active'::text, 'error'::text, 'revoked'::text])))
+
+**Indexes**
+
+- `google_connections_pkey`: CREATE UNIQUE INDEX google_connections_pkey ON public.google_connections USING btree (id)
+- `uq_google_connection_live`: CREATE UNIQUE INDEX uq_google_connection_live ON public.google_connections USING btree (business_id) WHERE (status <> 'revoked'::text)
+
+**Policies**
+
+| Policy | Command | Kind | Roles | USING | WITH CHECK |
+|---|---|---|---|---|---|
+| `review managers read connections` | SELECT | permissive | {public} | can_manage_reviews(business_id) |  |
+
+### `google_locations`
+
+RLS: enabled
+
+| Column | Type | Null | Default | Comment |
+|---|---|---|---|---|
+| `id` | uuid | no | gen_random_uuid() |  |
+| `connection_id` | uuid | no |  |  |
+| `business_id` | uuid | no |  |  |
+| `gbp_account` | text | no |  |  |
+| `gbp_location` | text | no |  |  |
+| `title` | text | no | ''::text |  |
+| `address` | text | no | ''::text |  |
+| `postcode` | text | no | ''::text |  |
+| `maps_uri` | text | yes |  |  |
+| `can_reply` | boolean | no | false |  |
+| `site_id` | uuid | yes |  |  |
+| `enabled` | boolean | no | false |  |
+| `enabled_at` | timestamp with time zone | yes |  |  |
+| `last_review_update_time` | timestamp with time zone | yes |  |  |
+| `last_full_pass_at` | timestamp with time zone | yes |  |  |
+| `created_at` | timestamp with time zone | no | now() |  |
+
+**Constraints**
+
+- `google_locations_business_id_fkey` (foreign key): FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE
+- `google_locations_connection_id_fkey` (foreign key): FOREIGN KEY (connection_id) REFERENCES google_connections(id) ON DELETE CASCADE
+- `google_locations_connection_id_gbp_location_key` (unique): UNIQUE (connection_id, gbp_location)
+- `google_locations_pkey` (primary key): PRIMARY KEY (id)
+- `google_locations_site_id_fkey` (foreign key): FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE SET NULL
+
+**Indexes**
+
+- `google_locations_connection_id_gbp_location_key`: CREATE UNIQUE INDEX google_locations_connection_id_gbp_location_key ON public.google_locations USING btree (connection_id, gbp_location)
+- `google_locations_pkey`: CREATE UNIQUE INDEX google_locations_pkey ON public.google_locations USING btree (id)
+- `idx_google_locations_business`: CREATE INDEX idx_google_locations_business ON public.google_locations USING btree (business_id)
+
+**Policies**
+
+| Policy | Command | Kind | Roles | USING | WITH CHECK |
+|---|---|---|---|---|---|
+| `entitlement_write_gate_upd` | UPDATE | restrictive | {public} | is_business_entitled(business_id) | is_business_entitled(business_id) |
+| `review managers read locations` | SELECT | permissive | {public} | can_manage_reviews(business_id) |  |
+| `review managers update locations` | UPDATE | permissive | {public} | can_manage_reviews(business_id) | can_manage_reviews(business_id) |
+
+**Triggers**
+
+- `trg_guard_google_locations_update` BEFORE UPDATE: EXECUTE FUNCTION guard_google_locations_update()
+
+### `google_oauth_states`
+
+RLS: enabled
+
+| Column | Type | Null | Default | Comment |
+|---|---|---|---|---|
+| `state` | text | no |  |  |
+| `business_id` | uuid | no |  |  |
+| `profile_id` | uuid | no |  |  |
+| `code_verifier` | text | no |  |  |
+| `expires_at` | timestamp with time zone | no |  |  |
+| `used_at` | timestamp with time zone | yes |  |  |
+| `created_at` | timestamp with time zone | no | now() |  |
+
+**Constraints**
+
+- `google_oauth_states_business_id_fkey` (foreign key): FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE
+- `google_oauth_states_pkey` (primary key): PRIMARY KEY (state)
+- `google_oauth_states_profile_id_fkey` (foreign key): FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+
+**Indexes**
+
+- `google_oauth_states_pkey`: CREATE UNIQUE INDEX google_oauth_states_pkey ON public.google_oauth_states USING btree (state)
+
+**Policies**
+
+_No policies._
+
 ### `haccp_pack_data`
 
 RLS: enabled
@@ -1988,6 +2130,265 @@ RLS: enabled
 
 - `update_recipes_updated_at` BEFORE UPDATE: EXECUTE FUNCTION update_updated_at()
 
+### `review_audit`
+
+RLS: enabled
+
+| Column | Type | Null | Default | Comment |
+|---|---|---|---|---|
+| `id` | bigint | no |  |  |
+| `review_id` | uuid | no |  |  |
+| `business_id` | uuid | no |  |  |
+| `action` | text | no |  |  |
+| `actor_profile` | uuid | yes |  |  |
+| `actor_channel` | text | yes |  |  |
+| `actor_external_id` | text | yes |  |  |
+| `actor_name` | text | yes |  |  |
+| `at` | timestamp with time zone | no | now() |  |
+| `details` | jsonb | no | '{}'::jsonb |  |
+
+**Constraints**
+
+- `review_audit_action_check` (check): CHECK ((action = ANY (ARRAY['imported'::text, 'drafted'::text, 'regenerated'::text, 'edited'::text, 'published'::text, 'skipped'::text, 'publish_failed'::text, 'answered_elsewhere'::text, 'deleted'::text])))
+- `review_audit_actor_profile_fkey` (foreign key): FOREIGN KEY (actor_profile) REFERENCES profiles(id) ON DELETE SET NULL
+- `review_audit_business_id_fkey` (foreign key): FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE
+- `review_audit_pkey` (primary key): PRIMARY KEY (id)
+- `review_audit_review_id_fkey` (foreign key): FOREIGN KEY (review_id) REFERENCES reviews(id) ON DELETE CASCADE
+
+**Indexes**
+
+- `idx_review_audit_review`: CREATE INDEX idx_review_audit_review ON public.review_audit USING btree (review_id, at)
+- `review_audit_pkey`: CREATE UNIQUE INDEX review_audit_pkey ON public.review_audit USING btree (id)
+
+**Policies**
+
+| Policy | Command | Kind | Roles | USING | WITH CHECK |
+|---|---|---|---|---|---|
+| `review managers read audit` | SELECT | permissive | {public} | can_manage_reviews(business_id) |  |
+
+### `review_cards`
+
+RLS: enabled
+
+| Column | Type | Null | Default | Comment |
+|---|---|---|---|---|
+| `review_id` | uuid | no |  |  |
+| `group_id` | uuid | yes |  |  |
+| `chat_id` | text | no |  |  |
+| `message_id` | text | no |  |  |
+| `sent_at` | timestamp with time zone | no | now() |  |
+
+**Constraints**
+
+- `review_cards_group_id_fkey` (foreign key): FOREIGN KEY (group_id) REFERENCES channel_groups(id) ON DELETE CASCADE
+- `review_cards_pkey` (primary key): PRIMARY KEY (chat_id, message_id)
+- `review_cards_review_id_fkey` (foreign key): FOREIGN KEY (review_id) REFERENCES reviews(id) ON DELETE CASCADE
+
+**Indexes**
+
+- `idx_review_cards_review`: CREATE INDEX idx_review_cards_review ON public.review_cards USING btree (review_id)
+- `review_cards_pkey`: CREATE UNIQUE INDEX review_cards_pkey ON public.review_cards USING btree (chat_id, message_id)
+
+**Policies**
+
+_No policies._
+
+### `review_drafts`
+
+RLS: enabled
+
+| Column | Type | Null | Default | Comment |
+|---|---|---|---|---|
+| `id` | uuid | no | gen_random_uuid() |  |
+| `review_id` | uuid | no |  |  |
+| `review_version` | integer | no |  |  |
+| `draft_version` | integer | no |  |  |
+| `text` | text | no |  |  |
+| `source` | text | no |  |  |
+| `author_profile` | uuid | yes |  |  |
+| `author_channel` | text | yes |  |  |
+| `author_external_id` | text | yes |  |  |
+| `author_name` | text | yes |  |  |
+| `created_at` | timestamp with time zone | no | now() |  |
+
+**Constraints**
+
+- `review_drafts_author_profile_fkey` (foreign key): FOREIGN KEY (author_profile) REFERENCES profiles(id) ON DELETE SET NULL
+- `review_drafts_pkey` (primary key): PRIMARY KEY (id)
+- `review_drafts_review_id_fkey` (foreign key): FOREIGN KEY (review_id) REFERENCES reviews(id) ON DELETE CASCADE
+- `review_drafts_review_id_review_version_draft_version_key` (unique): UNIQUE (review_id, review_version, draft_version)
+- `review_drafts_source_check` (check): CHECK ((source = ANY (ARRAY['ai'::text, 'edited'::text])))
+- `review_drafts_text_check` (check): CHECK ((length(text) <= 4000))
+
+**Indexes**
+
+- `review_drafts_pkey`: CREATE UNIQUE INDEX review_drafts_pkey ON public.review_drafts USING btree (id)
+- `review_drafts_review_id_review_version_draft_version_key`: CREATE UNIQUE INDEX review_drafts_review_id_review_version_draft_version_key ON public.review_drafts USING btree (review_id, review_version, draft_version)
+
+**Policies**
+
+| Policy | Command | Kind | Roles | USING | WITH CHECK |
+|---|---|---|---|---|---|
+| `review drafts readable` | SELECT | permissive | {public} | (EXISTS ( SELECT 1 FROM reviews r WHERE (r.id = review_drafts.review_id))) |  |
+
+### `review_edit_prompts`
+
+RLS: enabled
+
+| Column | Type | Null | Default | Comment |
+|---|---|---|---|---|
+| `chat_id` | text | no |  |  |
+| `prompt_message_id` | text | no |  |  |
+| `card_message_id` | text | no |  |  |
+| `review_id` | uuid | no |  |  |
+| `review_version` | integer | no |  |  |
+| `user_id` | text | no |  |  |
+| `expires_at` | timestamp with time zone | no |  |  |
+| `created_at` | timestamp with time zone | no | now() |  |
+
+**Constraints**
+
+- `review_edit_prompts_pkey` (primary key): PRIMARY KEY (chat_id, prompt_message_id)
+- `review_edit_prompts_review_id_fkey` (foreign key): FOREIGN KEY (review_id) REFERENCES reviews(id) ON DELETE CASCADE
+
+**Indexes**
+
+- `review_edit_prompts_pkey`: CREATE UNIQUE INDEX review_edit_prompts_pkey ON public.review_edit_prompts USING btree (chat_id, prompt_message_id)
+
+**Policies**
+
+_No policies._
+
+### `review_routes`
+
+RLS: enabled
+
+| Column | Type | Null | Default | Comment |
+|---|---|---|---|---|
+| `site_id` | uuid | no |  |  |
+| `group_id` | uuid | no |  |  |
+| `business_id` | uuid | no |  |  |
+| `created_at` | timestamp with time zone | no | now() |  |
+
+**Constraints**
+
+- `review_routes_business_id_fkey` (foreign key): FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE
+- `review_routes_group_id_fkey` (foreign key): FOREIGN KEY (group_id) REFERENCES channel_groups(id) ON DELETE CASCADE
+- `review_routes_pkey` (primary key): PRIMARY KEY (site_id, group_id)
+- `review_routes_site_id_fkey` (foreign key): FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE
+
+**Indexes**
+
+- `idx_review_routes_group`: CREATE INDEX idx_review_routes_group ON public.review_routes USING btree (group_id)
+- `review_routes_pkey`: CREATE UNIQUE INDEX review_routes_pkey ON public.review_routes USING btree (site_id, group_id)
+
+**Policies**
+
+| Policy | Command | Kind | Roles | USING | WITH CHECK |
+|---|---|---|---|---|---|
+| `entitlement_write_gate_ins` | INSERT | restrictive | {public} |  | is_business_entitled(business_id) |
+| `review managers add routes` | INSERT | permissive | {public} |  | (can_manage_reviews(business_id) AND (EXISTS ( SELECT 1 FROM sites s WHERE ((s.id = review_routes.site_id) AND (s.business_id = review_routes.business_id) AND (s.removed_at IS NULL)))) AND (EXISTS ( SELECT 1 FROM channel_groups g WHERE ((g.id = review_routes.group_id) AND (g.business_id = review_routes.business_id) AND (g.channel = 'telegram_reviews'::text) AND (g.unlinked_at IS NULL))))) |
+| `review managers read routes` | SELECT | permissive | {public} | can_manage_reviews(business_id) |  |
+| `review managers remove routes` | DELETE | permissive | {public} | can_manage_reviews(business_id) |  |
+
+### `review_settings`
+
+RLS: enabled
+
+| Column | Type | Null | Default | Comment |
+|---|---|---|---|---|
+| `business_id` | uuid | no |  |  |
+| `tone` | text | no | 'warm'::text |  |
+| `sign_off` | text | no | ''::text |  |
+| `avoid` | text | no | ''::text |  |
+| `contact` | text | no | ''::text |  |
+| `examples` | text[] | no | '{}'::text[] |  |
+| `updated_at` | timestamp with time zone | no | now() |  |
+
+**Constraints**
+
+- `review_settings_avoid_check` (check): CHECK ((length(avoid) <= 1000))
+- `review_settings_business_id_fkey` (foreign key): FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE
+- `review_settings_contact_check` (check): CHECK ((length(contact) <= 200))
+- `review_settings_examples_check` (check): CHECK ((COALESCE(array_length(examples, 1), 0) <= 3))
+- `review_settings_pkey` (primary key): PRIMARY KEY (business_id)
+- `review_settings_sign_off_check` (check): CHECK ((length(sign_off) <= 120))
+- `review_settings_tone_check` (check): CHECK ((tone = ANY (ARRAY['warm'::text, 'neutral'::text, 'formal'::text])))
+
+**Indexes**
+
+- `review_settings_pkey`: CREATE UNIQUE INDEX review_settings_pkey ON public.review_settings USING btree (business_id)
+
+**Policies**
+
+| Policy | Command | Kind | Roles | USING | WITH CHECK |
+|---|---|---|---|---|---|
+| `entitlement_write_gate_ins` | INSERT | restrictive | {public} |  | is_business_entitled(business_id) |
+| `entitlement_write_gate_upd` | UPDATE | restrictive | {public} | is_business_entitled(business_id) | is_business_entitled(business_id) |
+| `review managers insert settings` | INSERT | permissive | {public} |  | can_manage_reviews(business_id) |
+| `review managers read settings` | SELECT | permissive | {public} | can_manage_reviews(business_id) |  |
+| `review managers update settings` | UPDATE | permissive | {public} | can_manage_reviews(business_id) | can_manage_reviews(business_id) |
+
+### `reviews`
+
+RLS: enabled
+
+| Column | Type | Null | Default | Comment |
+|---|---|---|---|---|
+| `id` | uuid | no | gen_random_uuid() |  |
+| `business_id` | uuid | no |  |  |
+| `location_id` | uuid | yes |  |  |
+| `site_id` | uuid | yes |  |  |
+| `google_review_id` | text | no |  |  |
+| `version` | integer | no | 1 |  |
+| `delivered_version` | integer | no | 0 |  |
+| `stars` | integer | no |  |  |
+| `comment` | text | no | ''::text |  |
+| `reviewer_name` | text | no | ''::text |  |
+| `create_time` | timestamp with time zone | no |  |  |
+| `update_time` | timestamp with time zone | no |  |  |
+| `google_reply` | text | yes |  |  |
+| `google_reply_time` | timestamp with time zone | yes |  |  |
+| `language` | text | yes |  |  |
+| `flags` | text[] | no | '{}'::text[] |  |
+| `notify` | boolean | no | false |  |
+| `status` | text | no | 'new'::text |  |
+| `publishing_by` | text | yes |  |  |
+| `publishing_at` | timestamp with time zone | yes |  |  |
+| `published_text` | text | yes |  |  |
+| `published_at` | timestamp with time zone | yes |  |  |
+| `published_by_profile` | uuid | yes |  |  |
+| `published_by_channel` | text | yes |  |  |
+| `published_by_name` | text | yes |  |  |
+| `skipped_at` | timestamp with time zone | yes |  |  |
+| `skipped_by_name` | text | yes |  |  |
+| `created_at` | timestamp with time zone | no | now() |  |
+
+**Constraints**
+
+- `reviews_business_id_fkey` (foreign key): FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE
+- `reviews_business_id_google_review_id_key` (unique): UNIQUE (business_id, google_review_id)
+- `reviews_location_id_fkey` (foreign key): FOREIGN KEY (location_id) REFERENCES google_locations(id) ON DELETE SET NULL
+- `reviews_pkey` (primary key): PRIMARY KEY (id)
+- `reviews_published_by_profile_fkey` (foreign key): FOREIGN KEY (published_by_profile) REFERENCES profiles(id) ON DELETE SET NULL
+- `reviews_site_id_fkey` (foreign key): FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE SET NULL
+- `reviews_stars_check` (check): CHECK (((stars >= 1) AND (stars <= 5)))
+- `reviews_status_check` (check): CHECK ((status = ANY (ARRAY['new'::text, 'drafted'::text, 'publishing'::text, 'published'::text, 'skipped'::text, 'answered_elsewhere'::text, 'deleted'::text])))
+- `reviews_version_check` (check): CHECK ((version >= 1))
+
+**Indexes**
+
+- `idx_reviews_pending`: CREATE INDEX idx_reviews_pending ON public.reviews USING btree (business_id) WHERE (notify AND (status = ANY (ARRAY['new'::text, 'drafted'::text])))
+- `idx_reviews_site`: CREATE INDEX idx_reviews_site ON public.reviews USING btree (site_id, update_time DESC)
+- `reviews_business_id_google_review_id_key`: CREATE UNIQUE INDEX reviews_business_id_google_review_id_key ON public.reviews USING btree (business_id, google_review_id)
+- `reviews_pkey`: CREATE UNIQUE INDEX reviews_pkey ON public.reviews USING btree (id)
+
+**Policies**
+
+| Policy | Command | Kind | Roles | USING | WITH CHECK |
+|---|---|---|---|---|---|
+| `reviews readable` | SELECT | permissive | {public} | (can_manage_reviews(business_id) OR ((site_id IS NOT NULL) AND (business_id = get_my_business_id()) AND can_see_site_row(site_id))) |  |
+
 ### `roles`
 
 RLS: enabled
@@ -2339,6 +2740,7 @@ Signatures and security only. "anon"/"authenticated" = may the role execute it.
 | `attach_tag(p_recipe_id uuid, p_name text)` | tags | plpgsql | invoker | volatile | no | yes |
 | `billable_site_count(p_business_id uuid)` | integer | sql | definer | stable | yes | yes |
 | `can_list_site(p_site uuid)` | boolean | sql | definer | stable | yes | yes |
+| `can_manage_reviews(b uuid)` | boolean | sql | definer | stable | no | yes |
 | `can_see_shared_row(p_site uuid)` | boolean | sql | definer | stable | yes | yes |
 | `can_see_site_row(p_site uuid)` | boolean | sql | definer | stable | yes | yes |
 | `can_write_kitchen_row(p_site uuid)` | boolean | sql | definer | stable | yes | yes |
@@ -2361,6 +2763,7 @@ Signatures and security only. "anon"/"authenticated" = may the role execute it.
 | `grant_default_site_membership()` | trigger | plpgsql | definer | volatile | yes | yes |
 | `guard_channel_group_members_update()` | trigger | plpgsql | invoker | volatile | yes | yes |
 | `guard_channel_groups_update()` | trigger | plpgsql | invoker | volatile | yes | yes |
+| `guard_google_locations_update()` | trigger | plpgsql | invoker | volatile | yes | yes |
 | `guard_group_admin_escalation()` | trigger | plpgsql | definer | volatile | yes | yes |
 | `guard_owner_role_assignment()` | trigger | plpgsql | definer | volatile | yes | yes |
 | `guard_role_delete()` | trigger | plpgsql | invoker | volatile | yes | yes |
@@ -2377,6 +2780,7 @@ Signatures and security only. "anon"/"authenticated" = may the role execute it.
 | `keep_primary_site()` | trigger | plpgsql | definer | volatile | yes | yes |
 | `link_checklist_instances(p_business uuid)` | integer | plpgsql | definer | volatile | yes | yes |
 | `list_template_leads()` | TABLE(id uuid, email text, source text, page text, note text, created_at timestamp with time zone, unsubscribed_at timestamp with time zone, letters jsonb) | sql | definer | stable | yes | yes |
+| `profiles_with_capability(b uuid, cap text)` | SETOF uuid | sql | definer | stable | no | no |
 | `protect_business_deleted_at()` | trigger | plpgsql | invoker | volatile | yes | yes |
 | `protect_business_entitlement()` | trigger | plpgsql | invoker | volatile | yes | yes |
 | `purge_deleted_businesses()` | void | plpgsql | definer | volatile | no | no |
@@ -2384,6 +2788,9 @@ Signatures and security only. "anon"/"authenticated" = may the role execute it.
 | `remove_member(p_profile uuid)` | void | plpgsql | definer | volatile | yes | yes |
 | `report_due(p_from date, p_to date, p_site uuid, p_templates uuid[])` | TABLE(site_id uuid, due bigint) | sql | definer | volatile | yes | yes |
 | `resolve_checklist_notif_link()` | trigger | plpgsql | definer | volatile | yes | yes |
+| `reviews_delete_token(p_id uuid)` | void | sql | definer | volatile | no | no |
+| `reviews_read_token(p_id uuid)` | text | sql | definer | stable | no | no |
+| `reviews_store_token(p_token text, p_name text)` | uuid | sql | definer | volatile | no | no |
 | `revoke_channel_identities_on_profile_change()` | trigger | plpgsql | definer | volatile | yes | yes |
 | `revoke_channel_identity(p_id uuid)` | void | plpgsql | definer | volatile | no | yes |
 | `search_dinesafe(q text)` | TABLE(establishment_id bigint, name text, establishment_type text, address text, status text, last_inspection date, inspections_count integer, violations_count integer, latitude double precision, longitude double precision) | sql | definer | volatile | yes | yes |
@@ -2406,6 +2813,7 @@ Name and schedule only — commands are not reproduced (they can contain secrets
 |---|---|---|
 | `demo-daily-refresh` | `45 7 * * *` | yes |
 | `generate-checklist-instances` | `10 1 * * *` | yes |
+| `google-reviews-sync` | `*/15 * * * *` | yes |
 | `haccp-drip-hourly` | `15 * * * *` | yes |
 | `purge-deleted-businesses` | `0 3 * * *` | yes |
 | `whatsapp-reminders` | `*/10 * * * *` | yes |
