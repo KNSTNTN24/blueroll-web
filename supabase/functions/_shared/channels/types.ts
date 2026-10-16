@@ -9,4 +9,4 @@ export type OutboundMessage = Record<string, unknown>   // Cloud API /messages b
 export interface SendResult { id: string | null; ok: boolean; status: number; errorCode?: number }
 export type SendFn = (msg: OutboundMessage) => Promise<SendResult>
 /** One entry of a webhook `statuses` array (sent / delivered / read / failed). */
-export interface DeliveryStatus { id: string; recipient: string; status: string; errorCode: number | null }
+export interface DeliveryStatus { id: string; recipient: string; status: string; errorCode: number | null; errorTitle: string | null }

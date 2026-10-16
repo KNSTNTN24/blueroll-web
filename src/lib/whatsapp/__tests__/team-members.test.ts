@@ -19,10 +19,10 @@ describe('addPersonToTeam', () => {
     expect(s.created).toEqual([{ businessId: 'b', siteId: 's1', fullName: 'Maria Lopez', profile_id: 'new1' }])
     expect(s.members.find((m) => m.profile_id === 'new1')).toMatchObject({ status: 'invited', phone: MARIA, invited_by: 'm1', last_invite_sent_at: NOW.toISOString() })
     expect(w.sent).toHaveLength(1)
-    expect(w.sent[0]).toMatchObject({ to: MARIA, template: { name: 'team_invite', language: { code: 'en_GB' } } })
+    expect(w.sent[0]).toMatchObject({ to: MARIA, template: { name: 'team_invite_v2', language: { code: 'en_GB' } } })
     expect(w.sent[0].template.components[0].parameters.map((p: any) => p.text)).toEqual(['Fern & Fig', 'Kitchen', 'Ashfield Row'])
     expect(w.sent[0].template.components[1].parameters[0].payload).toBe(`join:${r.member!.id}`)
-    expect(s.logs).toMatchObject([{ kind: 'team_invite', template_name: 'team_invite', billable: true, direction: 'out' }])
+    expect(s.logs).toMatchObject([{ kind: 'team_invite', template_name: 'team_invite_v2', billable: true, direction: 'out' }])
   })
   it('a number linked in this business → that profile is reused', async () => {
     const { d, s } = fakeTeamDeps({ members: [] })
@@ -168,10 +168,16 @@ describe('handleJoin', () => {
 describe('delivery statuses and tracked sends', () => {
   it('131047 / 131051 failures flag the number; delivered or read clears it', async () => {
     const { d, s } = fakeTeamDeps({ members: [invitedMaria(), member({ id: 'gm2', profile_id: 'p2', phone: BEN.phone })] })
-    await applyDeliveryStatuses(d, [{ id: 'w1', recipient: MARIA, status: 'failed', errorCode: 131047 }, { id: 'w2', recipient: BEN.phone, status: 'failed', errorCode: 131051 }])
+    await applyDeliveryStatuses(d, [{ id: 'w1', recipient: MARIA, status: 'failed', errorCode: 131047, errorTitle: null }, { id: 'w2', recipient: BEN.phone, status: 'failed', errorCode: 131051, errorTitle: null }])
     expect(s.members.map((m) => m.unreachable_at)).toEqual([NOW.toISOString(), NOW.toISOString()])
-    await applyDeliveryStatuses(d, [{ id: 'w3', recipient: MARIA, status: 'delivered', errorCode: null }, { id: 'w4', recipient: BEN.phone, status: 'failed', errorCode: 130472 }])
+    await applyDeliveryStatuses(d, [{ id: 'w3', recipient: MARIA, status: 'delivered', errorCode: null, errorTitle: null }, { id: 'w4', recipient: BEN.phone, status: 'failed', errorCode: 130472, errorTitle: 'Experiment' }])
     expect(s.members.map((m) => m.unreachable_at)).toEqual([null, NOW.toISOString()])
+    // every failure is recorded with its code, reachable or not; deliveries are not
+    expect(s.deliveryErrors).toEqual([
+      { wa_message_id: 'w1', error_code: 131047, error_title: null },
+      { wa_message_id: 'w2', error_code: 131051, error_title: null },
+      { wa_message_id: 'w4', error_code: 130472, error_title: 'Experiment' },
+    ])
   })
   it('sendTracked logs billable only for a template outside the window', async () => {
     const { d, s } = fakeTeamDeps()
