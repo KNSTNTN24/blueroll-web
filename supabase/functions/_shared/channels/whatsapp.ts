@@ -80,8 +80,10 @@ export function parseStatuses(body: unknown): DeliveryStatus[] {
   for (const e of arr((body as Any)?.entry)) for (const c of arr(e?.changes)) for (const s of arr(c?.value?.statuses)) {
     const recipient = s?.recipient_id
     if (typeof recipient !== 'string' || !/^\d+$/.test(recipient)) continue
-    const code = arr(s.errors)[0]?.code
-    out.push({ id: String(s.id ?? ''), recipient, status: String(s.status ?? ''), errorCode: typeof code === 'number' ? code : null })
+    const err = arr(s.errors)[0]
+    const code = err?.code
+    const title = [err?.title, err?.error_data?.details].filter((x) => typeof x === 'string' && x).join(': ').slice(0, 300)
+    out.push({ id: String(s.id ?? ''), recipient, status: String(s.status ?? ''), errorCode: typeof code === 'number' ? code : null, errorTitle: title || null })
   }
   return out
 }

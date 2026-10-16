@@ -1,6 +1,6 @@
 // supabase/functions/_shared/channels/team-members.ts
 // WhatsApp team membership (spec 2026-10-12 §4): add a person (reuse a linked profile or create a chat-only one),
-// send / resend the team_invite template, Join = consent, delivery statuses → "Not reachable".
+// send / resend the invite template (INVITE_TEMPLATE), Join = consent, delivery statuses → "Not reachable".
 // Pure over TeamDeps + SendFn (unit-tested with fakes). Never logs raw phone numbers.
 import type { DeliveryStatus, OutboundMessage, SendFn, SendResult } from './types.ts'
 import { templateMessage, textMessage } from './whatsapp.ts'
@@ -11,6 +11,8 @@ import type { Team, TeamDeps, TeamMember } from './teams-db.ts'
 
 export const INVITE_TTL_MS = 14 * 86400_000
 export const UNREACHABLE_CODES = new Set([131026, 131047, 131051])
+/** team_invite was recategorised MARKETING by Meta and UK numbers silently dropped it; v2 is UTILITY, same {{1}}-{{3}}. */
+export const INVITE_TEMPLATE = 'team_invite_v2'
 export const TEMPLATE_MISSING_CODES = new Set([132001])
 export type InviteOutcome = 'invited' | 'already_member' | 'too_soon' | 'failed' | 'template_missing'
 
@@ -33,7 +35,7 @@ export async function sendTracked(t: TeamDeps, send: SendFn, a: TrackedSend): Pr
 }
 
 export const inviteMessage = (to: string, a: { business: string; team: string; site: string; memberId: string }): OutboundMessage =>
-  templateMessage(to, 'team_invite', [a.business, a.team, a.site], [`join:${a.memberId}`])
+  templateMessage(to, INVITE_TEMPLATE, [a.business, a.team, a.site], [`join:${a.memberId}`])
 
 async function sendInvite(t: TeamDeps, send: SendFn, team: Team, m: TeamMember): Promise<InviteOutcome> {
   const now = t.now()
@@ -41,7 +43,7 @@ async function sendInvite(t: TeamDeps, send: SendFn, team: Team, m: TeamMember):
   const [business, site, ident] = await Promise.all([t.businessName(team.business_id), t.site(team.site_id), t.identityByPhone(m.phone)])
   const r = await sendTracked(t, send, {
     to: m.phone, msg: inviteMessage(m.phone, { business, team: team.title, site: site?.name ?? '', memberId: m.id }),
-    business_id: team.business_id, site_id: team.site_id, profile_id: m.profile_id, kind: 'team_invite', template_name: 'team_invite',
+    business_id: team.business_id, site_id: team.site_id, profile_id: m.profile_id, kind: 'team_invite', template_name: INVITE_TEMPLATE,
     lastInboundAt: ident?.last_inbound_at ?? null,
   })
   if (r.ok) return 'invited'
@@ -117,10 +119,17 @@ async function tellInviter(t: TeamDeps, send: SendFn, team: Team, m: TeamMember,
   await t.insertNotifications([{ user_id: m.invited_by, type: 'team', title: TEAM_TEXT.joinedTitle, message: body, link: '/settings' }])
 }
 
-/** Webhook `statuses`: Meta's "can't reach this number" errors flag it; a delivered/read message clears the flag. */
+/**
+ * Webhook `statuses`: every failure is recorded with Meta's code (channel_delivery_errors, joined to the log by wa_message_id);
+ * "can't reach this number" errors flag it; a delivered/read message clears the flag.
+ */
 export async function applyDeliveryStatuses(t: TeamDeps, list: DeliveryStatus[]): Promise<void> {
   const now = t.now()
   for (const s of list) {
+    if (s.status === 'failed') {
+      console.error('whatsapp delivery failed', maskPhone(s.recipient), s.errorCode ?? '', s.errorTitle ?? '')
+      await t.logDeliveryError({ wa_message_id: s.id, error_code: s.errorCode, error_title: s.errorTitle })
+    }
     if (s.status === 'failed' && s.errorCode != null && UNREACHABLE_CODES.has(s.errorCode)) await t.setUnreachable(s.recipient, now)
     else if (s.status === 'delivered' || s.status === 'read') await t.setUnreachable(s.recipient, null)
   }
