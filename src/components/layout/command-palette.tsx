@@ -30,6 +30,7 @@ import {
   Plus,
   Camera,
   Upload,
+  Star,
 } from 'lucide-react'
 
 const pages = [
@@ -41,6 +42,7 @@ const pages = [
   { label: 'Reports', href: '/reports', icon: BarChart3 },
   { label: 'Team', href: '/team', icon: Users },
   { label: 'Incidents', href: '/incidents', icon: AlertTriangle },
+  { label: 'Reviews', href: '/reviews', icon: Star },
   { label: 'Deliveries', href: '/deliveries', icon: Truck },
   { label: 'Suppliers', href: '/suppliers', icon: Factory },
   { label: 'Documents', href: '/documents', icon: FileText },

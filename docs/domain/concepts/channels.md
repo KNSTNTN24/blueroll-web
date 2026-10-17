@@ -2,7 +2,8 @@
 
 > Staff without the app do checklists in chat. **WhatsApp** = a *team* per site, each member in a 1:1 chat with the bot,
 > answering in WhatsApp Flows. **Telegram** = a linked staff *group* with one shared live list, answering in a Mini App
-> form. In both, any member may fill in a team/group checklist and the **first submit per period wins**.
+> form. A third value, **`telegram_reviews`**, is not about checklists: it links a Telegram group to the Google reviews bot (see
+> [Google reviews](google-reviews.md)). In the two checklist channels, any member may fill in a team/group checklist and the **first submit per period wins**.
 
 **Touches:** [Checklist template](../entities/checklist-template.md), [Checklist completion](../entities/checklist-completion.md),
 [Business](../entities/business.md) (switches), [Member](../entities/member.md) (chat-only members), [Site](../entities/site.md) ·
@@ -31,9 +32,9 @@ template's assigned roles. Due/period/flagging rules are the shared core — see
 |---|---|---|
 | `channel_identities` | Person ↔ WhatsApp number / Telegram user id | `profile_id`, `channel` (`whatsapp`/`telegram`, `CHECK`), `external_id` (E.164 digits or TG user id), `consent_at`, `consent_source` (default `qr_code`; written today: `team_invite`, `group_form`), `consent_text_version` (always 1), `linked_by`, `last_inbound_at` (24 h window), `revoked_at`. One active per (business, channel, external id) and per (profile, channel); a WhatsApp number is active in **one business only** (`uq_channel_identity_whatsapp_active`). Read: managers + self. No client writes. |
 | `channel_link_codes` | Legacy per-person 6-digit link codes | `code ~ '^[0-9]{6}$'`, `profile_id`, `site_id`, `expires_at` = +15 min, `used_at`. Issued by `issue_link_code()`. **Retired** (Gotcha 2). |
-| `channel_groups` | A WhatsApp team or a Telegram group | `channel`, `chat_id` (required for Telegram), `site_id` (required for WhatsApp), `title` (non-blank for WhatsApp), `alerts` (Telegram "Alerts" group), `linked_by/at`, `last_permission_check_at`, `last_permission_warning_at`, `unlinked_at` (= unlinked / team deleted). Trigger `trg_guard_channel_groups_update`: clients may only flip `alerts` and set `unlinked_at` once; on INSERT it stamps creator and times. Clients insert only WhatsApp teams (policy `managers create whatsapp teams`). |
+| `channel_groups` | A WhatsApp team, a Telegram group, or (since 2026-10-15) a Telegram **reviews** group | `channel` (`telegram`/`whatsapp`/`telegram_reviews`), `chat_id` (required for Telegram), `site_id` (required for WhatsApp), `title` (non-blank for WhatsApp), `alerts` (Telegram "Alerts" group), `linked_by/at`, `last_permission_check_at`, `last_permission_warning_at`, `unlinked_at` (= unlinked / team deleted). Trigger `trg_guard_channel_groups_update`: clients may only flip `alerts` and set `unlinked_at` once; on INSERT it stamps creator and times. Clients insert only WhatsApp teams (policy `managers create whatsapp teams`). |
 | `channel_group_members` | WhatsApp team members | `phone` (`^[0-9]{10,15}$`), `status` `invited`/`active`/`removed`, `invited_by/at`, `joined_at`, `removed_at`, `last_invite_sent_at` (resend ≤ 1/h), `unreachable_at` (Meta 131026/131047/131051). Clients may only set `status='removed'` (trigger `trg_guard_channel_group_members_update`). |
-| `channel_group_link_codes` | Telegram group link codes | 6 digits, 15 min, one use, `issue_group_link_code('telegram')` only; 5 wrong codes per chat per hour → locked (`tg-group-bot.ts:22-23,45`). |
+| `channel_group_link_codes` | Telegram group link codes | 6 digits, 15 min, one use, `issue_group_link_code('telegram')` or `('telegram_reviews')` (needs `manage_reviews`); 5 wrong codes per chat per hour → locked (`tg-group-bot.ts:22-23,45`). |
 | `channel_group_checklists` | Which templates a team/group does | PK (group, template). Insert policy: same business, group linked, and for a WhatsApp team the template is business-wide or at the team's site. |
 | `channel_group_takes` | First-submit-wins claims (WhatsApp) | PK (group, template, site, `period_key`); several-a-day checklists use `period#1`, `#2`… (`team-day.ts:75-77`). Service role only; deleted after 60 days. |
 | `channel_group_events` | Once-only team messages | PK (group, kind, key): `morning:<member id>` + local date, `overdue` + `<template>:<period>`, `day_end` / `day_end_app` + date. Claim-then-send, released on retryable failure. |
@@ -77,6 +78,15 @@ active owner/manager by text role) and `profiles` trigger `trg_revoke_channel_id
 9. **Removal.** Profile soft-removed or moved business → `revoke_channel_identities_on_profile_change` revokes all identities; profile
    deleted → cascade. Team "Remove" sets `status='removed'` (identity kept, open forms answer "You're no longer in …").
    `STOP` revokes the identity (`bot.ts:319`). Unlinking a Telegram group from the web sets `unlinked_at`; the cron deletes its lists.
+
+## Third channel value: `telegram_reviews` (branch `claude/restaurant-reviews-bot-iquz2t`, not yet in production)
+
+`channel_groups.channel` and `channel_group_link_codes.channel` also accept `telegram_reviews` (migration `20261015120000_google_reviews.sql`).
+Such a group has a `chat_id` like a Telegram group but belongs to a separate bot (`@BluerollReviewsBot`), has no checklist mappings, and is
+routed to sites through `review_routes`. `channel_ready(b,'telegram_reviews')` needs only an entitled business (no switch on `businesses`).
+Reviews groups are readable and unlinkable by `manage_reviews` holders through their own policies; the existing guard trigger still limits
+client updates to `alerts` and `unlinked_at`. The security boundary is the same as for checklist groups (Gotcha 3 below and
+[Google reviews](google-reviews.md) Gotcha 4). Everything else on this page is about WhatsApp and checklist Telegram only.
 
 ## Known drift (live data, 2026-10-13)
 
@@ -122,6 +132,7 @@ active owner/manager by text role) and `profiles` trigger `trg_revoke_channel_id
 
 ## History
 
+- 2026-10-15 `telegram_reviews` channel value added for Google reviews (`2026-10-15-google-reviews-design.md`).
 - 2026-10-12 WhatsApp teams (`2026-10-12-whatsapp-teams-design.md`, `20261012140000_whatsapp_teams.sql`; main `b50e9d1`).
 - 2026-10-11 Telegram groups + live list + Mini App (`2026-10-11-telegram-groups-design.md`, `20261011130000_channel_groups.sql`).
 - 2026-10-10 Telegram personal chats (`2026-10-10-telegram-checklists-design.md`, `20261011120000_telegram_channel.sql`) — superseded.

@@ -24,3 +24,16 @@ verify_jwt = false
 # Settings → WhatsApp teams (web): the caller's Supabase JWT is checked inside the function (auth.getUser + profile).
 [functions.whatsapp-team-member]
 verify_jwt = false
+
+# Google reviews (Task 10): JWT / secret checked inside each function.
+[functions.google-connect]
+verify_jwt = false
+
+[functions.google-reviews-sync]
+verify_jwt = false
+
+[functions.telegram-reviews-webhook]
+verify_jwt = false
+
+[functions.reviews-action]
+verify_jwt = false

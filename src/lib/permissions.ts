@@ -1,8 +1,8 @@
-import { SquareCheck, Soup, Shield, FileText, Users, type LucideIcon } from 'lucide-react'
+import { SquareCheck, Soup, Shield, FileText, Users, Star, type LucideIcon } from 'lucide-react'
 import type { UserRole } from './constants'
 
 /**
- * The 14 capabilities a role can grant.
+ * The 15 capabilities a role can grant.
  *
  * Stored verbatim in `roles.capabilities` (text[]). Ordering here is the order
  * the drawer renders them in, so keep it aligned with CAP_GROUPS.
@@ -12,6 +12,7 @@ export const CAPS = [
   'manage_recipes',
   'manage_checklists', 'sign_off', 'manage_suppliers', 'manage_incidents', 'manage_deliveries',
   'manage_documents', 'view_documents',
+  'manage_reviews',
   'manage_team', 'manage_roles', 'manage_sites', 'manage_billing',
 ] as const
 
@@ -28,6 +29,7 @@ export const CAP_LABEL: Record<Cap, string> = {
   manage_deliveries: 'Manage deliveries',
   manage_documents: 'Add/edit documents',
   view_documents: 'View documents',
+  manage_reviews: 'Manage Google reviews',
   manage_team: 'Manage team & invites',
   manage_roles: 'Manage roles',
   manage_sites: 'Manage sites',
@@ -45,6 +47,7 @@ export const CAP_DESC: Record<Cap, string> = {
   manage_deliveries: 'Record and check deliveries',
   manage_documents: 'Upload and edit documents',
   view_documents: 'View documents only',
+  manage_reviews: 'Connect Google, choose where reviews go and reply',
   manage_team: 'Invite people and manage members',
   manage_roles: 'Create and edit roles',
   manage_sites: 'Add and manage sites',
@@ -56,6 +59,7 @@ export const CAP_GROUPS: { name: string; icon: LucideIcon; caps: Cap[] }[] = [
   { name: 'Kitchen', icon: Soup, caps: ['manage_recipes'] },
   { name: 'Compliance', icon: Shield, caps: ['manage_checklists', 'sign_off', 'manage_suppliers', 'manage_incidents', 'manage_deliveries'] },
   { name: 'Documents', icon: FileText, caps: ['manage_documents', 'view_documents'] },
+  { name: 'Guests', icon: Star, caps: ['manage_reviews'] },
   { name: 'People & settings', icon: Users, caps: ['manage_team', 'manage_roles', 'manage_sites', 'manage_billing'] },
 ]
 
@@ -71,7 +75,7 @@ const BASE_CAPS: Cap[] = ['complete_checklists', 'view_reports', 'manage_inciden
 
 export const PRESET_CAPS: Record<UserRole, Cap[]> = {
   owner: [...CAPS],
-  manager: [...BASE_CAPS, 'manage_checklists', 'sign_off', 'manage_recipes', 'manage_documents', 'manage_suppliers', 'manage_team'],
+  manager: [...BASE_CAPS, 'manage_checklists', 'sign_off', 'manage_recipes', 'manage_documents', 'manage_suppliers', 'manage_team', 'manage_reviews'],
   chef: [...BASE_CAPS, 'manage_recipes'],
   front_of_house: [...BASE_CAPS],
   kitchen_staff: [...BASE_CAPS],

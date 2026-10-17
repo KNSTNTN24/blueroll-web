@@ -33,7 +33,8 @@ When a page and the database disagree, the database wins and the page has a bug.
 | [entities/incident-and-notification.md](entities/incident-and-notification.md) | Incidents and complaints; in-app notifications (who creates them, no push/email); barely used diary tables. |
 | [entities/setup-session.md](entities/setup-session.md) | *Set up my HACCP*: the questionnaire session, answer kinds, apply (pack + checklists), the AI assistant and its guards. |
 | [entities/haccp-plan.md](entities/haccp-plan.md) | The inspector-ready HACCP Plan: sections and where each number comes from, inspector links, PDF, sign-off. |
-| [concepts/channels.md](concepts/channels.md) | WhatsApp teams and Telegram groups: linking, consent, daily lists and reminders, forms, first-submit-wins, billing. |
+| [concepts/channels.md](concepts/channels.md) | WhatsApp teams and Telegram groups (plus the `telegram_reviews` Google reviews group): linking, consent, daily lists and reminders, forms, first-submit-wins, billing. |
+| [concepts/google-reviews.md](concepts/google-reviews.md) | Google Business Profile reviews: connect, map to sites, 15-minute sync, AI-drafted reply cards in a Telegram reviews group, two-tap publish. |
 | [concepts/periods-and-due-checks.md](concepts/periods-and-due-checks.md) | What "due", "done", "overdue" and "missed" mean in each layer (DB, web, edge, mobile, reports, Plan) — read before touching schedules. |
 | [concepts/sfbb-structure.md](concepts/sfbb-structure.md) | How FSA *Safer Food, Better Business* is organised (sections, safe methods, diary, 4-weekly review) and how Blueroll maps onto it; key temperatures with SFBB page numbers. |
 | [concepts/allergens-and-dietary.md](concepts/allergens-and-dietary.md) | The 14 allergens: where stored, how a dish's allergens and dietary labels are worked out, matrix/exports, PPDS — and why auto-labels are unsafe. |
