@@ -39,7 +39,13 @@ delete**, but every INSERT/UPDATE on business data is refused. The client paywal
 | `deleted_at` | Soft delete; makes `is_business_entitled` false whatever was paid. | `delete-account`; guarded by `trg_protect_business_deleted_at` |
 | `trial_grants(email, granted_at)` | One row per email that has ever had a trial. RLS on, no policies (server-only). 128 rows live. | `consume_trial`, called by `setup_business` |
 | `entitlement_write_gate_*` | 54 RESTRICTIVE INSERT/UPDATE policies on 27 tables calling `is_business_entitled`. | `20260712180200_entitlement_write_gate.sql` (+ later table additions) |
-| `protect_business_entitlement` | Blocks `authenticated`/`anon` from changing the source and computed columns (not `iap_provider/product_id/token/tx id`, not `signup_trial`). | trigger, `20260712180100_protect_entitlement_columns.sql:1-35` |
+| `protect_business_entitlement` | Blocks `authenticated`/`anon` from changing every source, computed, IAP identity and `signup_trial` column. | trigger, extended by `20261017130000_iap_linkage_safety.sql` |
+
+## IAP linkage safety
+
+Authenticated subscription notifications are recorded in the server-only `iap_events` ledger before entitlement mutation. Google purchase tokens are stored there as SHA-256 plus AES-256-GCM ciphertext and are due for deletion after 90 days; operational logs contain only the hash. Resolution unions the store identifier and account/profile candidates. Exactly one distinct, provider-compatible business is required; zero is `unmatched`, more than one is `conflict`, and neither case mutates entitlement. The database finalizes the ledger and guarded business update in one transaction. Duplicate event delivery reuses `(provider,event_id)`, preserves `received_at`, and increments `attempt_count`.
+
+Release order is mandatory: migration and constraints, then the `IAP_EVENT_ENCRYPTION_KEY` secret and both webhooks, then mobile. Roll back in reverse order, but do not remove the ledger or unique indexes while a new webhook/mobile build is live.
 
 ## Payment sources
 
@@ -121,9 +127,7 @@ read `canceled`, not `none`. `subscription_status` defaults to the literal `'non
    business without a `subscription_id`.
 6. **An expired trial gets a fresh 14-day Stripe trial** on `/paywall` (`create-subscription/index.ts:117-120`);
    `trial_grants` dedup does not cover Stripe trials.
-7. **IAP lookup columns are client-writable.** Any member may update their business row (policy
-   "Users can update own business"), and the protect trigger skips `iap_purchase_token` /
-   `iap_original_transaction_id` / `signup_trial`. Webhooks update *every* row matching the token.
+7. **Store-provider multiplicity remains limited.** A business row represents one IAP provider. Cross-provider overwrite is rejected; supporting concurrent Apple and Google subscriptions needs a separate purchase-identity table.
 8. **Apple JWS is verified only against its own embedded leaf cert** (`apple-webhook/index.ts:136-160`, no chain to
    Apple Root); the state itself comes from Apple's API, but which business it lands on comes from the payload.
 9. **Live objects missing from migrations:** `signup_trial` column, `set_default_trial` setting it, and the 24-hour

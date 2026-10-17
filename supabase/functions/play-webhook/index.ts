@@ -218,94 +218,42 @@ async function fetchSubscriptionState(
 // ─── State mapping ─────────────────────────────────────────────────────────────
 
 import { mapSubscriptionState } from "./status-map.ts";
+import { encryptIapSecret, safeEventLog, sha256Hex } from "../_shared/iap-linkage.ts";
 
 // ─── Apply to DB ───────────────────────────────────────────────────────────────
 
 async function applySubscriptionUpdate(
+  eventId: string,
+  eventType: string,
   purchaseToken: string,
   productId: string,
   sub: SubscriptionPurchaseV2,
-): Promise<{ matched: number; businessId?: string }> {
-  const expiry = sub.lineItems?.[0]?.expiryTime ?? null;
+): Promise<{ resolution: string; business_id?: string }> {
+  const lineItem = sub.lineItems?.find((item) => item.productId === productId) ??
+    [...(sub.lineItems ?? [])].sort((a, b) => Date.parse(b.expiryTime) - Date.parse(a.expiryTime))[0];
+  const expiry = lineItem?.expiryTime ?? null;
   const status = mapSubscriptionState(sub.subscriptionState);
+  const encryptionKey = Deno.env.get("IAP_EVENT_ENCRYPTION_KEY");
+  if (!encryptionKey) throw new Error("IAP_EVENT_ENCRYPTION_KEY not configured");
+  const encrypted = await encryptIapSecret(purchaseToken, encryptionKey);
+  const tokenHash = await sha256Hex(purchaseToken);
+  const { error: beginError } = await supabase.rpc("begin_iap_event", {
+    p_provider: "google", p_event_id: eventId, p_event_type: eventType,
+    p_product_id: productId, p_token_sha256: tokenHash,
+    p_token_ciphertext: encrypted.ciphertext, p_token_iv: encrypted.iv,
+    p_store_status: status, p_expires_at: expiry,
+  });
+  if (beginError) throw new Error(`IAP ledger begin failed: ${beginError.message}`);
 
-  // Computed subscription_status/trial_ends_at are owned by the DB arbiter
-  // (trg_zz_subscription_arbiter); we only report Google's view via iap_*.
-  const payload = {
-    iap_status: status,
-    iap_provider: "google",
-    iap_product_id: productId,
-    iap_purchase_token: purchaseToken,
-    iap_expires_at: expiry,
-  };
-
-  // Preferred lookup: we've already stored this token via record_iap_purchase
-  // (called from the mobile app immediately after the purchase succeeds).
-  {
-    const { data, error } = await supabase
-      .from("businesses")
-      .update(payload)
-      .eq("iap_purchase_token", purchaseToken)
-      .select("id");
-    if (error) throw new Error(`Supabase update by token failed: ${error.message}`);
-    if (data && data.length > 0) {
-      return { matched: data.length, businessId: data[0].id };
-    }
-  }
-
-  // Fallback: match via obfuscatedExternalAccountId.
-  //
-  // This is the path that actually carries Android, and it was matching the
-  // wrong column. The comment here used to say the client tags the purchase
-  // with the business_id; it does not — buy() passes `applicationUserName:
-  // userId`, the signed-in Supabase *user*. Comparing that to businesses.id
-  // never matched, so every Android notification fell through to the warning
-  // below and no google purchase was ever confirmed, while Apple (whose token
-  // is recorded correctly) worked fine.
-  //
-  // The lookup by token above can't cover for it either: the client records
-  // GooglePlayPurchaseDetails.purchaseID, which is the *order id*
-  // (GPA.xxxx-…), not the purchaseToken Google notifies us with.
-  //
-  // So resolve the id through profiles first, and treat it as a business id
-  // only if it isn't a user. Matching also writes the real purchaseToken from
-  // this notification into the row, so every later notification for the same
-  // subscription matches on the fast path above.
   const obfuscatedId = sub.externalAccountIdentifiers?.obfuscatedExternalAccountId;
-  if (obfuscatedId) {
-    let businessId = obfuscatedId;
-
-    const { data: profile, error: profileError } = await supabase
-      .from("profiles")
-      .select("business_id")
-      .eq("id", obfuscatedId)
-      .maybeSingle();
-    if (profileError) {
-      throw new Error(`Supabase profile lookup failed: ${profileError.message}`);
-    }
-    if (profile?.business_id) {
-      businessId = profile.business_id;
-    }
-
-    const { data, error } = await supabase
-      .from("businesses")
-      .update(payload)
-      .eq("id", businessId)
-      .select("id");
-    if (error) {
-      throw new Error(
-        `Supabase update by obfuscatedExternalAccountId failed: ${error.message}`,
-      );
-    }
-    if (data && data.length > 0) {
-      return { matched: data.length, businessId: data[0].id };
-    }
-  }
-
-  console.warn(
-    `play-webhook: no matching business for token=${purchaseToken.slice(0, 16)}... obfuscatedId=${obfuscatedId ?? "none"}`,
-  );
-  return { matched: 0 };
+  const { data, error } = await supabase.rpc("finalize_iap_event", {
+    p_provider: "google", p_event_id: eventId, p_store_identifier: purchaseToken,
+    p_external_reference: obfuscatedId ?? null, p_status: status,
+    p_product_id: productId, p_expires_at: expiry,
+  });
+  if (error) throw new Error(`IAP ledger finalization failed: ${error.message}`);
+  console.log("play-webhook:", safeEventLog({ provider: "google", eventId, resolution: data.resolution, tokenHash }));
+  return data;
 }
 
 // ─── Handler ───────────────────────────────────────────────────────────────────
@@ -367,6 +315,8 @@ Deno.serve(async (req) => {
 
       const sub = await fetchSubscriptionState(purchaseToken);
       const result = await applySubscriptionUpdate(
+        envelope.message.messageId,
+        String(notificationType),
         purchaseToken,
         subscriptionId,
         sub,
@@ -376,8 +326,10 @@ Deno.serve(async (req) => {
         `play-webhook: subscriptionNotification type=${notificationType} ` +
           `productId=${subscriptionId} state=${sub.subscriptionState} ` +
           `mapped=${mapSubscriptionState(sub.subscriptionState)} ` +
-          `matched_rows=${result.matched} businessId=${result.businessId ?? "none"}`,
+          `resolution=${result.resolution} businessId=${result.business_id ?? "none"}`,
       );
+
+      if (result.resolution !== "matched") throw new Error(`IAP event ${result.resolution}`);
 
       return new Response(JSON.stringify({ received: true }), {
         status: 200,
