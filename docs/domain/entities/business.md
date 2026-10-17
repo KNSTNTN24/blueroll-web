@@ -40,6 +40,7 @@ The BEFORE trigger `trg_zz_subscription_arbiter` (`_subscription_arbiter`) folds
 `purchase_provider.dart:594-610`). Clients cannot write any of them (`protect_business_entitlement`). New businesses get a
 14-day `manual_status = 'trialing'` (`set_default_trial`), or 24 hours if the email already had a trial (`consume_trial` +
 `trial_grants`). Full rules: [Subscription & entitlement](../concepts/subscription-and-entitlement.md).
+IAP identifiers are unique when present and server-managed. Store webhooks do not update by the first matching hint: they record an `iap_events` ledger entry, union all candidate businesses, and atomically update only when exactly one provider-compatible business remains. The ledger retains an immutable business UUID snapshot if the business is later deleted.
 
 **`notification_prefs` keys** (`notifications-settings.tsx:12-62`): `<topic>.email` and `<topic>.push` for 9 topics —
 `critical`, `temp_warnings`, `missed_checks`, `invites_joins`, `signoff`, `invoices`, `payment_issues`,

@@ -218,6 +218,7 @@ async function fetchSubscriptionStatuses(
 // ─── State mapping ─────────────────────────────────────────────────────────────
 
 import { mapAppleStatus } from "./status-map.ts";
+import { safeEventLog, sha256Hex } from "../_shared/iap-linkage.ts";
 
 // ─── DB application ────────────────────────────────────────────────────────────
 
@@ -230,69 +231,33 @@ interface ApplyInput {
 }
 
 async function applyAppleUpdate(
+  eventId: string,
+  eventType: string,
   i: ApplyInput,
-): Promise<{ matched: number; businessId?: string }> {
+): Promise<{ resolution: string; business_id?: string }> {
   const expiresAt = i.expiresMillis
     ? new Date(i.expiresMillis).toISOString()
     : null;
   const status = mapAppleStatus(i.status);
 
-  // Computed columns are owned by the DB arbiter; report Apple's view via iap_*.
-  const payload = {
-    iap_status: status,
-    iap_provider: "apple",
-    iap_product_id: i.productId,
-    iap_original_transaction_id: i.originalTransactionId,
-    iap_expires_at: expiresAt,
-  };
+  const tokenHash = await sha256Hex(i.originalTransactionId);
+  const { error: beginError } = await supabase.rpc("begin_iap_event", {
+    p_provider: "apple", p_event_id: eventId, p_event_type: eventType,
+    p_product_id: i.productId, p_token_sha256: tokenHash,
+    p_token_ciphertext: null, p_token_iv: null, p_store_status: status,
+    p_expires_at: expiresAt,
+  });
+  if (beginError) throw new Error(`IAP ledger begin failed: ${beginError.message}`);
 
-  // Preferred lookup: appAccountToken is the Supabase user UUID we tagged
-  // the purchase with at buy() time. Going through profiles gives us the
-  // business directly.
-  if (i.appAccountToken) {
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("business_id")
-      .eq("id", i.appAccountToken)
-      .maybeSingle();
-    if (profile?.business_id) {
-      const { data, error } = await supabase
-        .from("businesses")
-        .update(payload)
-        .eq("id", profile.business_id)
-        .select("id");
-      if (error) {
-        throw new Error(`Update by appAccountToken failed: ${error.message}`);
-      }
-      if (data && data.length > 0) {
-        return { matched: data.length, businessId: data[0].id };
-      }
-    }
-  }
-
-  // Fallback: record_iap_purchase has already populated
-  // iap_original_transaction_id on the businesses row from the mobile
-  // side. Match on it.
-  {
-    const { data, error } = await supabase
-      .from("businesses")
-      .update(payload)
-      .eq("iap_original_transaction_id", i.originalTransactionId)
-      .select("id");
-    if (error) {
-      throw new Error(
-        `Update by iap_original_transaction_id failed: ${error.message}`,
-      );
-    }
-    if (data && data.length > 0) {
-      return { matched: data.length, businessId: data[0].id };
-    }
-  }
-
-  console.warn(
-    `apple-webhook: no matching business for originalTransactionId=${i.originalTransactionId} appAccountToken=${i.appAccountToken ?? "none"}`,
-  );
-  return { matched: 0 };
+  const { data, error } = await supabase.rpc("finalize_iap_event", {
+    p_provider: "apple", p_event_id: eventId,
+    p_store_identifier: i.originalTransactionId,
+    p_external_reference: i.appAccountToken ?? null, p_status: status,
+    p_product_id: i.productId, p_expires_at: expiresAt,
+  });
+  if (error) throw new Error(`IAP ledger finalization failed: ${error.message}`);
+  console.log("apple-webhook:", safeEventLog({ provider: "apple", eventId, resolution: data.resolution, tokenHash }));
+  return data;
 }
 
 // ─── Handler ───────────────────────────────────────────────────────────────────
@@ -355,9 +320,20 @@ Deno.serve(async (req) => {
     }
 
     if (!notification.data?.signedTransactionInfo) {
-      console.log(
-        `apple-webhook: ${notification.notificationType} without signedTransactionInfo, acknowledging`,
-      );
+      const { error: beginError } = await supabase.rpc("begin_iap_event", {
+        p_provider: "apple", p_event_id: notification.notificationUUID,
+        p_event_type: notification.notificationType, p_product_id: null,
+        p_token_sha256: null, p_token_ciphertext: null, p_token_iv: null,
+        p_store_status: "unhandled", p_expires_at: null,
+      });
+      if (beginError) throw new Error(`IAP ledger begin failed: ${beginError.message}`);
+      const { error: finalizeError } = await supabase.rpc("finalize_iap_event", {
+        p_provider: "apple", p_event_id: notification.notificationUUID,
+        p_store_identifier: null, p_external_reference: null,
+        p_status: "unhandled", p_product_id: null, p_expires_at: null,
+      });
+      if (finalizeError) throw new Error(`IAP ledger finalization failed: ${finalizeError.message}`);
+      console.log("apple-webhook:", safeEventLog({ provider: "apple", eventId: notification.notificationUUID, resolution: "unmatched" }));
       return new Response(JSON.stringify({ received: "no-tx" }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -372,9 +348,10 @@ Deno.serve(async (req) => {
     // 6. Hit App Store Server API for the canonical state.
     const env = notification.data.environment;
     const status = await fetchSubscriptionStatuses(tx.originalTransactionId, env);
-    const latest = status.data?.[0]?.lastTransactions?.find((t) =>
-      t.originalTransactionId === tx.originalTransactionId
-    ) ?? status.data?.[0]?.lastTransactions?.[0];
+    const transactions = (status.data ?? []).flatMap((group) => group.lastTransactions ?? []);
+    const latest = transactions.find((candidate) =>
+      candidate.originalTransactionId === tx.originalTransactionId
+    );
     if (!latest) {
       throw new Error("App Store Server API returned no transactions");
     }
@@ -385,21 +362,27 @@ Deno.serve(async (req) => {
       latest.signedTransactionInfo,
     );
 
-    const result = await applyAppleUpdate({
+    const result = await applyAppleUpdate(
+      notification.notificationUUID,
+      notification.notificationType,
+      {
       originalTransactionId: tx.originalTransactionId,
       productId: latestTx.productId ?? tx.productId,
       appAccountToken: tx.appAccountToken ?? latestTx.appAccountToken,
       expiresMillis: latestTx.expiresDate ?? tx.expiresDate,
       status: latest.status,
-    });
+      },
+    );
 
     console.log(
       `apple-webhook: ${notification.notificationType}` +
         (notification.subtype ? `/${notification.subtype}` : "") +
-        ` env=${env} originalTx=${tx.originalTransactionId}` +
+        ` env=${env}` +
         ` appleStatus=${latest.status} mapped=${mapAppleStatus(latest.status)}` +
-        ` matched=${result.matched} businessId=${result.businessId ?? "none"}`,
+        ` resolution=${result.resolution} businessId=${result.business_id ?? "none"}`,
     );
+
+    if (result.resolution !== "matched") throw new Error(`IAP event ${result.resolution}`);
 
     return new Response(JSON.stringify({ received: true }), {
       status: 200,
